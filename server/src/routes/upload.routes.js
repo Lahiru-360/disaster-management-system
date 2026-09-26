@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { authMiddleware } from '../middleware/AuthMiddleware.js';
 import { fileUploadMiddleware } from '../middleware/FileUploadMiddleware.js';
 import { RequestValidator } from '../middleware/RequestValidator.js';
-import { uploadSchema } from '../validators/upload.validator.js';
+import { UploadValidator } from '../validators/UploadValidator.js';
 import { createUpload } from '../controllers/upload.controller.js';
 
 const router = Router();
@@ -14,7 +14,7 @@ router.post(
   '/',
   authMiddleware.requireAuth,
   fileUploadMiddleware.single('file'),
-  RequestValidator.body(uploadSchema),
+  RequestValidator.body(UploadValidator.uploadSchema),
   createUpload,
 );
 
