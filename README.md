@@ -10,7 +10,7 @@
 disaster-management-system/
 ├── .github/
 │   └── workflows/
-│       └── ci.yml                          lint + test on PRs to develop/main
+│       └── ci.yml                          lint + test (web: lint + build) on PRs to develop/main
 │
 ├── .husky/
 │   └── pre-commit                          lint-staged on staged files only
@@ -19,6 +19,7 @@ disaster-management-system/
 │   └── api-contract.md                     THE contract — read before any endpoint
 │
 ├── app/                                    Expo React Native client — field roles
+├── web/                                    Vite + React web portal — officer roles
 ├── server/                                 Express + MongoDB API — every role
 │
 ├── .gitattributes
@@ -31,14 +32,14 @@ disaster-management-system/
 
 Rubric deliverables (SRS, diagrams, test plan, report) are **not** in this repo by decision — Lahiru manages those separately.
 
-**Planned: an officer web portal in `web/`.** A separate React web app for the officer roles is planned as a later task; the folder doesn't exist yet. Each role signs in on one client:
+Each role signs in on one client:
 
 | Client | Roles |
 |---|---|
 | `app/` (mobile) | `citizen`, `community_volunteer`, `rescue_team_lead` |
-| `web/` (planned) | `dmc_officer`, `duty_officer`, `district_officer` |
+| `web/` (officer web portal) | `dmc_officer`, `duty_officer`, `district_officer` |
 
-The mobile app stops officer accounts at a "use the web portal" screen. The server serves every role; roles and their hierarchy are described in `server/README.md`.
+The mobile app stops officer accounts at a "use the web portal" screen, and the web portal stops field accounts at a "use the mobile app" screen. The server serves every role; roles and their hierarchy are described in `server/README.md`.
 
 ---
 
@@ -284,15 +285,80 @@ app/
 
 ---
 
+## `web/` — Vite + React officer web portal
+
+Mirrors `app/src` folder for folder, and the client layering rules above apply unchanged. Files containing JSX are `.jsx`, React Router takes the place of React Navigation in `navigation/`, and styling is plain Tailwind classes with the tokens in `global.css`. `web/README.md` has setup, env vars and the full app↔web mapping.
+
+```
+web/
+├── public/
+│   └── favicon.svg
+├── src/
+│   ├── api/
+│   │   ├── client.js                       Axios + interceptors + refresh queue (copy of app's)
+│   │   ├── index.js                        resolves mock vs real from USE_MOCK
+│   │   ├── authApi.js                      real implementation: login, refresh, logout, me
+│   │   └── mock/
+│   │       └── authApi.js                  same signatures, fake data, FAKES FAILURES TOO
+│   │
+│   ├── components/
+│   │   └── ui/                             shared kit — AuthShell, Brand, Button, Card, Loader,
+│   │                                       Notice, Screen, ScreenHeader, SectionLabel, TextInput
+│   │
+│   ├── screens/
+│   │   ├── auth/
+│   │   │   └── LoginScreen.jsx             demo picker: the three officer accounts
+│   │   └── shared/
+│   │       ├── PlaceholderScreen.jsx       every console page until it's built
+│   │       └── WrongPlatformScreen.jsx     field / unknown roles stop here, with Log out
+│   │
+│   ├── navigation/
+│   │   ├── RootNavigator.jsx               conditional render, NOT navigation; gates non-officer roles
+│   │   ├── AuthRoutes.jsx                  signed-out routes (≈ AuthStack)
+│   │   ├── ConsoleRoutes.jsx               signed-in routes (≈ AppStack + MainTabs)
+│   │   ├── ConsoleLayout.jsx               top bar + sidebar + current page
+│   │   └── sidebarItems.js                 sidebar links: path, label, icon
+│   │
+│   ├── store/
+│   │   ├── AuthContext.jsx                 single source of truth for session
+│   │   └── tokenStorage.js                 localStorage wrapper (XSS trade-off noted in the file)
+│   │
+│   ├── hooks/
+│   │   └── useAuth.js                      consumes AuthContext
+│   │
+│   ├── constants/
+│   │   ├── config.js                       APP_NAME; ONLY file reading import.meta.env (VITE_*)
+│   │   ├── roles.js                        copy of app's + isWebRole()   — keep in sync
+│   │   └── demoUsers.js                    copy of app's                 — keep in sync
+│   │
+│   └── utils/                              empty for now
+│
+├── App.jsx                                 providers + router + RootNavigator, nothing else
+├── index.jsx                               entry: mounts App, imports global.css
+├── index.html                              page title + favicon, loads index.jsx
+├── global.css                              Tailwind import + design tokens (@theme)
+├── vite.config.js                          React + Tailwind plugins
+├── .env.example
+├── .lintstagedrc.json
+├── .npmrc                                  save-exact=true — every dependency pinned
+├── eslint.config.js                        same rules as app's, ES module syntax
+├── package.json
+└── README.md                               setup, scripts, env vars, app↔web mapping
+```
+
+**`app/` and `web/` share no code** (no workspace, no shared package). Small files are copied instead: `roles.js`, `demoUsers.js`, the API client, the auth API and mock, and `AuthContext`. Change a copy and its twin in the same PR; `web/README.md` lists each pair.
+
+---
+
 ## Naming conventions
 
 | Thing | Convention | Example |
 |---|---|---|
 | Server classes | PascalCase, one class per file, `<Resource><Layer>.js` | `AuthController.js`, `TokenService.js` |
 | Models | PascalCase, singular | `User.js` |
-| React components | PascalCase, one per file | `Button.js`, `ScreenHeader.js` |
+| React components | PascalCase, one per file (`.jsx` in `web/`) | `Button.js`, `ScreenHeader.jsx` |
 | Screens | PascalCase + `Screen` suffix | `LoginScreen.js` |
-| Navigators | PascalCase + `Navigator` / `Stack` / `Tabs` | `RootNavigator.js`, `MainTabs.js` |
+| Navigators | PascalCase + `Navigator` / `Stack` / `Tabs` (`web/`: `Routes` / `Layout`) | `RootNavigator.js`, `MainTabs.js`, `ConsoleRoutes.jsx` |
 | Hooks | camelCase, `use` prefix | `useAuth.js` |
 | API modules | camelCase + `Api` suffix | `uploadApi.js` |
 | Test files | `tests/integration/` or `tests/unit/`, `<resource>.<behaviour>.test.js` | `tests/integration/auth.login.test.js` |
@@ -305,18 +371,18 @@ Routes are plural, lowercase, hyphenated: `/api/uploads`, `/api/item-categories`
 
 ## Linting, formatting, and the pre-commit hook
 
-Both `app/` and `server/` share one Prettier config (`.prettierrc.json` at the repo root) and each has its own ESLint config (`app/eslint.config.js`, `server/eslint.config.js`). `eslint-config-prettier` is applied in both so ESLint never fights Prettier over formatting — ESLint owns code-quality rules, Prettier owns style.
+`app/`, `web/` and `server/` share one Prettier config (`.prettierrc.json` at the repo root) and each has its own ESLint config (`app/eslint.config.js`, `web/eslint.config.js`, `server/eslint.config.js`). `eslint-config-prettier` is applied in all three so ESLint never fights Prettier over formatting — ESLint owns code-quality rules, Prettier owns style.
 
-**Run locally**, from inside `app/` or `server/`:
+**Run locally**, from inside `app/`, `web/` or `server/`:
 
 ```bash
 npm run lint      # ESLint — code-quality rules, fails on errors
 npm run format     # Prettier --write — reformats files in place
 ```
 
-`npm run lint` is also what CI runs on every pull request targeting `develop` or `main` (`.github/workflows/ci.yml`), for both `app/` and `server/`. **The check is required on `develop`** — a PR cannot be merged while it's red.
+`npm run lint` is also what CI runs on every pull request targeting `develop` or `main` (`.github/workflows/ci.yml`), for `app/`, `web/` and `server/`; for `web/`, CI also runs `npm run build`. **The check is required on `develop`** — a PR cannot be merged while it's red.
 
-**Pre-commit hook (Husky + lint-staged).** On every `git commit`, `.husky/pre-commit` runs `npx lint-staged`, which reads `app/.lintstagedrc.json` / `server/.lintstagedrc.json` and runs `eslint --fix` then `prettier --write` against **staged files only** — not the whole project, so it stays fast.
+**Pre-commit hook (Husky + lint-staged).** On every `git commit`, `.husky/pre-commit` runs `npx lint-staged`, which reads `app/.lintstagedrc.json` / `web/.lintstagedrc.json` / `server/.lintstagedrc.json` and runs `eslint --fix` then `prettier --write` against **staged files only** — not the whole project, so it stays fast.
 
 - Pure formatting issues (spacing, quotes, semicolons) are auto-fixed and silently re-staged — you won't see a rejection for those.
 - Real lint errors (e.g. `no-unused-vars`, a broken React Hooks rule) can't be auto-fixed. The commit is **aborted** and lint-staged prints the offending file(s) and rule(s).
@@ -339,3 +405,4 @@ Don't reach for `git commit --no-verify` to skip this — it only defers the sam
 4. **JavaScript only. No TypeScript.**
 5. **Never commit secrets.** `.env` is gitignored; `.env.example` gets the dummy values.
 6. Install React Native packages with `npx expo install`, not `npm install`, so versions match the SDK.
+7. In `web/`, install with `npm install`; `web/.npmrc` pins every dependency to an exact version.

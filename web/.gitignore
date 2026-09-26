@@ -1,0 +1,14 @@
+# dependencies
+node_modules/
+
+# Vite build output
+dist/
+
+# local env files (the root .gitignore also ignores .env and .env.*)
+*.local
+
+# debug
+npm-debug.*
+
+# macOS
+.DS_Store
