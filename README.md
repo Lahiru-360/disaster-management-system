@@ -39,52 +39,63 @@ Rubric deliverables (SRS, diagrams, test plan, report) are **not** in this repo 
 server/
 ├── src/
 │   ├── config/
-│   │   ├── env.js                          ONLY file that reads process.env
-│   │   └── db.js                           Mongoose connect + graceful shutdown
+│   │   ├── Config.js                       ONLY file that reads process.env (exports `env`)
+│   │   └── Database.js                     Mongoose connect + graceful shutdown
 │   │
-│   ├── models/
-│   │   ├── user.model.js                   email, passwordHash, role enum, isActive
-│   │   ├── refreshToken.model.js           token, user ref, expiresAt + TTL index
-│   │   └── passwordResetToken.model.js     single-use reset token, expiresAt + TTL index
+│   ├── models/                             thin: schema only, each class extends mongoose.Model
+│   │   ├── User.js                         email, passwordHash, role enum, isActive
+│   │   ├── ExpiringToken.js                abstract base: user ref + expiresAt TTL fields
+│   │   ├── RefreshToken.js                 token, user ref, expiresAt + TTL index
+│   │   └── PasswordResetToken.js           single-use reset token, expiresAt + TTL index
 │   │
-│   ├── routes/                             mounted under /api in app.js
-│   │   ├── health.routes.js
-│   │   ├── auth.routes.js
-│   │   └── upload.routes.js
+│   ├── routes/                             one BaseRoutes subclass per group, mounted by App
+│   │   ├── BaseRoutes.js                   abstract: mount path + Router, registerRoutes()
+│   │   ├── HealthRoutes.js
+│   │   ├── AuthRoutes.js
+│   │   └── UploadRoutes.js
 │   │
-│   ├── controllers/                        one per route file, same basename
-│   │   ├── health.controller.js
-│   │   ├── auth.controller.js              thin — no business logic
-│   │   └── upload.controller.js
+│   ├── controllers/                        one per route group
+│   │   ├── BaseController.js               binds handlers, forwards async errors
+│   │   ├── HealthController.js
+│   │   ├── AuthController.js               thin — no business logic
+│   │   └── UploadController.js
 │   │
 │   ├── services/                           business logic lives here, reusable + testable
-│   │   ├── auth.service.js                 hashing, credentials, change/reset password, deactivation
-│   │   ├── token.service.js                sign, verify, persist, revoke
-│   │   ├── email.service.js                Brevo transport (no-op by default)
-│   │   ├── email.templates.js              subject/html/text for each email
-│   │   └── storage.service.js              Supabase Storage uploads
+│   │   ├── AuthService.js                  hashing, credentials, change/reset password, deactivation
+│   │   ├── TokenService.js                 sign, verify, persist, revoke
+│   │   ├── EmailService.js                 sends through the configured transport
+│   │   ├── StorageService.js               Supabase Storage uploads
+│   │   └── email/
+│   │       ├── EmailTransport.js           abstract transport
+│   │       ├── NoopEmailTransport.js       default — records messages, sends nothing
+│   │       ├── BrevoEmailTransport.js      Brevo API (EMAIL_TRANSPORT=brevo)
+│   │       ├── EmailTemplate.js            abstract: render() → subject/html/text
+│   │       └── PasswordResetEmail.js
 │   │
-│   ├── validators/                         one per route file, same basename
-│   │   ├── auth.validator.js               Joi schemas
-│   │   └── upload.validator.js
+│   ├── validators/                         one per route group, Joi schemas as static members
+│   │   ├── AuthValidator.js
+│   │   └── UploadValidator.js
 │   │
 │   ├── middleware/
-│   │   ├── auth.middleware.js              requireAuth, optionalAuth, requireRole
-│   │   ├── errorHandler.js                 central handler, registered LAST
-│   │   ├── notFound.js                     JSON 404, not Express HTML
-│   │   ├── validate.middleware.js          runs a Joi schema, returns 400
-│   │   └── upload.middleware.js            multer, type/extension/size checks
+│   │   ├── AuthMiddleware.js               requireAuth, optionalAuth, requireRole
+│   │   ├── ErrorHandler.js                 JSON 404 + central error handler, registered LAST
+│   │   ├── RequestValidator.js             runs a Joi schema, returns 400
+│   │   └── FileUploadMiddleware.js         multer, type/extension/size checks
 │   │
 │   ├── utils/
-│   │   ├── asyncHandler.js                 wraps async handlers → error middleware
+│   │   ├── AsyncHandler.js                 wraps async handlers → error middleware
 │   │   ├── ApiError.js                     thrown by services, caught centrally
-│   │   └── response.js                     success/error envelope helpers
+│   │   └── ApiResponse.js                  success/error envelope helpers
 │   │
-│   ├── app.js                              Express assembly — exported, no listen()
-│   └── server.js                           imports app, binds port, connects DB
+│   ├── core/
+│   │   ├── App.js                          Express assembly — exports `app`, no listen()
+│   │   └── Server.js                       shutdown hooks, connects DB, binds port
+│   │
+│   └── server.js                           entry point: starts a Server
 │
 ├── scripts/
-│   └── seed.js                             idempotent, one user per role
+│   ├── seed.js                             entry point: runs DatabaseSeeder
+│   └── DatabaseSeeder.js                   idempotent, one user per role
 │
 ├── tests/
 │   ├── setup.js                            in-memory Mongo, reset between tests
@@ -120,11 +131,19 @@ Requests flow **route → validate → middleware → controller → service →
 | `middleware/` | Auth, role checks, validation, error handling | Talks to models directly (except `requireAuth` loading the user) |
 | `controllers/` | Reads `req`, calls a service, sends the response | Contains business logic, queries models, uses try/catch |
 | `services/` | Business logic, model queries, token work | Touches `req` or `res` |
-| `models/` | Schema, indexes, instance methods, `toJSON` transforms | Contains request-shaped logic |
+| `models/` | Schema, indexes, `toJSON` transforms | Contains business logic or request-shaped logic |
 
-**Controllers must not contain `try/catch`.** Wrap them in `asyncHandler` and throw `ApiError` from services — `errorHandler.js` catches everything.
+**Controllers must not contain `try/catch`.** Every controller extends `BaseController`, which wraps its handlers so anything thrown reaches `ErrorHandler`; services throw `ApiError`.
 
-**Every response goes through the envelope helpers in `utils/response.js`.** The React Native client is built against that shape; a hand-rolled response breaks it silently.
+**Every response goes through the envelope helpers in `utils/ApiResponse.js`.** The React Native client is built against that shape; a hand-rolled response breaks it silently.
+
+### Server class conventions
+
+- **One class per file, named after the class** (`AuthService.js` holds `AuthService`). The only non-class files are the entry scripts `src/server.js` and `scripts/seed.js`, which keep their paths so `npm start` and `npm run seed` never change.
+- **Classes with dependencies or state export the class and one shared instance**, named in camelCase (`AuthService` → `authService`). Dependencies are constructor parameters that default to those shared instances, so a test can pass its own.
+- **Stateless helpers use static members**: `ApiResponse`, `AsyncHandler`, `RequestValidator`, `ErrorHandler` and the validators.
+- **Every public controller method is a route handler.** `BaseController` binds and wraps all of them, so a helper a controller needs internally must be a `#private` method.
+- **Base classes:** `BaseController`, `BaseRoutes`, `ExpiringToken` (models), `EmailTransport` and `EmailTemplate`.
 
 ---
 
@@ -240,8 +259,8 @@ app/
 
 | Thing | Convention | Example |
 |---|---|---|
-| Server layer files | `<resource>.<layer>.js` | `auth.controller.js`, `token.service.js` |
-| Models | `<entity>.model.js`, singular | `user.model.js` |
+| Server classes | PascalCase, one class per file, `<Resource><Layer>.js` | `AuthController.js`, `TokenService.js` |
+| Models | PascalCase, singular | `User.js` |
 | React components | PascalCase, one per file | `Button.js`, `ScreenHeader.js` |
 | Screens | PascalCase + `Screen` suffix | `LoginScreen.js` |
 | Navigators | PascalCase + `Navigator` / `Stack` / `Tabs` | `RootNavigator.js`, `MainTabs.js` |
