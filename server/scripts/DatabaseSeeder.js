@@ -1,9 +1,10 @@
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
 import { env } from '../src/config/Config.js';
+import { Role } from '../src/enums/Role.js';
 import { User } from '../src/models/User.js';
 
-// Seeds one dev/test account per role. Safe to re-run: accounts are matched by
+// Seeds one demo account per role. Safe to re-run: accounts are matched by
 // email and only created when missing ($setOnInsert), so an existing one is
 // never duplicated or overwritten.
 export class DatabaseSeeder {
@@ -11,12 +12,26 @@ export class DatabaseSeeder {
 
   static #SALT_ROUNDS = 10;
 
-  // One account per role. Admin accounts can only be created here or by direct
-  // database access - public registration rejects role: "admin".
+  // One account per role. The mobile app's demo picker (app/src/constants/
+  // demoUsers.js) signs in as the field-role accounts; the officer accounts
+  // are for the web portal. Officer and rescue team accounts can only be
+  // created here or by direct database access - public registration only
+  // accepts self-registrable roles.
   static #USERS = [
-    { email: 'seeker@example.test', role: 'seeker' },
-    { email: 'business@example.test', role: 'business' },
-    { email: 'admin@example.test', role: 'admin' },
+    { name: 'Nimal Perera', email: 'citizen@example.test', role: Role.CITIZEN },
+    {
+      name: 'Kamala Fernando',
+      email: 'volunteer@example.test',
+      role: Role.COMMUNITY_VOLUNTEER,
+    },
+    { name: 'Suresh Bandara', email: 'rescue.lead@example.test', role: Role.RESCUE_TEAM_LEAD },
+    { name: 'Ruwan Jayasinghe', email: 'dmc.officer@example.test', role: Role.DMC_OFFICER },
+    { name: 'Kasun Silva', email: 'duty.officer@example.test', role: Role.DUTY_OFFICER },
+    {
+      name: 'Dilani Wickramasinghe',
+      email: 'district.officer@example.test',
+      role: Role.DISTRICT_OFFICER,
+    },
   ];
 
   async run() {
@@ -24,10 +39,10 @@ export class DatabaseSeeder {
 
     const passwordHash = await bcrypt.hash(DatabaseSeeder.#PASSWORD, DatabaseSeeder.#SALT_ROUNDS);
 
-    for (const { email, role } of DatabaseSeeder.#USERS) {
+    for (const { name, email, role } of DatabaseSeeder.#USERS) {
       await User.findOneAndUpdate(
         { email },
-        { $setOnInsert: { email, role, passwordHash } },
+        { $setOnInsert: { name, email, role, passwordHash } },
         { upsert: true, returnDocument: 'after' },
       );
       console.log(`Seeded ${role}: ${email}`);

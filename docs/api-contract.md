@@ -46,8 +46,9 @@ Every successful response — regardless of endpoint — returns the same outer 
   "data": {
     "user": {
       "id": "64f1a2b3c4d5e6f7a8b9c0d1",
-      "email": "seeker@example.test",
-      "role": "seeker",
+      "name": "Nimal Perera",
+      "email": "citizen@example.test",
+      "role": "citizen",
       "createdAt": "2026-08-01T09:15:00.000Z"
     }
   }
@@ -137,13 +138,27 @@ Creates a new user account.
 
 ```json
 {
-  "email": "seeker@example.test",
+  "name": "Nimal Perera",
+  "email": "citizen@example.test",
   "password": "Password123!",
-  "role": "seeker"
+  "role": "citizen"
 }
 ```
 
-`role` is one of `"seeker"`, `"business"`. (`"admin"` accounts are never created through this endpoint — see `server/README.md`.)
+`name` is required: trimmed, at most 100 characters.
+
+`role` must be one of the self-registrable roles, `"citizen"` or `"community_volunteer"`. Any other value — including the four seeded roles below — fails with `400 VALIDATION_ERROR` on `role`. Seeded accounts are created only by the seed script or by direct database access — see `server/README.md`.
+
+| Role | Created by | Client |
+|---|---|---|
+| `citizen` | This endpoint | Mobile app |
+| `community_volunteer` — a kind of citizen | This endpoint | Mobile app |
+| `rescue_team_lead` | Seed script | Mobile app |
+| `dmc_officer` | Seed script | Web portal |
+| `duty_officer` — a kind of DMC officer | Seed script | Web portal |
+| `district_officer` | Seed script | Web portal |
+
+The API doesn't check which client a request comes from — the Client column is where each role is meant to sign in. The mobile app stops officer roles, and any role it doesn't know, at a wrong-platform screen.
 
 **Success — `201 Created`**
 
@@ -153,8 +168,9 @@ Creates a new user account.
   "data": {
     "user": {
       "id": "64f1a2b3c4d5e6f7a8b9c0d1",
-      "email": "seeker@example.test",
-      "role": "seeker",
+      "name": "Nimal Perera",
+      "email": "citizen@example.test",
+      "role": "citizen",
       "createdAt": "2026-08-01T09:15:00.000Z"
     },
     "accessToken": "eyJhbGciOi...",
@@ -196,7 +212,7 @@ Creates a new user account.
 
 ```json
 {
-  "email": "seeker@example.test",
+  "email": "citizen@example.test",
   "password": "Password123!"
 }
 ```
@@ -209,8 +225,9 @@ Creates a new user account.
   "data": {
     "user": {
       "id": "64f1a2b3c4d5e6f7a8b9c0d1",
-      "email": "seeker@example.test",
-      "role": "seeker",
+      "name": "Nimal Perera",
+      "email": "citizen@example.test",
+      "role": "citizen",
       "createdAt": "2026-08-01T09:15:00.000Z"
     },
     "accessToken": "eyJhbGciOi...",
@@ -338,8 +355,9 @@ Returns the authenticated user. Requires `Authorization: Bearer <accessToken>`.
   "data": {
     "user": {
       "id": "64f1a2b3c4d5e6f7a8b9c0d1",
-      "email": "seeker@example.test",
-      "role": "seeker",
+      "name": "Nimal Perera",
+      "email": "citizen@example.test",
+      "role": "citizen",
       "createdAt": "2026-08-01T09:15:00.000Z"
     }
   }
@@ -451,7 +469,7 @@ Sets `isActive` to `false` and revokes every refresh token belonging to the user
 
 - **`requireAuth`** — rejects. No token, a malformed header, an expired token, an invalid/tampered token, a token whose user no longer exists, or a token whose user has since been deactivated each 401 with one of `AUTH_HEADER_MISSING`, `AUTH_HEADER_MALFORMED`, `TOKEN_EXPIRED`, `TOKEN_INVALID`. The deactivated case reuses `TOKEN_INVALID` rather than `ACCOUNT_DEACTIVATED` (§3) — that code is reserved for the login refusal (§5.2), and the user is reloaded from the database rather than trusted from the token's claim so this catches an access token minted before deactivation and still inside its expiry window. A valid token loads the user from the database and sets `req.user`. Used on every endpoint that requires a signed-in caller.
 - **`optionalAuth`** — never rejects. A valid token sets `req.user` exactly as `requireAuth` does. Every other case — no header, a malformed header, an expired token, an invalid/tampered token, or a token whose user no longer exists — leaves `req.user` undefined and calls `next()` with no error. For a public endpoint that wants to know who's asking without requiring anyone to be. No endpoint uses it yet; `server/tests/integration/auth.optional.test.js` covers it on a probe route.
-- **`requireRole(...roles)`** — placed after `requireAuth` or `optionalAuth`. Fails closed: `401 UNAUTHENTICATED` if `req.user` is absent, `403 FORBIDDEN` if `req.user.role` isn't in the allowed list.
+- **`requireRole(...roles)`** — placed after `requireAuth` or `optionalAuth`. Admits a listed role and every role that inherits from one: `requireRole('citizen')` also admits a `community_volunteer`, and `requireRole('dmc_officer')` also admits a `duty_officer` — never the other way round. Fails closed: `401 UNAUTHENTICATED` if `req.user` is absent, `403 FORBIDDEN` if the user's role is neither listed nor inherits from a listed role (including a role the server no longer knows). An unknown role name passed to `requireRole` throws when the route is declared.
 
 ### 5.9 Forgot password — `POST /api/auth/forgot-password`
 

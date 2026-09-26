@@ -5,9 +5,17 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import AuthShell from '../../components/ui/AuthShell';
 import Brand from '../../components/ui/Brand';
 import Button from '../../components/ui/Button';
+import Card from '../../components/ui/Card';
 import Notice from '../../components/ui/Notice';
+import SectionLabel from '../../components/ui/SectionLabel';
 import TextInput from '../../components/ui/TextInput';
+import { DEMO_PASSWORD, DEMO_USERS } from '../../constants/demoUsers';
+import { isMobileRole } from '../../constants/roles';
 import useAuth from '../../hooks/useAuth';
+
+// Only the field roles - officer accounts sign in on the web portal, and this
+// app would only show them the wrong-platform screen.
+const MOBILE_DEMO_USERS = DEMO_USERS.filter(({ role }) => isMobileRole(role));
 
 export default function LoginScreen() {
   const navigation = useNavigation();
@@ -40,14 +48,11 @@ export default function LoginScreen() {
     }
   }, [route.params?.passwordReset, navigation]);
 
-  const handleSubmit = async () => {
+  const signIn = async (credentials) => {
     setFormError('');
     setSubmitting(true);
     try {
-      await login({
-        email: email.trim().toLowerCase(),
-        password,
-      });
+      await login(credentials);
     } catch (error) {
       const apiError = error.response?.data?.error;
       setFormError(apiError?.message || 'Something went wrong. Please try again.');
@@ -55,6 +60,10 @@ export default function LoginScreen() {
       setSubmitting(false);
     }
   };
+
+  const handleSubmit = () => signIn({ email: email.trim().toLowerCase(), password });
+
+  const handleDemoSignIn = (demoUser) => signIn({ email: demoUser.email, password: DEMO_PASSWORD });
 
   return (
     <AuthShell
@@ -112,6 +121,24 @@ export default function LoginScreen() {
       <Button fullWidth trailingArrow onPress={handleSubmit} loading={submitting}>
         Log In
       </Button>
+
+      <SectionLabel className="mt-8">Demo accounts</SectionLabel>
+      <Text className="mt-1 text-[12.5px] text-muted">Tap an account to log in as it.</Text>
+      <View className="mt-3 gap-3">
+        {MOBILE_DEMO_USERS.map((demoUser) => (
+          <Card
+            key={demoUser.email}
+            onPress={submitting ? undefined : () => handleDemoSignIn(demoUser)}
+            className="flex-row items-center justify-between py-4"
+          >
+            <View className="flex-1">
+              <Text className="font-display text-title text-ink">{demoUser.label}</Text>
+              <Text className="mt-[5px] text-desc text-muted">{demoUser.email}</Text>
+            </View>
+            <Text className="text-[17px] font-semibold text-muted-dark">›</Text>
+          </Card>
+        ))}
+      </View>
 
       <View className="flex-1" />
 

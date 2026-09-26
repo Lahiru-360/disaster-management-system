@@ -1,3 +1,4 @@
+import { PersonFactory } from '../domain/people/PersonFactory.js';
 import { User } from '../models/User.js';
 import { tokenService as defaultTokenService } from '../services/TokenService.js';
 import { ApiError } from '../utils/ApiError.js';
@@ -86,13 +87,23 @@ export class AuthMiddleware {
     next();
   }
 
+  // Admits a user whose Person class is one of the named roles' classes or a
+  // subclass of one, so requireRole('citizen') also admits a
+  // CommunityVolunteer, but requireRole('community_volunteer') refuses a
+  // plain Citizen. The roles are resolved to classes here, when the route is
+  // declared, so an unknown role name throws at startup.
   requireRole(...roles) {
+    const allowedClasses = roles.map((role) => PersonFactory.classFor(role));
+
     return (req, res, next) => {
       if (!req.user) {
         throw new ApiError(401, 'UNAUTHENTICATED', 'You must be logged in to do this.');
       }
 
-      if (!roles.includes(req.user.role)) {
+      // null for a role no class stands for, which no allowed class admits.
+      const person = PersonFactory.fromUser(req.user);
+
+      if (!allowedClasses.some((PersonClass) => person instanceof PersonClass)) {
         throw new ApiError(403, 'FORBIDDEN', 'You do not have permission to perform this action.');
       }
 

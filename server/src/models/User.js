@@ -1,7 +1,13 @@
 import mongoose from 'mongoose';
+import { Role } from '../enums/Role.js';
 
 const userSchema = new mongoose.Schema(
   {
+    name: {
+      type: String,
+      required: true,
+      trim: true,
+    },
     email: {
       type: String,
       required: true,
@@ -15,7 +21,7 @@ const userSchema = new mongoose.Schema(
     },
     role: {
       type: String,
-      enum: ['seeker', 'business', 'admin'],
+      enum: Object.values(Role),
       required: true,
     },
     isActive: {
@@ -39,7 +45,9 @@ const userSchema = new mongoose.Schema(
 );
 
 // Kept thin on purpose: the schema above is the whole model, and what a user
-// can do (register, log in, change password, ...) lives in AuthService.
+// can do (register, log in, change password, ...) lives in AuthService. Every
+// role is stored here, flat; the role hierarchy is the Person classes in
+// domain/people, which PersonFactory.fromUser() maps a User onto.
 export class User extends mongoose.Model {}
 
 // Registered through the connection: given a class, Mongoose 9's mongoose.model() keys

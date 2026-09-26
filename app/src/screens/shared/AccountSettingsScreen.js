@@ -10,15 +10,11 @@ import Loader from '../../components/ui/Loader';
 import Notice from '../../components/ui/Notice';
 import ScreenHeader from '../../components/ui/ScreenHeader';
 import SectionLabel from '../../components/ui/SectionLabel';
+import { roleLabel } from '../../constants/roles';
 import useAuth from '../../hooks/useAuth';
 import { formatShortDate } from '../../utils/format';
 
 const STATUS = { LOADING: 'loading', READY: 'ready', ERROR: 'error' };
-
-const ROLE_LABELS = {
-  seeker: 'Job Seeker',
-  business: 'Business',
-};
 
 function Divider() {
   return <View className="h-px bg-line" />;
@@ -139,9 +135,11 @@ export default function AccountSettingsScreen() {
 
         <SectionLabel>Account details</SectionLabel>
         <View className="mt-2">
+          <FactRow label="Name" value={user?.name} />
+          <Divider />
           <FactRow label="Email" value={user?.email} />
           <Divider />
-          <FactRow label="Role" value={ROLE_LABELS[user?.role]} trailing="Permanent" />
+          <FactRow label="Role" value={roleLabel(user?.role)} trailing="Permanent" />
           <Divider />
           <FactRow
             label="Member since"

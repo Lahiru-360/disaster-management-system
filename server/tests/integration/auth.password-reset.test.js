@@ -9,10 +9,10 @@ import { emailService } from '../../src/services/EmailService.js';
 const validPassword = 'Password123!';
 const newValidPassword = 'NewPassword456!';
 
-const registerSeeker = async (email) => {
+const registerCitizen = async (email) => {
   const res = await request(app)
     .post('/api/auth/register')
-    .send({ email, password: validPassword, role: 'seeker' });
+    .send({ name: 'Test Citizen', email, password: validPassword, role: 'citizen' });
 
   return { accessToken: res.body.data.accessToken, userId: res.body.data.user.id };
 };
@@ -36,10 +36,10 @@ const extractResetToken = () => {
 describe('POST /api/auth/forgot-password — anti-enumeration', () => {
   it('returns an identical 200 response for a known, an unknown and a deactivated address', async () => {
     const email = 'forgot-known@example.com';
-    await registerSeeker(email);
+    await registerCitizen(email);
 
     const deactivatedEmail = 'forgot-deactivated@example.com';
-    await registerSeeker(deactivatedEmail);
+    await registerCitizen(deactivatedEmail);
     await User.updateOne({ email: deactivatedEmail }, { isActive: false });
 
     const knownRes = await forgotPassword(email);
@@ -69,10 +69,10 @@ describe('POST /api/auth/forgot-password — email recorded only for a known act
 
   it('records exactly one email, for the known active address', async () => {
     const email = 'forgot-email-known@example.com';
-    await registerSeeker(email);
+    await registerCitizen(email);
 
     const deactivatedEmail = 'forgot-email-deactivated@example.com';
-    await registerSeeker(deactivatedEmail);
+    await registerCitizen(deactivatedEmail);
     await User.updateOne({ email: deactivatedEmail }, { isActive: false });
 
     await forgotPassword(email);
@@ -91,7 +91,7 @@ describe('password reset flow', () => {
 
   it('resets the password, then lets the new password sign in and the old one fail', async () => {
     const email = 'reset-happy@example.com';
-    await registerSeeker(email);
+    await registerCitizen(email);
     await forgotPassword(email);
     const token = extractResetToken();
 
@@ -109,7 +109,7 @@ describe('password reset flow', () => {
 
   it('revokes every refresh token for the account on a successful reset', async () => {
     const email = 'reset-revokes-sessions@example.com';
-    const { userId } = await registerSeeker(email);
+    const { userId } = await registerCitizen(email);
     await login(email, validPassword);
     expect(await RefreshToken.countDocuments({ user: userId })).toBe(2);
 
@@ -122,7 +122,7 @@ describe('password reset flow', () => {
 
   it('refuses the same token on a second use with 400 RESET_TOKEN_INVALID', async () => {
     const email = 'reset-single-use@example.com';
-    await registerSeeker(email);
+    await registerCitizen(email);
     await forgotPassword(email);
     const token = extractResetToken();
 
@@ -136,7 +136,7 @@ describe('password reset flow', () => {
 
   it('refuses an expired token with 400 RESET_TOKEN_INVALID', async () => {
     const email = 'reset-expired@example.com';
-    await registerSeeker(email);
+    await registerCitizen(email);
     await forgotPassword(email);
     const token = extractResetToken();
 
@@ -160,7 +160,7 @@ describe('password reset flow', () => {
 
   it('refuses a newPassword below the registration minimum length with 400 and a field error', async () => {
     const email = 'reset-short-password@example.com';
-    await registerSeeker(email);
+    await registerCitizen(email);
     await forgotPassword(email);
     const token = extractResetToken();
 

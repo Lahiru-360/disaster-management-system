@@ -18,8 +18,8 @@ disaster-management-system/
 ├── docs/
 │   └── api-contract.md                     THE contract — read before any endpoint
 │
-├── app/                                    Expo React Native client
-├── server/                                 Express + MongoDB API
+├── app/                                    Expo React Native client — field roles
+├── server/                                 Express + MongoDB API — every role
 │
 ├── .gitattributes
 ├── .gitignore
@@ -30,6 +30,15 @@ disaster-management-system/
 ```
 
 Rubric deliverables (SRS, diagrams, test plan, report) are **not** in this repo by decision — Lahiru manages those separately.
+
+**Planned: an officer web portal in `web/`.** A separate React web app for the officer roles is planned as a later task; the folder doesn't exist yet. Each role signs in on one client:
+
+| Client | Roles |
+|---|---|
+| `app/` (mobile) | `citizen`, `community_volunteer`, `rescue_team_lead` |
+| `web/` (planned) | `dmc_officer`, `duty_officer`, `district_officer` |
+
+The mobile app stops officer accounts at a "use the web portal" screen. The server serves every role; roles and their hierarchy are described in `server/README.md`.
 
 ---
 
@@ -42,8 +51,22 @@ server/
 │   │   ├── Config.js                       ONLY file that reads process.env (exports `env`)
 │   │   └── Database.js                     Mongoose connect + graceful shutdown
 │   │
+│   ├── enums/                              frozen string enums shared across layers
+│   │   └── Role.js                         the six role values
+│   │
+│   ├── domain/                             plain classes from the design — no Mongoose, no req/res
+│   │   └── people/                         one class per role; `extends` is the role hierarchy
+│   │       ├── Person.js                   abstract base: name, phone, nic
+│   │       ├── Citizen.js                  self-registrable
+│   │       ├── CommunityVolunteer.js       extends Citizen, trainingLevel
+│   │       ├── DMCOfficer.js
+│   │       ├── DutyOfficer.js              extends DMCOfficer, shiftDistrict
+│   │       ├── DistrictOfficer.js          district
+│   │       ├── RescueTeamLead.js
+│   │       └── PersonFactory.js            role string → class, User → Person
+│   │
 │   ├── models/                             thin: schema only, each class extends mongoose.Model
-│   │   ├── User.js                         email, passwordHash, role enum, isActive
+│   │   ├── User.js                         name, email, passwordHash, role enum, isActive
 │   │   ├── ExpiringToken.js                abstract base: user ref + expiresAt TTL fields
 │   │   ├── RefreshToken.js                 token, user ref, expiresAt + TTL index
 │   │   └── PasswordResetToken.js           single-use reset token, expiresAt + TTL index
@@ -95,7 +118,7 @@ server/
 │
 ├── scripts/
 │   ├── seed.js                             entry point: runs DatabaseSeeder
-│   └── DatabaseSeeder.js                   idempotent, one user per role
+│   └── DatabaseSeeder.js                   idempotent, one demo account per role
 │
 ├── tests/
 │   ├── setup.js                            in-memory Mongo, reset between tests
@@ -111,7 +134,8 @@ server/
 │   │   ├── auth.rbac.test.js
 │   │   └── upload.create.test.js
 │   └── unit/
-│       └── email.service.test.js
+│       ├── email.service.test.js
+│       └── people.test.js                  Person hierarchy + PersonFactory
 │
 ├── .env.example                            every var, dummy values, committed
 ├── .lintstagedrc.json
@@ -132,6 +156,8 @@ Requests flow **route → validate → middleware → controller → service →
 | `controllers/` | Reads `req`, calls a service, sends the response | Contains business logic, queries models, uses try/catch |
 | `services/` | Business logic, model queries, token work | Touches `req` or `res` |
 | `models/` | Schema, indexes, `toJSON` transforms | Contains business logic or request-shaped logic |
+| `domain/` | The design's classes (the `Person` role hierarchy); used by middleware, validators and services | Imports Mongoose or the models, touches `req` or `res` |
+| `enums/` | Frozen string values shared across layers (`Role`) | Contains logic |
 
 **Controllers must not contain `try/catch`.** Every controller extends `BaseController`, which wraps its handlers so anything thrown reaches `ErrorHandler`; services throw `ApiError`.
 
@@ -139,11 +165,11 @@ Requests flow **route → validate → middleware → controller → service →
 
 ### Server class conventions
 
-- **One class per file, named after the class** (`AuthService.js` holds `AuthService`). The only non-class files are the entry scripts `src/server.js` and `scripts/seed.js`, which keep their paths so `npm start` and `npm run seed` never change.
+- **One class per file, named after the class** (`AuthService.js` holds `AuthService`). The only non-class files are the entry scripts `src/server.js` and `scripts/seed.js`, which keep their paths so `npm start` and `npm run seed` never change, and the frozen enums in `src/enums/`.
 - **Classes with dependencies or state export the class and one shared instance**, named in camelCase (`AuthService` → `authService`). Dependencies are constructor parameters that default to those shared instances, so a test can pass its own.
 - **Stateless helpers use static members**: `ApiResponse`, `AsyncHandler`, `RequestValidator`, `ErrorHandler` and the validators.
 - **Every public controller method is a route handler.** `BaseController` binds and wraps all of them, so a helper a controller needs internally must be a `#private` method.
-- **Base classes:** `BaseController`, `BaseRoutes`, `ExpiringToken` (models), `EmailTransport` and `EmailTemplate`.
+- **Base classes:** `BaseController`, `BaseRoutes`, `ExpiringToken` (models), `EmailTransport`, `EmailTemplate` and `Person` (domain).
 
 ---
 
@@ -192,17 +218,18 @@ app/
 │   │   │   ├── LoginScreen.js
 │   │   │   ├── ForgotPasswordScreen.js
 │   │   │   └── ResetPasswordScreen.js
-│   │   ├── shared/                         every signed-in role
+│   │   ├── shared/                         every signed-in field role
 │   │   │   ├── HomeScreen.js               placeholder landing screen
 │   │   │   ├── AccountSettingsScreen.js
-│   │   │   └── ChangePasswordScreen.js
+│   │   │   ├── ChangePasswordScreen.js
+│   │   │   └── WrongPlatformScreen.js      officer / unknown roles stop here, with Log out
 │   │   └── dev/
 │   │       └── ComponentDemoScreen.js      dev only, excluded from prod nav
 │   │
 │   ├── navigation/
-│   │   ├── RootNavigator.js                conditional render, NOT navigation
+│   │   ├── RootNavigator.js                conditional render, NOT navigation; gates non-field roles
 │   │   ├── AuthStack.js
-│   │   ├── MainTabs.js                     bottom tabs, one navigator for every role
+│   │   ├── MainTabs.js                     bottom tabs, one navigator for every field role
 │   │   ├── tabBarTheme.js                  shared tab bar colours
 │   │   └── navigationRef.js
 │   │
@@ -215,7 +242,9 @@ app/
 │   │   └── useHeroScroll.js                scroll state for HeroHeader screens
 │   │
 │   ├── constants/
-│   │   └── config.js                       APP_NAME; ONLY file reading EXPO_PUBLIC_* vars
+│   │   ├── config.js                       APP_NAME; ONLY file reading EXPO_PUBLIC_* vars
+│   │   ├── roles.js                        role values, labels, mobile/web platform per role
+│   │   └── demoUsers.js                    demo accounts: login picker + mock API users
 │   │
 │   └── utils/
 │       ├── validation.js                   client-side form rules

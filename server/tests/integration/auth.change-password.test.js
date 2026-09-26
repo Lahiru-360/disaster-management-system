@@ -6,10 +6,10 @@ import { env } from '../../src/config/Config.js';
 const validPassword = 'Password123!';
 const newValidPassword = 'NewPassword456!';
 
-const registerSeeker = async (email) => {
+const registerCitizen = async (email) => {
   const res = await request(app)
     .post('/api/auth/register')
-    .send({ email, password: validPassword, role: 'seeker' });
+    .send({ name: 'Test Citizen', email, password: validPassword, role: 'citizen' });
 
   return res.body.data;
 };
@@ -36,7 +36,7 @@ const signExpiredAccessToken = (user) =>
 describe('POST /api/auth/change-password — happy path', () => {
   it('accepts the correct current password and a valid new one, then lets the new password sign in and the old one fail', async () => {
     const email = 'change-password-happy@example.com';
-    const { accessToken } = await registerSeeker(email);
+    const { accessToken } = await registerCitizen(email);
 
     const res = await changePassword(accessToken, {
       currentPassword: validPassword,
@@ -58,7 +58,7 @@ describe('POST /api/auth/change-password — happy path', () => {
 describe('POST /api/auth/change-password — wrong current password', () => {
   it('refuses with 401 INVALID_CURRENT_PASSWORD and leaves the stored hash unchanged', async () => {
     const email = 'change-password-wrong-current@example.com';
-    const { accessToken } = await registerSeeker(email);
+    const { accessToken } = await registerCitizen(email);
 
     const res = await changePassword(accessToken, {
       currentPassword: 'NotTheRealPassword1!',
@@ -75,7 +75,7 @@ describe('POST /api/auth/change-password — wrong current password', () => {
 
 describe('POST /api/auth/change-password — validation', () => {
   it('refuses a new password below the registration minimum length with 400 and a field error', async () => {
-    const { accessToken } = await registerSeeker('change-password-too-short@example.com');
+    const { accessToken } = await registerCitizen('change-password-too-short@example.com');
 
     const res = await changePassword(accessToken, {
       currentPassword: validPassword,
@@ -90,7 +90,7 @@ describe('POST /api/auth/change-password — validation', () => {
   });
 
   it('refuses a missing field with 400 and a field error', async () => {
-    const { accessToken } = await registerSeeker('change-password-missing-field@example.com');
+    const { accessToken } = await registerCitizen('change-password-missing-field@example.com');
 
     const res = await changePassword(accessToken, { newPassword: newValidPassword });
 
@@ -102,7 +102,7 @@ describe('POST /api/auth/change-password — validation', () => {
   });
 
   it('refuses a new password identical to the current one with 400 PASSWORD_UNCHANGED', async () => {
-    const { accessToken } = await registerSeeker('change-password-unchanged@example.com');
+    const { accessToken } = await registerCitizen('change-password-unchanged@example.com');
 
     const res = await changePassword(accessToken, {
       currentPassword: validPassword,
@@ -117,7 +117,7 @@ describe('POST /api/auth/change-password — validation', () => {
 describe('POST /api/auth/change-password — other-session revocation', () => {
   it('revokes every other refresh token while the acting device keeps its session', async () => {
     const email = 'change-password-revocation@example.com';
-    const { accessToken: firstAccessToken } = await registerSeeker(email);
+    const { accessToken: firstAccessToken } = await registerCitizen(email);
 
     const secondLoginRes = await login(email, validPassword);
     const secondRefreshToken = secondLoginRes.body.data.refreshToken;
@@ -160,7 +160,7 @@ describe('POST /api/auth/change-password — access token failures', () => {
   });
 
   it('rejects an expired access token with 401 and the expiry-specific error code', async () => {
-    const { user } = await registerSeeker('change-password-expired-token@example.com');
+    const { user } = await registerCitizen('change-password-expired-token@example.com');
     const expiredToken = signExpiredAccessToken(user);
 
     const res = await changePassword(expiredToken, {

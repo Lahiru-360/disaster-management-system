@@ -6,9 +6,10 @@ const registeredEmail = 'login-user@example.com';
 
 const registerUser = () =>
   request(app).post('/api/auth/register').send({
+    name: 'Test Citizen',
     email: registeredEmail,
     password: validPassword,
-    role: 'seeker',
+    role: 'citizen',
   });
 
 describe('POST /api/auth/login', () => {

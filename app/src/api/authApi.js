@@ -10,8 +10,8 @@
 
 import client from './client';
 
-async function register({ email, password, role }) {
-  const response = await client.post('/auth/register', { email, password, role });
+async function register({ name, email, password, role }) {
+  const response = await client.post('/auth/register', { name, email, password, role });
   return response.data.data;
 }
 

@@ -28,12 +28,12 @@ export class AuthService {
     this.#emailService = emailService;
   }
 
-  async register({ email, password, role }) {
+  async register({ name, email, password, role }) {
     const passwordHash = await bcrypt.hash(password, AuthService.#SALT_ROUNDS);
 
     let user;
     try {
-      user = await User.create({ email, passwordHash, role });
+      user = await User.create({ name, email, passwordHash, role });
     } catch (err) {
       if (err.code === 11000) {
         throw new ApiError(

@@ -20,7 +20,7 @@ This is where express code exists (Back-end)
 1. Add a `*.test.js` file under `tests/integration/` (or a new subfolder if it's a different area of the API).
 2. Import the app with `import { app } from '../../src/core/App.js'` — never `src/server.js`. `server.js` starts a `Server`, which connects to the database and calls `app.listen`, leaving the process hanging after the suite finishes; Supertest binds its own ephemeral port from the `app` instance directly.
 3. Drive the endpoint with `supertest`, e.g. `await request(app).post('/api/auth/login').send({ ... })`, and assert on `res.status` / `res.body`.
-4. If the test needs a user that can't be created through the public API (e.g. an `admin`), create it directly with the Mongoose model (`User.create(...)`) — the same restriction applies in tests as in production, so this is the intended workaround, not a hack.
+4. If the test needs a user that can't be created through the public API (any seeded role, e.g. a `dmc_officer`), create it directly with the Mongoose model (`User.create(...)`) — the same restriction applies in tests as in production, so this is the intended workaround, not a hack.
 5. To simulate an expired token, sign one directly with `jsonwebtoken` using a negative `expiresIn` instead of waiting for a real token to expire (see `auth.tokens.test.js`).
 6. Run `npm test` to confirm it passes, then check it also passes with `node --experimental-vm-modules node_modules/jest/bin/jest.js --randomize` if it depends on data another test might create, to make sure ordering isn't accidentally required.
 
@@ -40,28 +40,57 @@ In the dashboard, go to **Environment** in the left sidebar, add the key/value p
 
 This is a free-tier instance, so it sleeps after periods of inactivity. The first request after a quiet period can take several seconds to respond while the instance spins back up — this is expected, not a bug.
 
-## Seeding test data
+## Seeding demo accounts
 
-`npm run seed` creates one test user per role against the shared cluster. It is idempotent — an existing user (matched by email) is left untouched, so running it repeatedly never creates duplicates.
+`npm run seed` creates one demo account per role against the shared cluster, all with the password `Password123!`. It is idempotent — an existing user (matched by email) is left untouched, so running it repeatedly never creates duplicates.
 
-| Role     | Email                 | Password     |
-| -------- | --------------------- | ------------ |
-| seeker   | seeker@example.test   | Password123! |
-| business | business@example.test | Password123! |
-| admin    | admin@example.test    | Password123! |
+| Role                  | Name                  | Email                         | Client     |
+| --------------------- | --------------------- | ----------------------------- | ---------- |
+| `citizen`             | Nimal Perera          | citizen@example.test          | Mobile app |
+| `community_volunteer` | Kamala Fernando       | volunteer@example.test        | Mobile app |
+| `rescue_team_lead`    | Suresh Bandara        | rescue.lead@example.test      | Mobile app |
+| `dmc_officer`         | Ruwan Jayasinghe      | dmc.officer@example.test      | Web portal |
+| `duty_officer`        | Kasun Silva           | duty.officer@example.test     | Web portal |
+| `district_officer`    | Dilani Wickramasinghe | district.officer@example.test | Web portal |
 
-These are dev/test-only credentials for the shared cluster, not real accounts. `admin` is only ever created this way or by direct database access — never through public registration.
+These are dev/test-only credentials for the shared cluster, not real accounts. Only `citizen` and `community_volunteer` can register through the public API; the other four roles are only ever created this way or by direct database access.
+
+The mobile app's login screen has a one-tap picker for the three mobile accounts, driven by `app/src/constants/demoUsers.js`. Keep that list and `scripts/DatabaseSeeder.js` in step.
+
+Seeding never removes anything, so an account whose role is no longer in `Role` stays in the cluster until someone deletes it. Every `requireRole` check refuses it with `403`.
+
+## Roles and the Person classes
+
+Every account is one `User` document (the model stays flat) with a `role` string from `src/enums/Role.js`. The role hierarchy is the class hierarchy in `src/domain/people/`:
+
+```
+Person (abstract)            name, phone, nic
+├── Citizen                  citizen — self-registrable
+│   └── CommunityVolunteer   community_volunteer — trainingLevel
+├── DMCOfficer               dmc_officer
+│   └── DutyOfficer          duty_officer — shiftDistrict
+├── DistrictOfficer          district_officer — district
+└── RescueTeamLead           rescue_team_lead
+```
+
+- Each class names its role in `static role`. A subclass has everything its parent is allowed because it _is_ an instance of the parent — that is the only statement of the hierarchy.
+- `PersonFactory` maps a role string to its class (`classFor`) and a `User` document to a `Person` (`fromUser`). It holds only the list of classes, so there is no separate parent map to keep in step with them.
+- `static selfRegistrable` marks the roles public registration accepts. `Citizen` sets it and `CommunityVolunteer` inherits it; `AuthValidator` reads the list from `PersonFactory.selfRegistrableRoles()`.
+- Only `name` is stored in the database today. `phone`, `nic`, `trainingLevel`, `shiftDistrict` and `district` exist on the classes but not in `User`, so they are `undefined` on a `Person` built by `fromUser`. `district` and `shiftDistrict` are plain district names until the shared `District` class exists.
+- To add a role: add its value to `Role`, write its class extending whichever role it specialises, and add the class to `PersonFactory`'s list. `tests/unit/people.test.js` fails if a `Role` value has no class, or two classes claim the same role.
 
 ## Auth middleware — protecting a route
 
-`requireAuth` and `requireRole` are methods of the shared `authMiddleware` instance in `src/middleware/AuthMiddleware.js`; they are bound to it, so pass them to a route directly. `requireAuth` verifies the bearer token, loads the user from the database, and attaches it to `req.user`. `requireRole` is a factory that must run **after** `requireAuth` — it checks `req.user.role` against the roles you pass in.
+`requireAuth` and `requireRole` are methods of the shared `authMiddleware` instance in `src/middleware/AuthMiddleware.js`; they are bound to it, so pass them to a route directly. `requireAuth` verifies the bearer token, loads the user from the database, and attaches it to `req.user`. `requireRole` is a factory that must run **after** `requireAuth` — it builds the user's `Person` with `PersonFactory.fromUser` and admits them if it is an `instanceof` any of the listed roles' classes.
 
 - `requireAuth` alone → any authenticated user, any role.
-- `requireAuth` + `requireRole("business")` → businesses only.
-- `requireAuth` + `requireRole("business", "admin")` → either role.
+- `requireAuth` + `requireRole(Role.CITIZEN)` → citizens **and** community volunteers (a `CommunityVolunteer` is a `Citizen`).
+- `requireAuth` + `requireRole(Role.COMMUNITY_VOLUNTEER)` → community volunteers only; a plain citizen gets `403`.
+- `requireAuth` + `requireRole(Role.DISTRICT_OFFICER, Role.DMC_OFFICER)` → district officers, DMC officers and duty officers.
 - `requireRole` used without `requireAuth` first fails closed with `401 UNAUTHENTICATED` — it never trusts a missing `req.user`.
+- An unknown role name, e.g. `requireRole('typo')`, throws when the route is declared, so the server fails at startup rather than on the first request.
 
-Routes are declared inside a routes class's `registerRoutes(router)` (see `src/routes/AuthRoutes.js`), with `authMiddleware` imported from `'../middleware/AuthMiddleware.js'`.
+Routes are declared inside a routes class's `registerRoutes(router)` (see `src/routes/AuthRoutes.js`), with `authMiddleware` imported from `'../middleware/AuthMiddleware.js'` and `Role` from `'../enums/Role.js'`.
 
 **Any authenticated user:**
 
@@ -69,25 +98,25 @@ Routes are declared inside a routes class's `registerRoutes(router)` (see `src/r
 router.get('/me', authMiddleware.requireAuth, authController.me);
 ```
 
-**Business-only route:**
+**Citizen route (community volunteers included):**
 
 ```js
 router.post(
-  '/items',
+  '/hazard-reports',
   authMiddleware.requireAuth,
-  authMiddleware.requireRole('business'),
-  itemController.create,
+  authMiddleware.requireRole(Role.CITIZEN),
+  hazardReportController.create,
 );
 ```
 
-**Admin-only route:**
+**DMC officer route (duty officers included):**
 
 ```js
 router.post(
-  '/businesses/:id/verify',
+  '/warnings',
   authMiddleware.requireAuth,
-  authMiddleware.requireRole('admin'),
-  businessController.verify,
+  authMiddleware.requireRole(Role.DMC_OFFICER),
+  warningController.issue,
 );
 ```
 
@@ -100,7 +129,7 @@ router.post(
 | `TOKEN_INVALID`         | Bad signature, malformed JWT, or user no longer exists |
 | `TOKEN_EXPIRED`         | Token signature is valid but it has expired            |
 
-`requireRole` responds `401 UNAUTHENTICATED` if reached with no `req.user`, and `403 FORBIDDEN` if the user's role isn't allowed.
+`requireRole` responds `401 UNAUTHENTICATED` if reached with no `req.user`, and `403 FORBIDDEN` if the user's role is neither listed nor a subclass of a listed role — including a role that has no class at all.
 
 ## Schema conventions
 
@@ -118,7 +147,7 @@ Follow this pattern for every new model.
 
 - Enable `timestamps: true` on every schema (adds `createdAt`/`updatedAt`) unless there's a specific reason not to.
 - References between collections are `mongoose.Schema.Types.ObjectId` with a `ref`, never embedded copies — this keeps `.populate()` consistent across features.
-- Enum fields (like `role`) use a fixed `enum` array, not a free string, so invalid values are rejected at the schema level.
+- Enum fields (like `role`) take a fixed `enum` array, not a free string, so invalid values are rejected at the schema level. Take the values from a frozen enum in `src/enums/` (e.g. `enum: Object.values(Role)`) rather than repeating the strings.
 - Never store secrets (passwords, tokens) in plaintext — only their hash, and only in fields explicitly named for it (e.g. `passwordHash`).
 
 **Indexes**

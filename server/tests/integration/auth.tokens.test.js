@@ -7,9 +7,10 @@ const validPassword = 'Password123!';
 
 const registerUser = (email) =>
   request(app).post('/api/auth/register').send({
+    name: 'Test Citizen',
     email,
     password: validPassword,
-    role: 'seeker',
+    role: 'citizen',
   });
 
 const signExpiredAccessToken = (user) =>

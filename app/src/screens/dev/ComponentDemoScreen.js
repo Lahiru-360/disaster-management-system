@@ -113,12 +113,12 @@ function CardSection() {
 
       <Section title="Card - selectable">
         <Card
-          title="I'm looking for work"
+          title="I'm a member of the public"
           description="A short description of what this option means."
           onPress={() => {}}
         />
         <Card
-          title="I'm hiring"
+          title="I'm a community volunteer"
           description="A selected card, with its description underneath."
           selected
           onPress={() => {}}
@@ -244,7 +244,7 @@ function AuthPrimitivesSection() {
       <ProgressPips total={4} current={2} caption />
       <Notice>A notice gives short, helpful context about the step you&apos;re on.</Notice>
       <Notice variant="error">Something went wrong. Please try again.</Notice>
-      <RoleStrip value="I'm looking for work" onAction={() => {}} />
+      <RoleStrip value="Citizen" onAction={() => {}} />
     </Section>
   );
 }
@@ -384,9 +384,7 @@ function HeroHeaderSection() {
         >
           <HeroHeader>
             <Text className="text-center font-display text-[22px] text-paper">Ashan Perera</Text>
-            <Text className="mt-1 text-center text-[13px] text-muted-dark">
-              Job Seeker · Colombo
-            </Text>
+            <Text className="mt-1 text-center text-[13px] text-muted-dark">Citizen · Colombo</Text>
           </HeroHeader>
           <HeroSheet>
             <View className="gap-3 px-5 py-6">

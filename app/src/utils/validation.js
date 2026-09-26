@@ -1,5 +1,6 @@
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MIN_PASSWORD_LENGTH = 8;
+const MAX_NAME_LENGTH = 100;
 
 export function isValidEmail(email) {
   return EMAIL_RE.test((email || '').trim());
@@ -33,8 +34,15 @@ export function getPasswordStrength(password) {
   return { level: 'strong', filledBars: 3, label: 'Strong password' };
 }
 
-export function validateSignUpForm({ email, password, confirmPassword }) {
+export function validateSignUpForm({ name, email, password, confirmPassword }) {
   const errors = {};
+
+  const trimmedName = (name || '').trim();
+  if (!trimmedName) {
+    errors.name = 'Enter your full name.';
+  } else if (trimmedName.length > MAX_NAME_LENGTH) {
+    errors.name = `Name must be ${MAX_NAME_LENGTH} characters or fewer.`;
+  }
 
   if (!isValidEmail(email)) {
     errors.email = 'Enter a valid email address.';

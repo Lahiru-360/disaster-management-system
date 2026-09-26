@@ -24,11 +24,12 @@ const { app } = await import('../../src/core/App.js');
 
 const validPassword = 'Password123!';
 
-const registerSeeker = async (email) => {
+const registerCitizen = async (email) => {
   const res = await request(app).post('/api/auth/register').send({
+    name: 'Test Citizen',
     email,
     password: validPassword,
-    role: 'seeker',
+    role: 'citizen',
   });
 
   return { accessToken: res.body.data.accessToken, userId: res.body.data.user.id };
@@ -58,12 +59,12 @@ describe('POST /api/uploads', () => {
   });
 
   it('rejects a file over the 5MB limit with 400 naming the limit', async () => {
-    const seeker = await registerSeeker('upload-too-large@example.com');
+    const citizen = await registerCitizen('upload-too-large@example.com');
     const oversized = Buffer.alloc(5 * 1024 * 1024 + 1, 'a');
 
     const res = await request(app)
       .post('/api/uploads')
-      .set('Authorization', `Bearer ${seeker.accessToken}`)
+      .set('Authorization', `Bearer ${citizen.accessToken}`)
       .field('folder', 'avatars')
       .attach('file', oversized, { filename: 'big.png', contentType: 'image/png' });
 
@@ -73,11 +74,11 @@ describe('POST /api/uploads', () => {
   });
 
   it('rejects a folder outside the closed allow-list with 400 naming the field', async () => {
-    const seeker = await registerSeeker('upload-bad-folder@example.com');
+    const citizen = await registerCitizen('upload-bad-folder@example.com');
 
     const res = await request(app)
       .post('/api/uploads')
-      .set('Authorization', `Bearer ${seeker.accessToken}`)
+      .set('Authorization', `Bearer ${citizen.accessToken}`)
       .field('folder', 'not-a-real-folder')
       .attach('file', Buffer.from('fake-image'), {
         filename: 'photo.png',
@@ -92,11 +93,11 @@ describe('POST /api/uploads', () => {
 
   describe('MIME type / extension mismatch, both directions', () => {
     it('rejects a PNG renamed to .pdf', async () => {
-      const seeker = await registerSeeker('upload-mismatch-png-as-pdf@example.com');
+      const citizen = await registerCitizen('upload-mismatch-png-as-pdf@example.com');
 
       const res = await request(app)
         .post('/api/uploads')
-        .set('Authorization', `Bearer ${seeker.accessToken}`)
+        .set('Authorization', `Bearer ${citizen.accessToken}`)
         .field('folder', 'avatars')
         .attach('file', Buffer.from('fake-image'), PNG_MISMATCHED_AS_PDF);
 
@@ -105,11 +106,11 @@ describe('POST /api/uploads', () => {
     });
 
     it('rejects a PDF renamed to .png', async () => {
-      const seeker = await registerSeeker('upload-mismatch-pdf-as-png@example.com');
+      const citizen = await registerCitizen('upload-mismatch-pdf-as-png@example.com');
 
       const res = await request(app)
         .post('/api/uploads')
-        .set('Authorization', `Bearer ${seeker.accessToken}`)
+        .set('Authorization', `Bearer ${citizen.accessToken}`)
         .field('folder', 'avatars')
         .attach('file', Buffer.from('fake-document'), PDF_MISMATCHED_AS_PNG);
 
@@ -119,12 +120,12 @@ describe('POST /api/uploads', () => {
   });
 
   it('surfaces a storage failure as 502 STORAGE_UNAVAILABLE, never a bare 500', async () => {
-    const seeker = await registerSeeker('upload-storage-down@example.com');
+    const citizen = await registerCitizen('upload-storage-down@example.com');
     mockUpload.mockRejectedValueOnce(new Error('network down'));
 
     const res = await request(app)
       .post('/api/uploads')
-      .set('Authorization', `Bearer ${seeker.accessToken}`)
+      .set('Authorization', `Bearer ${citizen.accessToken}`)
       .field('folder', 'avatars')
       .attach('file', Buffer.from('fake-image'), {
         filename: 'photo.png',
@@ -136,11 +137,11 @@ describe('POST /api/uploads', () => {
   });
 
   it('stores under a key that is neither the client-supplied filename nor derivable from the user id', async () => {
-    const seeker = await registerSeeker('upload-key-shape@example.com');
+    const citizen = await registerCitizen('upload-key-shape@example.com');
 
     const res = await request(app)
       .post('/api/uploads')
-      .set('Authorization', `Bearer ${seeker.accessToken}`)
+      .set('Authorization', `Bearer ${citizen.accessToken}`)
       .field('folder', 'avatars')
       .attach('file', Buffer.from('fake-image'), {
         filename: 'my-photo.png',
@@ -151,7 +152,7 @@ describe('POST /api/uploads', () => {
     const url = res.body.data.url;
 
     expect(url).not.toContain('my-photo');
-    expect(url).not.toContain(seeker.userId);
+    expect(url).not.toContain(citizen.userId);
     expect(url).toMatch(/\/avatars\/[0-9a-f-]{36}\.png$/);
   });
 });
