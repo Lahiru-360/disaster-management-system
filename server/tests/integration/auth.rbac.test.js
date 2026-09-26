@@ -3,10 +3,12 @@ import jwt from 'jsonwebtoken';
 import request from 'supertest';
 import app from '../../src/app.js';
 import { env } from '../../src/config/Config.js';
-import { errorHandler } from '../../src/middleware/errorHandler.js';
-import { requireAuth, requireRole } from '../../src/middleware/auth.middleware.js';
+import { ErrorHandler } from '../../src/middleware/ErrorHandler.js';
+import { authMiddleware } from '../../src/middleware/AuthMiddleware.js';
 import { User } from '../../src/models/User.js';
 import { ApiResponse } from '../../src/utils/ApiResponse.js';
+
+const { requireAuth, requireRole } = authMiddleware;
 
 const validPassword = 'Password123!';
 
@@ -20,7 +22,7 @@ const buildProbeApp = () => {
     ApiResponse.success(res, { message: 'admin only' });
   });
 
-  probe.use(errorHandler);
+  probe.use(ErrorHandler.handle);
 
   return probe;
 };

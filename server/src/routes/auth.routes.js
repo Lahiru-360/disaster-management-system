@@ -10,8 +10,8 @@ import {
   resetUserPassword,
   deactivate,
 } from '../controllers/auth.controller.js';
-import { validate } from '../middleware/validate.middleware.js';
-import { requireAuth } from '../middleware/auth.middleware.js';
+import { RequestValidator } from '../middleware/RequestValidator.js';
+import { authMiddleware } from '../middleware/AuthMiddleware.js';
 import {
   registerSchema,
   loginSchema,
@@ -24,14 +24,19 @@ import {
 
 const router = Router();
 
-router.post('/register', validate(registerSchema), register);
-router.post('/login', validate(loginSchema), login);
-router.post('/refresh', validate(refreshSchema), refresh);
-router.post('/logout', validate(logoutSchema), requireAuth, logout);
-router.get('/me', requireAuth, me);
-router.post('/change-password', validate(changePasswordSchema), requireAuth, changePassword);
-router.post('/forgot-password', validate(forgotPasswordSchema), forgotPassword);
-router.post('/reset-password', validate(resetPasswordSchema), resetUserPassword);
-router.post('/deactivate', requireAuth, deactivate);
+router.post('/register', RequestValidator.body(registerSchema), register);
+router.post('/login', RequestValidator.body(loginSchema), login);
+router.post('/refresh', RequestValidator.body(refreshSchema), refresh);
+router.post('/logout', RequestValidator.body(logoutSchema), authMiddleware.requireAuth, logout);
+router.get('/me', authMiddleware.requireAuth, me);
+router.post(
+  '/change-password',
+  RequestValidator.body(changePasswordSchema),
+  authMiddleware.requireAuth,
+  changePassword,
+);
+router.post('/forgot-password', RequestValidator.body(forgotPasswordSchema), forgotPassword);
+router.post('/reset-password', RequestValidator.body(resetPasswordSchema), resetUserPassword);
+router.post('/deactivate', authMiddleware.requireAuth, deactivate);
 
 export default router;

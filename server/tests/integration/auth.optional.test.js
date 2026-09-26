@@ -2,10 +2,12 @@ import express from 'express';
 import jwt from 'jsonwebtoken';
 import request from 'supertest';
 import { env } from '../../src/config/Config.js';
-import { errorHandler } from '../../src/middleware/errorHandler.js';
-import { optionalAuth, requireRole } from '../../src/middleware/auth.middleware.js';
+import { ErrorHandler } from '../../src/middleware/ErrorHandler.js';
+import { authMiddleware } from '../../src/middleware/AuthMiddleware.js';
 import { User } from '../../src/models/User.js';
 import { ApiResponse } from '../../src/utils/ApiResponse.js';
+
+const { optionalAuth, requireRole } = authMiddleware;
 
 // No production route chains optionalAuth -> requireRole, so this builds a
 // throwaway app around the real middleware exports to exercise the chain
@@ -21,7 +23,7 @@ const buildProbeApp = () => {
     ApiResponse.success(res, { message: 'admin only' });
   });
 
-  app.use(errorHandler);
+  app.use(ErrorHandler.handle);
 
   return app;
 };

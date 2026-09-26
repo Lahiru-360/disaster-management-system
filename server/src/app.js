@@ -5,8 +5,7 @@ import morgan from 'morgan';
 import healthRoutes from './routes/health.routes.js';
 import authRoutes from './routes/auth.routes.js';
 import uploadRoutes from './routes/upload.routes.js';
-import { notFound } from './middleware/notFound.js';
-import { errorHandler } from './middleware/errorHandler.js';
+import { ErrorHandler } from './middleware/ErrorHandler.js';
 
 const app = express();
 
@@ -19,7 +18,7 @@ app.use('/api/health', healthRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/uploads', uploadRoutes);
 
-app.use(notFound);
-app.use(errorHandler);
+app.use(ErrorHandler.notFound);
+app.use(ErrorHandler.handle);
 
 export default app;

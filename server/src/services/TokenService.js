@@ -20,6 +20,12 @@ export class TokenService {
     return { accessToken, refreshToken };
   }
 
+  // Returns the decoded claims, or throws jsonwebtoken's own error
+  // (TokenExpiredError, JsonWebTokenError, ...) for the caller to report.
+  verifyAccessToken(token) {
+    return jwt.verify(token, env.jwtAccessSecret);
+  }
+
   async rotateRefreshToken(token) {
     let decoded;
     try {
