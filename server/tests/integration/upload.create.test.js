@@ -2,7 +2,7 @@ import { jest } from '@jest/globals';
 import request from 'supertest';
 
 // CI must never reach a real Supabase bucket. The client is stubbed at the
-// `@supabase/supabase-js` boundary — one level below `storage.service.js` —
+// `@supabase/supabase-js` boundary — one level below `StorageService` —
 // so the service's own key-generation and error-translation logic still runs
 // for real; only the network call underneath it is replaced.
 const mockUpload = jest.fn();
@@ -20,7 +20,7 @@ jest.unstable_mockModule('@supabase/supabase-js', () => ({
   }),
 }));
 
-const { default: app } = await import('../../src/app.js');
+const { app } = await import('../../src/core/App.js');
 
 const validPassword = 'Password123!';
 

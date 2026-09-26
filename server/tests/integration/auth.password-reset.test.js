@@ -1,12 +1,10 @@
 import request from 'supertest';
-import app from '../../src/app.js';
-import { User } from '../../src/models/user.model.js';
-import { RefreshToken } from '../../src/models/refreshToken.model.js';
-import {
-  PasswordResetToken,
-  hashPasswordResetToken,
-} from '../../src/models/passwordResetToken.model.js';
-import { getSentEmails, clearSentEmails } from '../../src/services/email.service.js';
+import { app } from '../../src/core/App.js';
+import { User } from '../../src/models/User.js';
+import { RefreshToken } from '../../src/models/RefreshToken.js';
+import { PasswordResetToken } from '../../src/models/PasswordResetToken.js';
+import { AuthService } from '../../src/services/AuthService.js';
+import { emailService } from '../../src/services/EmailService.js';
 
 const validPassword = 'Password123!';
 const newValidPassword = 'NewPassword456!';
@@ -30,7 +28,7 @@ const resetPassword = (token, newPassword) =>
 // stored PasswordResetToken row holds only its hash — so tests recover it by
 // reading the no-op transport's recorded message rather than the database.
 const extractResetToken = () => {
-  const [message] = getSentEmails();
+  const [message] = emailService.transport.getSentEmails();
   const match = message.text.match(/token=([^\s]+)/);
   return match[1];
 };
@@ -67,7 +65,7 @@ describe('POST /api/auth/forgot-password — anti-enumeration', () => {
 });
 
 describe('POST /api/auth/forgot-password — email recorded only for a known active address', () => {
-  beforeEach(() => clearSentEmails());
+  beforeEach(() => emailService.transport.clearSentEmails());
 
   it('records exactly one email, for the known active address', async () => {
     const email = 'forgot-email-known@example.com';
@@ -81,7 +79,7 @@ describe('POST /api/auth/forgot-password — email recorded only for a known act
     await forgotPassword('forgot-email-unknown@example.com');
     await forgotPassword(deactivatedEmail);
 
-    const sent = getSentEmails();
+    const sent = emailService.transport.getSentEmails();
     expect(sent).toHaveLength(1);
     expect(sent[0].to).toBe(email);
     expect(sent[0].text).toContain('token=');
@@ -89,7 +87,7 @@ describe('POST /api/auth/forgot-password — email recorded only for a known act
 });
 
 describe('password reset flow', () => {
-  beforeEach(() => clearSentEmails());
+  beforeEach(() => emailService.transport.clearSentEmails());
 
   it('resets the password, then lets the new password sign in and the old one fail', async () => {
     const email = 'reset-happy@example.com';
@@ -143,7 +141,7 @@ describe('password reset flow', () => {
     const token = extractResetToken();
 
     await PasswordResetToken.updateOne(
-      { tokenHash: hashPasswordResetToken(token) },
+      { tokenHash: AuthService.hashResetToken(token) },
       { expiresAt: new Date(Date.now() - 1000) },
     );
 

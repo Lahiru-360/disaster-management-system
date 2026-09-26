@@ -1,5 +1,5 @@
 import request from 'supertest';
-import app from '../../src/app.js';
+import { app } from '../../src/core/App.js';
 
 const validPassword = 'Password123!';
 const registeredEmail = 'login-user@example.com';

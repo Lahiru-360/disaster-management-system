@@ -18,7 +18,7 @@ This is where express code exists (Back-end)
 **Adding a new test**
 
 1. Add a `*.test.js` file under `tests/integration/` (or a new subfolder if it's a different area of the API).
-2. Import the app with `import app from '../../src/app.js'` — never `server.js`. `server.js` calls `app.listen`, which leaves the process hanging after the suite finishes; Supertest binds its own ephemeral port from the `app` instance directly.
+2. Import the app with `import { app } from '../../src/core/App.js'` — never `src/server.js`. `server.js` starts a `Server`, which connects to the database and calls `app.listen`, leaving the process hanging after the suite finishes; Supertest binds its own ephemeral port from the `app` instance directly.
 3. Drive the endpoint with `supertest`, e.g. `await request(app).post('/api/auth/login').send({ ... })`, and assert on `res.status` / `res.body`.
 4. If the test needs a user that can't be created through the public API (e.g. an `admin`), create it directly with the Mongoose model (`User.create(...)`) — the same restriction applies in tests as in production, so this is the intended workaround, not a hack.
 5. To simulate an expired token, sign one directly with `jsonwebtoken` using a negative `expiresIn` instead of waiting for a real token to expire (see `auth.tokens.test.js`).
@@ -54,35 +54,41 @@ These are dev/test-only credentials for the shared cluster, not real accounts. `
 
 ## Auth middleware — protecting a route
 
-`requireAuth` and `requireRole` live in `src/middleware/auth.middleware.js`. `requireAuth` verifies the bearer token, loads the user from the database, and attaches it to `req.user`. `requireRole` is a factory that must run **after** `requireAuth` — it checks `req.user.role` against the roles you pass in.
+`requireAuth` and `requireRole` are methods of the shared `authMiddleware` instance in `src/middleware/AuthMiddleware.js`; they are bound to it, so pass them to a route directly. `requireAuth` verifies the bearer token, loads the user from the database, and attaches it to `req.user`. `requireRole` is a factory that must run **after** `requireAuth` — it checks `req.user.role` against the roles you pass in.
 
 - `requireAuth` alone → any authenticated user, any role.
 - `requireAuth` + `requireRole("business")` → businesses only.
 - `requireAuth` + `requireRole("business", "admin")` → either role.
 - `requireRole` used without `requireAuth` first fails closed with `401 UNAUTHENTICATED` — it never trusts a missing `req.user`.
 
+Routes are declared inside a routes class's `registerRoutes(router)` (see `src/routes/AuthRoutes.js`), with `authMiddleware` imported from `'../middleware/AuthMiddleware.js'`.
+
 **Any authenticated user:**
 
 ```js
-import { requireAuth } from '../middleware/auth.middleware.js';
-
-router.get('/me', requireAuth, me);
+router.get('/me', authMiddleware.requireAuth, authController.me);
 ```
 
 **Business-only route:**
 
 ```js
-import { requireAuth, requireRole } from '../middleware/auth.middleware.js';
-
-router.post('/items', requireAuth, requireRole('business'), createItem);
+router.post(
+  '/items',
+  authMiddleware.requireAuth,
+  authMiddleware.requireRole('business'),
+  itemController.create,
+);
 ```
 
 **Admin-only route:**
 
 ```js
-import { requireAuth, requireRole } from '../middleware/auth.middleware.js';
-
-router.post('/businesses/:id/verify', requireAuth, requireRole('admin'), verifyBusiness);
+router.post(
+  '/businesses/:id/verify',
+  authMiddleware.requireAuth,
+  authMiddleware.requireRole('admin'),
+  businessController.verify,
+);
 ```
 
 **Error codes from `requireAuth`** (all `401`, distinct `code` so the client knows when to trigger a refresh vs. show a login screen):
@@ -102,8 +108,11 @@ Follow this pattern for every new model.
 
 **Naming and location**
 
-- One file per collection at `src/models/<entity>.model.js`, singular entity name (e.g. `item.model.js`, not `items.model.js`).
-- Export the compiled model as a named export matching the entity, e.g. `export const Item = mongoose.model("Item", itemSchema);`.
+- One file per collection at `src/models/<Entity>.js`, singular PascalCase entity name (e.g. `Item.js`, not `Items.js`).
+- The model is a class that extends `mongoose.Model`, exported under the entity's name, e.g. `export class Item extends mongoose.Model {}`.
+- Register it with `mongoose.connection.model(Item, itemSchema)`, **not** `mongoose.model(Item, itemSchema)`: given a class, Mongoose 9's `mongoose.model()` registers it under the class's source text instead of its name, which breaks lookups by name such as `ref: 'Item'` and `.populate()`.
+- Keep models thin — the schema is the model. Business logic belongs in a service.
+- A collection of tokens owned by a user and deleted on expiry extends `ExpiringToken`, which supplies the shared `user` and TTL `expiresAt` field definitions (see `RefreshToken.js`).
 
 **Field conventions**
 
@@ -119,7 +128,7 @@ Follow this pattern for every new model.
 
 **Sensitive data in responses**
 
-- If a model holds sensitive fields (password hashes, internal flags), add a `toJSON` transform in the schema options that deletes them, plus `__v`, before the document is ever serialized. See `user.model.js` for the pattern.
+- If a model holds sensitive fields (password hashes, internal flags), add a `toJSON` transform in the schema options that deletes them, plus `__v`, before the document is ever serialized. See `User.js` for the pattern.
 
 **Example skeleton**
 
@@ -142,5 +151,7 @@ const exampleSchema = new mongoose.Schema(
   { timestamps: true },
 );
 
-export const Example = mongoose.model('Example', exampleSchema);
+export class Example extends mongoose.Model {}
+
+mongoose.connection.model(Example, exampleSchema);
 ```

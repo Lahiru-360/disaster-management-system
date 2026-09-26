@@ -1,6 +1,6 @@
 import request from 'supertest';
-import app from '../../src/app.js';
-import { User } from '../../src/models/user.model.js';
+import { app } from '../../src/core/App.js';
+import { User } from '../../src/models/User.js';
 
 const validPassword = 'Password123!';
 
