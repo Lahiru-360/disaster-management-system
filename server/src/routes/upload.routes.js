@@ -3,7 +3,7 @@ import { authMiddleware } from '../middleware/AuthMiddleware.js';
 import { fileUploadMiddleware } from '../middleware/FileUploadMiddleware.js';
 import { RequestValidator } from '../middleware/RequestValidator.js';
 import { UploadValidator } from '../validators/UploadValidator.js';
-import { createUpload } from '../controllers/upload.controller.js';
+import { uploadController } from '../controllers/UploadController.js';
 
 const router = Router();
 
@@ -15,7 +15,7 @@ router.post(
   authMiddleware.requireAuth,
   fileUploadMiddleware.single('file'),
   RequestValidator.body(UploadValidator.uploadSchema),
-  createUpload,
+  uploadController.create,
 );
 
 export default router;
