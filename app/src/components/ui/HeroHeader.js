@@ -122,7 +122,7 @@ export function HeroStickyBar({
  * the screen must give the ScrollView's content container `flexGrow: 1`
  * (NativeWind: `contentContainerClassName="grow"`) for that to take effect.
  *
- * That matters for the curve itself, not just layout: the mockup gets its
+ * That matters for the curve itself, not just layout: the design gets its
  * visible curve because the whole screen frame sits on an ink-colored
  * canvas, so the corners this rounds away reveal ink, not more white. In
  * React Native there's no such canvas by default, so the screen must also

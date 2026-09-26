@@ -20,7 +20,7 @@ export default function ResetPasswordScreen() {
   const { resetPassword } = useAuth();
   // The token does not carry an email, and the API must not return one
   // before the reset succeeds - that would make the token an address-lookup
-  // oracle (parent story's Technical notes). `email` is only ever what an
+  // oracle. `email` is only ever what an
   // in-app continuous flow passed through; there is no endpoint to fetch it.
   const { token, email } = route.params ?? {};
 

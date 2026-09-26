@@ -481,7 +481,7 @@ Requests a password reset link for the given email. No `Authorization` header �
 
 ```json
 {
-  "email": "ashan.perera@gmail.com"
+  "email": "citizen@example.test"
 }
 ```
 
@@ -577,7 +577,7 @@ Stores a file in Supabase Storage and returns its public URL. The client never t
 | Field | Rule |
 |---|---|
 | `file` | **Required.** The file itself. PNG, JPG or PDF only, checked against both its MIME type and its extension. Max 5MB. |
-| `folder` | **Required.** A closed list of purposes, not a free path — a caller can't write anywhere else in the bucket: `avatars`, `trials` or `resumes`. All three share the same 5MB cap and PNG/JPG/PDF allow-list below, whatever the calling screen further restricts client-side. |
+| `folder` | **Required.** A closed list of purposes, not a free path — a caller can't write anywhere else in the bucket. Currently only `avatars`; a feature that needs another purpose adds it to the list. Every folder shares the same 5MB cap and PNG/JPG/PDF allow-list, whatever the calling screen further restricts client-side. |
 
 **Success — `201 Created`**
 
@@ -601,7 +601,7 @@ The returned name is generated server-side and unguessable — never the filenam
     "code": "VALIDATION_ERROR",
     "message": "Request validation failed.",
     "errors": [
-      { "field": "folder", "message": "must be one of [avatars, trials, resumes]" }
+      { "field": "folder", "message": "must be one of [avatars]" }
     ]
   }
 }
