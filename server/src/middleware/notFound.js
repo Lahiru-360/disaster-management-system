@@ -1,5 +1,5 @@
-import { sendError } from '../utils/response.js';
+import { ApiResponse } from '../utils/ApiResponse.js';
 
 export const notFound = (req, res) => {
-  sendError(res, 404, 'NOT_FOUND', `Route not found: ${req.method} ${req.originalUrl}`);
+  ApiResponse.error(res, 404, 'NOT_FOUND', `Route not found: ${req.method} ${req.originalUrl}`);
 };

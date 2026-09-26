@@ -1,5 +1,5 @@
 import { ApiError } from '../utils/ApiError.js';
-import { sendError } from '../utils/response.js';
+import { ApiResponse } from '../utils/ApiResponse.js';
 
 export const errorHandler = (err, req, res, _next) => {
   const isApiError = err instanceof ApiError;
@@ -13,5 +13,5 @@ export const errorHandler = (err, req, res, _next) => {
   const message = isApiError ? err.message : 'Internal Server Error';
   const errors = isApiError ? err.errors : undefined;
 
-  sendError(res, status, code, message, errors);
+  ApiResponse.error(res, status, code, message, errors);
 };

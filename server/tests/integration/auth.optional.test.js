@@ -5,7 +5,7 @@ import { env } from '../../src/config/env.js';
 import { errorHandler } from '../../src/middleware/errorHandler.js';
 import { optionalAuth, requireRole } from '../../src/middleware/auth.middleware.js';
 import { User } from '../../src/models/user.model.js';
-import { sendSuccess } from '../../src/utils/response.js';
+import { ApiResponse } from '../../src/utils/ApiResponse.js';
 
 // No production route chains optionalAuth -> requireRole, so this builds a
 // throwaway app around the real middleware exports to exercise the chain
@@ -14,11 +14,11 @@ const buildProbeApp = () => {
   const app = express();
 
   app.get('/probe', optionalAuth, (req, res) => {
-    sendSuccess(res, { userId: req.user ? req.user.id : null });
+    ApiResponse.success(res, { userId: req.user ? req.user.id : null });
   });
 
   app.get('/probe-admin', optionalAuth, requireRole('admin'), (req, res) => {
-    sendSuccess(res, { message: 'admin only' });
+    ApiResponse.success(res, { message: 'admin only' });
   });
 
   app.use(errorHandler);

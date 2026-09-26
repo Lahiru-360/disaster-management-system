@@ -6,7 +6,7 @@ import { env } from '../../src/config/env.js';
 import { errorHandler } from '../../src/middleware/errorHandler.js';
 import { requireAuth, requireRole } from '../../src/middleware/auth.middleware.js';
 import { User } from '../../src/models/user.model.js';
-import { sendSuccess } from '../../src/utils/response.js';
+import { ApiResponse } from '../../src/utils/ApiResponse.js';
 
 const validPassword = 'Password123!';
 
@@ -17,7 +17,7 @@ const buildProbeApp = () => {
   const probe = express();
 
   probe.get('/probe-admin', requireAuth, requireRole('admin'), (req, res) => {
-    sendSuccess(res, { message: 'admin only' });
+    ApiResponse.success(res, { message: 'admin only' });
   });
 
   probe.use(errorHandler);

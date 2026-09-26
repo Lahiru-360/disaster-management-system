@@ -2,9 +2,9 @@ import jwt from 'jsonwebtoken';
 import { env } from '../config/env.js';
 import { User } from '../models/user.model.js';
 import { ApiError } from '../utils/ApiError.js';
-import { asyncHandler } from '../utils/asyncHandler.js';
+import { AsyncHandler } from '../utils/AsyncHandler.js';
 
-export const requireAuth = asyncHandler(async (req, res, next) => {
+export const requireAuth = AsyncHandler.wrap(async (req, res, next) => {
   const header = req.headers.authorization;
 
   if (!header) {
@@ -52,7 +52,7 @@ export const requireAuth = asyncHandler(async (req, res, next) => {
 // through to the guest case (`req.user` left unset) rather than a 401.
 // requireAuth stays the one that rejects; this one only ever adds
 // information, never removes access.
-export const optionalAuth = asyncHandler(async (req, res, next) => {
+export const optionalAuth = AsyncHandler.wrap(async (req, res, next) => {
   const header = req.headers.authorization;
 
   if (!header || !header.startsWith('Bearer ') || !header.slice(7).trim()) {
