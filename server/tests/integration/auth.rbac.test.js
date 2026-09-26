@@ -1,7 +1,7 @@
 import express from 'express';
 import jwt from 'jsonwebtoken';
 import request from 'supertest';
-import app from '../../src/app.js';
+import { app } from '../../src/core/App.js';
 import { env } from '../../src/config/Config.js';
 import { ErrorHandler } from '../../src/middleware/ErrorHandler.js';
 import { authMiddleware } from '../../src/middleware/AuthMiddleware.js';

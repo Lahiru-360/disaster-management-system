@@ -1,5 +1,5 @@
 import request from 'supertest';
-import app from '../../src/app.js';
+import { app } from '../../src/core/App.js';
 import { User } from '../../src/models/User.js';
 import { RefreshToken } from '../../src/models/RefreshToken.js';
 

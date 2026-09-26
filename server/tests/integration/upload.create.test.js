@@ -20,7 +20,7 @@ jest.unstable_mockModule('@supabase/supabase-js', () => ({
   }),
 }));
 
-const { default: app } = await import('../../src/app.js');
+const { app } = await import('../../src/core/App.js');
 
 const validPassword = 'Password123!';
 
