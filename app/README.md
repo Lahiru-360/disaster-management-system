@@ -13,7 +13,7 @@ This guide assumes you've never run a React Native project before.
   ```
 - **A phone with the Expo Go app installed** — search "Expo Go" on the Play Store (Android) or App Store (iOS).
 - **Your phone and computer on the same Wi-Fi network** (needed to connect Expo Go to your computer's dev server; see the tunnel fallback below if this isn't possible).
-- **Expo Go's supported SDK version must match this project's Expo SDK (54).** Expo Go on the app store always tracks the latest SDK — if it's ever ahead of what this project uses, update your local Expo Go, or ask the team whether the project's SDK needs bumping to match.
+- **Expo Go's supported SDK version must match this project's Expo SDK (57).** Expo Go on the app store always tracks the latest SDK — if it's ever ahead of what this project uses, update your local Expo Go, or ask the team whether the project's SDK needs bumping to match.
 
 You do **not** need Android Studio or Xcode installed — Expo Go lets you run the app on a real device without a native build.
 
@@ -77,5 +77,5 @@ A stale Metro cache is the most common cause of "NativeWind isn't working" — a
 ## Troubleshooting
 
 - **"Port 8081 is being used by another process"** — another Metro instance is already running (yours or a teammate's). Answer `Y` to use the next port Expo suggests, or stop the other process first.
-- **"This project is not supported"/SDK mismatch in Expo Go** — your Expo Go app's supported SDK version doesn't match this project's (currently SDK 54). Update Expo Go from the app store, or ask the team if the project SDK needs to change.
+- **"This project is not supported"/SDK mismatch in Expo Go** — your Expo Go app's supported SDK version doesn't match this project's (currently SDK 57). Update Expo Go from the app store, or ask the team if the project SDK needs to change.
 - **Styles not applying** — see "Clearing the Metro cache" above.
