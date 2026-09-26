@@ -1,5 +1,5 @@
 import { BrevoClient } from '@getbrevo/brevo';
-import { env } from '../config/env.js';
+import { env } from '../config/Config.js';
 import { ApiError } from '../utils/ApiError.js';
 
 // The only module that may import the provider SDK — everything else calls

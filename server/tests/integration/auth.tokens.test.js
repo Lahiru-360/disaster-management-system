@@ -1,7 +1,7 @@
 import jwt from 'jsonwebtoken';
 import request from 'supertest';
 import app from '../../src/app.js';
-import { env } from '../../src/config/env.js';
+import { env } from '../../src/config/Config.js';
 
 const validPassword = 'Password123!';
 

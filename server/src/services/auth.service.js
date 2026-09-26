@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
-import { env } from '../config/env.js';
+import { env } from '../config/Config.js';
 import { User } from '../models/user.model.js';
 import {
   PasswordResetToken,

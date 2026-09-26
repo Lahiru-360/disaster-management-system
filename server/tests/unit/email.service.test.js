@@ -14,7 +14,7 @@ jest.unstable_mockModule('@getbrevo/brevo', () => ({
 
 const message = { to: 'user@example.com', subject: 'Hi', html: '<p>Hi</p>', text: 'Hi' };
 
-// email.service.js reads env.emailTransport at import time (via config/env.js),
+// email.service.js reads env.emailTransport at import time (via config/Config.js),
 // so each scenario resets the module registry and re-imports to pick up the
 // env vars it just set.
 const importEmailService = async () => {

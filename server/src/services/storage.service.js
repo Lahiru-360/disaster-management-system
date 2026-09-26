@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
-import { env } from '../config/env.js';
+import { env } from '../config/Config.js';
 import { ApiError } from '../utils/ApiError.js';
 
 const supabase = createClient(env.supabaseUrl, env.supabaseServiceRoleKey);

@@ -2,7 +2,7 @@ import express from 'express';
 import jwt from 'jsonwebtoken';
 import request from 'supertest';
 import app from '../../src/app.js';
-import { env } from '../../src/config/env.js';
+import { env } from '../../src/config/Config.js';
 import { errorHandler } from '../../src/middleware/errorHandler.js';
 import { requireAuth, requireRole } from '../../src/middleware/auth.middleware.js';
 import { User } from '../../src/models/user.model.js';
