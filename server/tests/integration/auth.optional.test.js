@@ -4,7 +4,7 @@ import request from 'supertest';
 import { env } from '../../src/config/Config.js';
 import { errorHandler } from '../../src/middleware/errorHandler.js';
 import { optionalAuth, requireRole } from '../../src/middleware/auth.middleware.js';
-import { User } from '../../src/models/user.model.js';
+import { User } from '../../src/models/User.js';
 import { ApiResponse } from '../../src/utils/ApiResponse.js';
 
 // No production route chains optionalAuth -> requireRole, so this builds a

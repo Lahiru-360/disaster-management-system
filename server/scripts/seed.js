@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
 import { env } from '../src/config/Config.js';
-import { User } from '../src/models/user.model.js';
+import { User } from '../src/models/User.js';
 
 const SEED_PASSWORD = 'Password123!';
 

@@ -1,11 +1,9 @@
 import request from 'supertest';
 import app from '../../src/app.js';
-import { User } from '../../src/models/user.model.js';
-import { RefreshToken } from '../../src/models/refreshToken.model.js';
-import {
-  PasswordResetToken,
-  hashPasswordResetToken,
-} from '../../src/models/passwordResetToken.model.js';
+import { User } from '../../src/models/User.js';
+import { RefreshToken } from '../../src/models/RefreshToken.js';
+import { PasswordResetToken } from '../../src/models/PasswordResetToken.js';
+import { hashPasswordResetToken } from '../../src/services/auth.service.js';
 import { getSentEmails, clearSentEmails } from '../../src/services/email.service.js';
 
 const validPassword = 'Password123!';

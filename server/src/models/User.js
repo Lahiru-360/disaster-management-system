@@ -38,4 +38,10 @@ const userSchema = new mongoose.Schema(
   },
 );
 
-export const User = mongoose.model('User', userSchema);
+// Kept thin on purpose: the schema above is the whole model, and what a user
+// can do (register, log in, change password, ...) lives in AuthService.
+export class User extends mongoose.Model {}
+
+// Registered through the connection: given a class, Mongoose 9's mongoose.model() keys
+// it by the class's source text instead of its name, which breaks lookups like ref: 'User'.
+mongoose.connection.model(User, userSchema);

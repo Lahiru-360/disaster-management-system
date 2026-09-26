@@ -1,12 +1,8 @@
 import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import { env } from '../config/Config.js';
-import { User } from '../models/user.model.js';
-import {
-  PasswordResetToken,
-  PASSWORD_RESET_TOKEN_TTL_MINUTES,
-  hashPasswordResetToken,
-} from '../models/passwordResetToken.model.js';
+import { User } from '../models/User.js';
+import { PasswordResetToken } from '../models/PasswordResetToken.js';
 import { ApiError } from '../utils/ApiError.js';
 import { sendEmail } from './email.service.js';
 import { passwordResetEmail } from './email.templates.js';
@@ -18,6 +14,11 @@ import {
 } from './token.service.js';
 
 const SALT_ROUNDS = 10;
+
+const PASSWORD_RESET_TOKEN_TTL_MINUTES = 30;
+
+export const hashPasswordResetToken = (token) =>
+  crypto.createHash('sha256').update(token).digest('hex');
 
 export const registerUser = async ({ email, password, role }) => {
   const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
@@ -118,7 +119,10 @@ export const requestPasswordReset = async ({ email }) => {
 
   const resetLink = `${env.passwordResetUrlBase}?token=${rawToken}`;
 
-  await sendEmail({ to: user.email, ...passwordResetEmail({ resetLink }) });
+  await sendEmail({
+    to: user.email,
+    ...passwordResetEmail({ resetLink, ttlMinutes: PASSWORD_RESET_TOKEN_TTL_MINUTES }),
+  });
 };
 
 // An expired, already-used, unknown or malformed token must be

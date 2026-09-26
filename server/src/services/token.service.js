@@ -1,6 +1,6 @@
 import jwt from 'jsonwebtoken';
 import { env } from '../config/Config.js';
-import { RefreshToken } from '../models/refreshToken.model.js';
+import { RefreshToken } from '../models/RefreshToken.js';
 import { ApiError } from '../utils/ApiError.js';
 
 const signAccessToken = (user) =>
