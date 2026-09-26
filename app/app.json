@@ -1,0 +1,61 @@
+{
+  "expo": {
+    "name": "Disaster Management System",
+    "slug": "disaster-management-system",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#E6F4FE",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      }
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-secure-store",
+      "expo-font",
+      [
+        "@react-native-community/datetimepicker",
+        {
+          "android": {
+            "datePicker": {
+              "colorAccent": {
+                "light": "#FF4A1C",
+                "dark": "#FF4A1C"
+              },
+              "colorControlActivated": {
+                "light": "#FF4A1C",
+                "dark": "#FF4A1C"
+              },
+              "textColorPrimary": {
+                "light": "#101114",
+                "dark": "#101114"
+              },
+              "windowBackground": {
+                "light": "#FFFFFF",
+                "dark": "#FFFFFF"
+              }
+            }
+          }
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Disaster Management System uses your photo library to upload photos.",
+          "cameraPermission": false,
+          "microphonePermission": false
+        }
+      ]
+    ]
+  }
+}
