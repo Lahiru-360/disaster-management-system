@@ -1,0 +1,42 @@
+import { Navigate, Route, Routes, useLocation } from 'react-router';
+
+import ConsoleLayout from './ConsoleLayout';
+import PlaceholderScreen from '../screens/shared/PlaceholderScreen';
+
+// Where a fresh sign-in lands: the page the officer asked for before being
+// sent to /login (see AuthRoutes), or the dashboard.
+function RedirectAfterLogin() {
+  const from = useLocation().state?.from;
+  const to = from ? `${from.pathname}${from.search}${from.hash}` : '/';
+  return <Navigate to={to} replace />;
+}
+
+// The signed-in officer routes: every page renders inside ConsoleLayout (top
+// bar + sidebar). The web counterpart of the AppStack in
+// app/src/navigation/RootNavigator.js together with MainTabs.js. Each path
+// here must match a `to` in sidebarItems.js. Every page is a placeholder for
+// now; building one means replacing its PlaceholderScreen with the real
+// screen.
+export default function ConsoleRoutes() {
+  return (
+    <Routes>
+      <Route element={<ConsoleLayout />}>
+        <Route index element={<PlaceholderScreen title="Dashboard" />} />
+        <Route path="hazard-warnings" element={<PlaceholderScreen title="Hazard Warnings" />} />
+        <Route path="ground-reports" element={<PlaceholderScreen title="Ground Reports" />} />
+        <Route
+          path="shelter-resources"
+          element={<PlaceholderScreen title="Shelter & Resources" />}
+        />
+        <Route path="rescue-teams" element={<PlaceholderScreen title="Rescue Teams" />} />
+        <Route path="relief-supplies" element={<PlaceholderScreen title="Relief Supplies" />} />
+        <Route path="map" element={<PlaceholderScreen title="Map" />} />
+        <Route path="reports" element={<PlaceholderScreen title="Reports" />} />
+        <Route path="settings" element={<PlaceholderScreen title="Settings" />} />
+      </Route>
+
+      <Route path="/login" element={<RedirectAfterLogin />} />
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  );
+}

@@ -1,7 +1,7 @@
 import { jest } from '@jest/globals';
 
 // CI must never reach a real Brevo account. The client is stubbed at the
-// `@getbrevo/brevo` boundary — one level below email.service.js — so the
+// `@getbrevo/brevo` boundary — one level below BrevoEmailTransport — so the
 // service's own transport-selection and error-mapping logic still runs for
 // real; only the network call underneath it is replaced.
 const mockSendTransacEmail = jest.fn();
@@ -14,12 +14,17 @@ jest.unstable_mockModule('@getbrevo/brevo', () => ({
 
 const message = { to: 'user@example.com', subject: 'Hi', html: '<p>Hi</p>', text: 'Hi' };
 
-// email.service.js reads env.emailTransport at import time (via config/env.js),
-// so each scenario resets the module registry and re-imports to pick up the
-// env vars it just set.
+// EmailService picks its transport from env.emailTransport at import time (via
+// config/Config.js), so each scenario resets the module registry and
+// re-imports to pick up the env vars it just set.
 const importEmailService = async () => {
   jest.resetModules();
-  return import('../../src/services/email.service.js');
+  const { emailService } = await import('../../src/services/EmailService.js');
+  return {
+    sendEmail: (email) => emailService.send(email),
+    getSentEmails: () => emailService.transport.getSentEmails(),
+    clearSentEmails: () => emailService.transport.clearSentEmails(),
+  };
 };
 
 describe('email.service', () => {

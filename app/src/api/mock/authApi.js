@@ -4,6 +4,9 @@
 // `error.response.data`) so swapping in the real client is a change
 // of import target, not a change to any calling code's error handling.
 
+import { DEMO_PASSWORD, DEMO_USERS } from '../../constants/demoUsers';
+import { SELF_SIGN_UP_ROLES } from '../../constants/roles';
+
 const MIN_DELAY_MS = 300;
 const MAX_DELAY_MS = 800;
 
@@ -12,31 +15,18 @@ const REFRESH_TOKEN_TTL_MS = 5 * 60 * 1000;
 const RESET_TOKEN_TTL_MS = 30 * 60 * 1000;
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const ROLES = ['seeker', 'business'];
+const NAME_MAX_LENGTH = 100;
 
-const users = [
-  {
-    id: '64f1a2b3c4d5e6f7a8b9c0d1',
-    email: 'seeker@example.test',
-    password: 'Password123!',
-    role: 'seeker',
-    createdAt: '2026-01-01T00:00:00.000Z',
-  },
-  {
-    id: '64f1a2b3c4d5e6f7a8b9c0d2',
-    email: 'business@example.test',
-    password: 'Password123!',
-    role: 'business',
-    createdAt: '2026-01-01T00:00:00.000Z',
-  },
-  {
-    id: '64f1a2b3c4d5e6f7a8b9c0d3',
-    email: 'admin@example.test',
-    password: 'Password123!',
-    role: 'admin',
-    createdAt: '2026-01-01T00:00:00.000Z',
-  },
-];
+// Every demo account, officers included, so signing in as an officer here
+// reaches the same wrong-platform screen it would against the real server.
+const users = DEMO_USERS.map(({ name, email, role }, index) => ({
+  id: `64f1a2b3c4d5e6f7a8b9c0d${index + 1}`,
+  name,
+  email,
+  password: DEMO_PASSWORD,
+  role,
+  createdAt: '2026-01-01T00:00:00.000Z',
+}));
 
 const accessTokens = new Map();
 const refreshTokens = new Map();
@@ -70,22 +60,29 @@ function apiError(status, code, message, errors) {
 function toPublicUser(user) {
   return {
     id: user.id,
+    name: user.name,
     email: user.email,
     role: user.role,
     createdAt: user.createdAt,
   };
 }
 
-function validateRegisterInput({ email, password, role }) {
+function validateRegisterInput({ name, email, password, role }) {
   const errors = [];
+  const trimmedName = (name || '').trim();
+  if (!trimmedName) {
+    errors.push({ field: 'name', message: 'is required' });
+  } else if (trimmedName.length > NAME_MAX_LENGTH) {
+    errors.push({ field: 'name', message: `must be at most ${NAME_MAX_LENGTH} characters` });
+  }
   if (!email || !EMAIL_RE.test(email)) {
     errors.push({ field: 'email', message: 'must be a valid email address' });
   }
   if (!password || password.length < 8) {
     errors.push({ field: 'password', message: 'must be at least 8 characters' });
   }
-  if (!role || !ROLES.includes(role)) {
-    errors.push({ field: 'role', message: "must be 'seeker' or 'business'" });
+  if (!role || !SELF_SIGN_UP_ROLES.includes(role)) {
+    errors.push({ field: 'role', message: `must be one of [${SELF_SIGN_UP_ROLES.join(', ')}]` });
   }
   return errors;
 }
@@ -113,10 +110,10 @@ function requireValidAccessToken(accessToken) {
   return record.userId;
 }
 
-async function register({ email, password, role }) {
+async function register({ name, email, password, role }) {
   await delay();
 
-  const validationErrors = validateRegisterInput({ email, password, role });
+  const validationErrors = validateRegisterInput({ name, email, password, role });
   if (validationErrors.length > 0) {
     throw apiError(400, 'VALIDATION_ERROR', 'Request validation failed.', validationErrors);
   }
@@ -128,6 +125,7 @@ async function register({ email, password, role }) {
 
   const user = {
     id: randomObjectId(),
+    name: name.trim(),
     email: normalizedEmail,
     password,
     role,

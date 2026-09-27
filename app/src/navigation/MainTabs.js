@@ -12,7 +12,7 @@ const ICONS = {
   Home: 'home',
 };
 
-// One tab navigator for every role. When roles need different tabs, read the
+// One tab navigator for every field role. When roles need different tabs, read the
 // role with useAuth() here, branch on it, and add each tab to ICONS.
 export default function MainTabs() {
   return (

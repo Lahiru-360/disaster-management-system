@@ -34,21 +34,11 @@ module.exports = {
         border: '#e5e7eb',
         divider: '#eef2f7',
 
-        // Role tints
-        'primary-soft': '#eef1ff',
-        'primary-muted': '#c7d2fe',
-        'danger-text': '#dc2626',
-        'success-text': '#15803d',
-        'warning-text': '#92400e',
-
-        // GL-82/GL-127 design tokens — the v3 set shared by all four v3
-        // mockups' `:root` blocks. `danger`, `danger-soft`, `success-soft`
-        // and `warning-soft` above were removed from the legacy groups and
-        // redefined here because the mockups reuse those exact names with
-        // new values; every other legacy color above is untouched and
-        // still used by components/screens until GL-83/GL-84 migrate them
-        // onto this set. `-ink` names replace the mockups' `-text` CSS
-        // variable names (and `--signal-deep`) per GL-82's convention.
+        // Design tokens — the current palette. `danger`, `danger-soft`,
+        // `success-soft` and `warning-soft` are defined here rather than in
+        // the older groups above, which some components/screens still use
+        // until they move onto this set. Dark text shades are named `-ink`
+        // (e.g. `danger-ink`).
         ink: '#101114',
         'ink-hi': '#1C1D23',
         paper: '#FFFFFF',
@@ -67,22 +57,13 @@ module.exports = {
         'warning-soft': '#FFF3DF',
         'warning-ink': '#96570A',
 
-        // GL-90 — the mockup's `.field-hint` placeholder color is a literal
-        // #A3A4AE, not one of the `:root` custom properties, so it has no
-        // named token of its own upstream. Added here so TextInput's
-        // placeholder can still be styled by class name instead of a raw hex.
+        // TextInput's placeholder text, named so it can be styled by class
+        // name instead of a raw hex.
         placeholder: '#A3A4AE',
 
-        // GL-229 — the mockup's `.sbar-med` (medium password strength bar)
-        // is a literal #E8A33D, not one of the `:root` custom properties;
-        // its label text reuses `--warning-text` (already `warning-ink`
-        // below), but the bar fill itself has no named token upstream.
+        // PasswordStrengthMeter's medium bar fill. Its label text uses
+        // `warning-ink`; the fill has no other token of its own.
         'strength-medium': '#E8A33D',
-
-        // Saved gigs star - the mockup's `.star-off` (an unsaved card's
-        // outline star) is a literal #C6C7CF, not one of the `:root`
-        // custom properties, so it has no named token of its own upstream.
-        'star-off': '#C6C7CF',
       },
       spacing: {
         1: '0.25rem',
@@ -105,13 +86,12 @@ module.exports = {
         lg: '0.625rem',
         xl: '0.875rem',
 
-        // GL-82 design tokens — from the parent story's radius table.
-        // `lg`/`md`/`sm` would collide with the legacy scale above at
-        // different pixel values, and Button/Card/Dropdown/TextInput/
-        // ComponentDemoScreen still use those legacy names, so this new
-        // scale is namespaced `ds-*` until GL-83/GL-84 migrate those
-        // components onto it, at which point the legacy keys above can
-        // be retired and this namespace dropped.
+        // Design-token radii. `lg`/`md`/`sm` would collide with the older
+        // scale above at different pixel values, and Button/Card/Dropdown/
+        // TextInput/ComponentDemoScreen still use those older names, so this
+        // scale is namespaced `ds-*` until those components move onto it, at
+        // which point the older keys above can be retired and this namespace
+        // dropped.
         'ds-sheet': '34px',
         'ds-lg': '18px',
         'ds-card': '22px',
@@ -119,7 +99,7 @@ module.exports = {
         'ds-sm': '10px',
       },
       fontFamily: {
-        // GL-82 design tokens. `display` is always used at weight 700 in
+        // Design tokens. `display` is always used at weight 700 in
         // the type scale below, so it maps directly to the bold static
         // font loaded in App.js rather than a separate weight utility.
         display: ['SchibstedGrotesk_700Bold'],
@@ -134,7 +114,7 @@ module.exports = {
         '2xl': '1.5rem',
         '3xl': '1.875rem',
 
-        // GL-82 design tokens — from the parent story's type-scale table.
+        // Design-token type scale.
         h1: ['42px', { lineHeight: '1.02', letterSpacing: '-0.042em', fontWeight: '700' }],
         title: ['19px', { letterSpacing: '-0.02em', fontWeight: '700' }],
         wordmark: ['16px', { letterSpacing: '-0.02em', fontWeight: '700' }],

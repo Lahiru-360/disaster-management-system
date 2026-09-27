@@ -34,13 +34,13 @@ export default function ChangePasswordScreen() {
     try {
       await changePassword({ currentPassword, newPassword });
       // Pops back to the already-mounted AccountSettings instance (it's
-      // always what pushed this screen - AC10) and hands it the confirmation
+      // always what pushed this screen) and hands it the confirmation
       // to render, rather than a plain goBack() that would say nothing.
       navigation.navigate('AccountSettings', { passwordChanged: true });
     } catch (error) {
       const apiError = error.response?.data?.error;
-      // Only a wrong current password gets field-level treatment (AC15) and
-      // only that field is cleared (AC16) - new/confirm survive every
+      // Only a wrong current password gets field-level treatment and
+      // only that field is cleared - new/confirm survive every
       // failure so a mistyped old password never costs the new one too.
       if (apiError?.code === 'INVALID_CURRENT_PASSWORD') {
         setErrors({ currentPassword: apiError.message });

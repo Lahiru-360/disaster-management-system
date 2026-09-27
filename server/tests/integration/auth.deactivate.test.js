@@ -1,14 +1,14 @@
 import request from 'supertest';
-import app from '../../src/app.js';
-import { User } from '../../src/models/user.model.js';
-import { RefreshToken } from '../../src/models/refreshToken.model.js';
+import { app } from '../../src/core/App.js';
+import { User } from '../../src/models/User.js';
+import { RefreshToken } from '../../src/models/RefreshToken.js';
 
 const validPassword = 'Password123!';
 
-const registerSeeker = async (email) => {
+const registerCitizen = async (email) => {
   const res = await request(app)
     .post('/api/auth/register')
-    .send({ email, password: validPassword, role: 'seeker' });
+    .send({ name: 'Test Citizen', email, password: validPassword, role: 'citizen' });
 
   return { accessToken: res.body.data.accessToken, userId: res.body.data.user.id };
 };
@@ -19,9 +19,10 @@ const deactivate = (accessToken) =>
 describe('isActive defaults to true', () => {
   it('is true on a newly registered user in the database, and never in the response', async () => {
     const res = await request(app).post('/api/auth/register').send({
+      name: 'Test Citizen',
       email: 'deactivate-flag-default@example.com',
       password: validPassword,
-      role: 'seeker',
+      role: 'citizen',
     });
 
     expect(res.body.data.user).not.toHaveProperty('isActive');
@@ -33,8 +34,8 @@ describe('isActive defaults to true', () => {
 
 describe('POST /api/auth/deactivate', () => {
   it('sets isActive to false for the caller only', async () => {
-    const caller = await registerSeeker('deactivate-caller@example.com');
-    const other = await registerSeeker('deactivate-bystander@example.com');
+    const caller = await registerCitizen('deactivate-caller@example.com');
+    const other = await registerCitizen('deactivate-bystander@example.com');
 
     const res = await deactivate(caller.accessToken);
 
@@ -49,12 +50,12 @@ describe('POST /api/auth/deactivate', () => {
 
   it('revokes every refresh token belonging to the user, and none for anyone else', async () => {
     const email = 'deactivate-multi-session@example.com';
-    const first = await registerSeeker(email);
+    const first = await registerCitizen(email);
     const secondLogin = await request(app)
       .post('/api/auth/login')
       .send({ email, password: validPassword });
 
-    const other = await registerSeeker('deactivate-other-session@example.com');
+    const other = await registerCitizen('deactivate-other-session@example.com');
 
     expect(await RefreshToken.countDocuments({ user: first.userId })).toBe(2);
 
@@ -76,7 +77,7 @@ describe('POST /api/auth/deactivate', () => {
 describe('POST /api/auth/login — deactivated account', () => {
   it('refuses correct credentials with 403 ACCOUNT_DEACTIVATED', async () => {
     const email = 'deactivate-login@example.com';
-    const user = await registerSeeker(email);
+    const user = await registerCitizen(email);
     await deactivate(user.accessToken);
 
     const res = await request(app).post('/api/auth/login').send({ email, password: validPassword });
@@ -88,7 +89,7 @@ describe('POST /api/auth/login — deactivated account', () => {
 
 describe('requireAuth — deactivated account', () => {
   it('refuses a still-valid access token with 401 once the account is deactivated', async () => {
-    const user = await registerSeeker('deactivate-live-token@example.com');
+    const user = await registerCitizen('deactivate-live-token@example.com');
     const staleAccessToken = user.accessToken;
 
     await deactivate(user.accessToken);

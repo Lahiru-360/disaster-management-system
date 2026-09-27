@@ -10,7 +10,7 @@
 disaster-management-system/
 ├── .github/
 │   └── workflows/
-│       └── ci.yml                          lint + test on PRs to develop/main
+│       └── ci.yml                          lint + test (web: lint + build) on PRs to develop/main
 │
 ├── .husky/
 │   └── pre-commit                          lint-staged on staged files only
@@ -18,8 +18,9 @@ disaster-management-system/
 ├── docs/
 │   └── api-contract.md                     THE contract — read before any endpoint
 │
-├── app/                                    Expo React Native client
-├── server/                                 Express + MongoDB API
+├── app/                                    Expo React Native client — field roles
+├── web/                                    Vite + React web portal — officer roles
+├── server/                                 Express + MongoDB API — every role
 │
 ├── .gitattributes
 ├── .gitignore
@@ -31,6 +32,15 @@ disaster-management-system/
 
 Rubric deliverables (SRS, diagrams, test plan, report) are **not** in this repo by decision — Lahiru manages those separately.
 
+Each role signs in on one client:
+
+| Client | Roles |
+|---|---|
+| `app/` (mobile) | `citizen`, `community_volunteer`, `rescue_team_lead` |
+| `web/` (officer web portal) | `dmc_officer`, `duty_officer`, `district_officer` |
+
+The mobile app stops officer accounts at a "use the web portal" screen, and the web portal stops field accounts at a "use the mobile app" screen. The server serves every role; roles and their hierarchy are described in `server/README.md`.
+
 ---
 
 ## `server/` — Express + MongoDB API
@@ -39,52 +49,77 @@ Rubric deliverables (SRS, diagrams, test plan, report) are **not** in this repo 
 server/
 ├── src/
 │   ├── config/
-│   │   ├── env.js                          ONLY file that reads process.env
-│   │   └── db.js                           Mongoose connect + graceful shutdown
+│   │   ├── Config.js                       ONLY file that reads process.env (exports `env`)
+│   │   └── Database.js                     Mongoose connect + graceful shutdown
 │   │
-│   ├── models/
-│   │   ├── user.model.js                   email, passwordHash, role enum, isActive
-│   │   ├── refreshToken.model.js           token, user ref, expiresAt + TTL index
-│   │   └── passwordResetToken.model.js     single-use reset token, expiresAt + TTL index
+│   ├── enums/                              frozen string enums shared across layers
+│   │   └── Role.js                         the six role values
 │   │
-│   ├── routes/                             mounted under /api in app.js
-│   │   ├── health.routes.js
-│   │   ├── auth.routes.js
-│   │   └── upload.routes.js
+│   ├── domain/                             plain classes from the design — no Mongoose, no req/res
+│   │   └── people/                         one class per role; `extends` is the role hierarchy
+│   │       ├── Person.js                   abstract base: name, phone, nic
+│   │       ├── Citizen.js                  self-registrable
+│   │       ├── CommunityVolunteer.js       extends Citizen, trainingLevel
+│   │       ├── DMCOfficer.js
+│   │       ├── DutyOfficer.js              extends DMCOfficer, shiftDistrict
+│   │       ├── DistrictOfficer.js          district
+│   │       ├── RescueTeamLead.js
+│   │       └── PersonFactory.js            role string → class, User → Person
 │   │
-│   ├── controllers/                        one per route file, same basename
-│   │   ├── health.controller.js
-│   │   ├── auth.controller.js              thin — no business logic
-│   │   └── upload.controller.js
+│   ├── models/                             thin: schema only, each class extends mongoose.Model
+│   │   ├── User.js                         name, email, passwordHash, role enum, isActive
+│   │   ├── ExpiringToken.js                abstract base: user ref + expiresAt TTL fields
+│   │   ├── RefreshToken.js                 token, user ref, expiresAt + TTL index
+│   │   └── PasswordResetToken.js           single-use reset token, expiresAt + TTL index
+│   │
+│   ├── routes/                             one BaseRoutes subclass per group, mounted by App
+│   │   ├── BaseRoutes.js                   abstract: mount path + Router, registerRoutes()
+│   │   ├── HealthRoutes.js
+│   │   ├── AuthRoutes.js
+│   │   └── UploadRoutes.js
+│   │
+│   ├── controllers/                        one per route group
+│   │   ├── BaseController.js               binds handlers, forwards async errors
+│   │   ├── HealthController.js
+│   │   ├── AuthController.js               thin — no business logic
+│   │   └── UploadController.js
 │   │
 │   ├── services/                           business logic lives here, reusable + testable
-│   │   ├── auth.service.js                 hashing, credentials, change/reset password, deactivation
-│   │   ├── token.service.js                sign, verify, persist, revoke
-│   │   ├── email.service.js                Brevo transport (no-op by default)
-│   │   ├── email.templates.js              subject/html/text for each email
-│   │   └── storage.service.js              Supabase Storage uploads
+│   │   ├── AuthService.js                  hashing, credentials, change/reset password, deactivation
+│   │   ├── TokenService.js                 sign, verify, persist, revoke
+│   │   ├── EmailService.js                 sends through the configured transport
+│   │   ├── StorageService.js               Supabase Storage uploads
+│   │   └── email/
+│   │       ├── EmailTransport.js           abstract transport
+│   │       ├── NoopEmailTransport.js       default — records messages, sends nothing
+│   │       ├── BrevoEmailTransport.js      Brevo API (EMAIL_TRANSPORT=brevo)
+│   │       ├── EmailTemplate.js            abstract: render() → subject/html/text
+│   │       └── PasswordResetEmail.js
 │   │
-│   ├── validators/                         one per route file, same basename
-│   │   ├── auth.validator.js               Joi schemas
-│   │   └── upload.validator.js
+│   ├── validators/                         one per route group, Joi schemas as static members
+│   │   ├── AuthValidator.js
+│   │   └── UploadValidator.js
 │   │
 │   ├── middleware/
-│   │   ├── auth.middleware.js              requireAuth, optionalAuth, requireRole
-│   │   ├── errorHandler.js                 central handler, registered LAST
-│   │   ├── notFound.js                     JSON 404, not Express HTML
-│   │   ├── validate.middleware.js          runs a Joi schema, returns 400
-│   │   └── upload.middleware.js            multer, type/extension/size checks
+│   │   ├── AuthMiddleware.js               requireAuth, optionalAuth, requireRole
+│   │   ├── ErrorHandler.js                 JSON 404 + central error handler, registered LAST
+│   │   ├── RequestValidator.js             runs a Joi schema, returns 400
+│   │   └── FileUploadMiddleware.js         multer, type/extension/size checks
 │   │
 │   ├── utils/
-│   │   ├── asyncHandler.js                 wraps async handlers → error middleware
+│   │   ├── AsyncHandler.js                 wraps async handlers → error middleware
 │   │   ├── ApiError.js                     thrown by services, caught centrally
-│   │   └── response.js                     success/error envelope helpers
+│   │   └── ApiResponse.js                  success/error envelope helpers
 │   │
-│   ├── app.js                              Express assembly — exported, no listen()
-│   └── server.js                           imports app, binds port, connects DB
+│   ├── core/
+│   │   ├── App.js                          Express assembly — exports `app`, no listen()
+│   │   └── Server.js                       shutdown hooks, connects DB, binds port
+│   │
+│   └── server.js                           entry point: starts a Server
 │
 ├── scripts/
-│   └── seed.js                             idempotent, one user per role
+│   ├── seed.js                             entry point: runs DatabaseSeeder
+│   └── DatabaseSeeder.js                   idempotent, one demo account per role
 │
 ├── tests/
 │   ├── setup.js                            in-memory Mongo, reset between tests
@@ -100,7 +135,8 @@ server/
 │   │   ├── auth.rbac.test.js
 │   │   └── upload.create.test.js
 │   └── unit/
-│       └── email.service.test.js
+│       ├── email.service.test.js
+│       └── people.test.js                  Person hierarchy + PersonFactory
 │
 ├── .env.example                            every var, dummy values, committed
 ├── .lintstagedrc.json
@@ -120,11 +156,21 @@ Requests flow **route → validate → middleware → controller → service →
 | `middleware/` | Auth, role checks, validation, error handling | Talks to models directly (except `requireAuth` loading the user) |
 | `controllers/` | Reads `req`, calls a service, sends the response | Contains business logic, queries models, uses try/catch |
 | `services/` | Business logic, model queries, token work | Touches `req` or `res` |
-| `models/` | Schema, indexes, instance methods, `toJSON` transforms | Contains request-shaped logic |
+| `models/` | Schema, indexes, `toJSON` transforms | Contains business logic or request-shaped logic |
+| `domain/` | The design's classes (the `Person` role hierarchy); used by middleware, validators and services | Imports Mongoose or the models, touches `req` or `res` |
+| `enums/` | Frozen string values shared across layers (`Role`) | Contains logic |
 
-**Controllers must not contain `try/catch`.** Wrap them in `asyncHandler` and throw `ApiError` from services — `errorHandler.js` catches everything.
+**Controllers must not contain `try/catch`.** Every controller extends `BaseController`, which wraps its handlers so anything thrown reaches `ErrorHandler`; services throw `ApiError`.
 
-**Every response goes through the envelope helpers in `utils/response.js`.** The React Native client is built against that shape; a hand-rolled response breaks it silently.
+**Every response goes through the envelope helpers in `utils/ApiResponse.js`.** The React Native client is built against that shape; a hand-rolled response breaks it silently.
+
+### Server class conventions
+
+- **One class per file, named after the class** (`AuthService.js` holds `AuthService`). The only non-class files are the entry scripts `src/server.js` and `scripts/seed.js`, which keep their paths so `npm start` and `npm run seed` never change, and the frozen enums in `src/enums/`.
+- **Classes with dependencies or state export the class and one shared instance**, named in camelCase (`AuthService` → `authService`). Dependencies are constructor parameters that default to those shared instances, so a test can pass its own.
+- **Stateless helpers use static members**: `ApiResponse`, `AsyncHandler`, `RequestValidator`, `ErrorHandler` and the validators.
+- **Every public controller method is a route handler.** `BaseController` binds and wraps all of them, so a helper a controller needs internally must be a `#private` method.
+- **Base classes:** `BaseController`, `BaseRoutes`, `ExpiringToken` (models), `EmailTransport`, `EmailTemplate` and `Person` (domain).
 
 ---
 
@@ -173,17 +219,18 @@ app/
 │   │   │   ├── LoginScreen.js
 │   │   │   ├── ForgotPasswordScreen.js
 │   │   │   └── ResetPasswordScreen.js
-│   │   ├── shared/                         every signed-in role
+│   │   ├── shared/                         every signed-in field role
 │   │   │   ├── HomeScreen.js               placeholder landing screen
 │   │   │   ├── AccountSettingsScreen.js
-│   │   │   └── ChangePasswordScreen.js
+│   │   │   ├── ChangePasswordScreen.js
+│   │   │   └── WrongPlatformScreen.js      officer / unknown roles stop here, with Log out
 │   │   └── dev/
 │   │       └── ComponentDemoScreen.js      dev only, excluded from prod nav
 │   │
 │   ├── navigation/
-│   │   ├── RootNavigator.js                conditional render, NOT navigation
+│   │   ├── RootNavigator.js                conditional render, NOT navigation; gates non-field roles
 │   │   ├── AuthStack.js
-│   │   ├── MainTabs.js                     bottom tabs, one navigator for every role
+│   │   ├── MainTabs.js                     bottom tabs, one navigator for every field role
 │   │   ├── tabBarTheme.js                  shared tab bar colours
 │   │   └── navigationRef.js
 │   │
@@ -196,7 +243,9 @@ app/
 │   │   └── useHeroScroll.js                scroll state for HeroHeader screens
 │   │
 │   ├── constants/
-│   │   └── config.js                       APP_NAME; ONLY file reading EXPO_PUBLIC_* vars
+│   │   ├── config.js                       APP_NAME; ONLY file reading EXPO_PUBLIC_* vars
+│   │   ├── roles.js                        role values, labels, mobile/web platform per role
+│   │   └── demoUsers.js                    demo accounts: login picker + mock API users
 │   │
 │   └── utils/
 │       ├── validation.js                   client-side form rules
@@ -236,15 +285,80 @@ app/
 
 ---
 
+## `web/` — Vite + React officer web portal
+
+Mirrors `app/src` folder for folder, and the client layering rules above apply unchanged. Files containing JSX are `.jsx`, React Router takes the place of React Navigation in `navigation/`, and styling is plain Tailwind classes with the tokens in `global.css`. `web/README.md` has setup, env vars and the full app↔web mapping.
+
+```
+web/
+├── public/
+│   └── favicon.svg
+├── src/
+│   ├── api/
+│   │   ├── client.js                       Axios + interceptors + refresh queue (copy of app's)
+│   │   ├── index.js                        resolves mock vs real from USE_MOCK
+│   │   ├── authApi.js                      real implementation: login, refresh, logout, me
+│   │   └── mock/
+│   │       └── authApi.js                  same signatures, fake data, FAKES FAILURES TOO
+│   │
+│   ├── components/
+│   │   └── ui/                             shared kit — AuthShell, Brand, Button, Card, Loader,
+│   │                                       Notice, Screen, ScreenHeader, SectionLabel, TextInput
+│   │
+│   ├── screens/
+│   │   ├── auth/
+│   │   │   └── LoginScreen.jsx             demo picker: the three officer accounts
+│   │   └── shared/
+│   │       ├── PlaceholderScreen.jsx       every console page until it's built
+│   │       └── WrongPlatformScreen.jsx     field / unknown roles stop here, with Log out
+│   │
+│   ├── navigation/
+│   │   ├── RootNavigator.jsx               conditional render, NOT navigation; gates non-officer roles
+│   │   ├── AuthRoutes.jsx                  signed-out routes (≈ AuthStack)
+│   │   ├── ConsoleRoutes.jsx               signed-in routes (≈ AppStack + MainTabs)
+│   │   ├── ConsoleLayout.jsx               top bar + sidebar + current page
+│   │   └── sidebarItems.js                 sidebar links: path, label, icon
+│   │
+│   ├── store/
+│   │   ├── AuthContext.jsx                 single source of truth for session
+│   │   └── tokenStorage.js                 localStorage wrapper (XSS trade-off noted in the file)
+│   │
+│   ├── hooks/
+│   │   └── useAuth.js                      consumes AuthContext
+│   │
+│   ├── constants/
+│   │   ├── config.js                       APP_NAME; ONLY file reading import.meta.env (VITE_*)
+│   │   ├── roles.js                        copy of app's + isWebRole()   — keep in sync
+│   │   └── demoUsers.js                    copy of app's                 — keep in sync
+│   │
+│   └── utils/                              empty for now
+│
+├── App.jsx                                 providers + router + RootNavigator, nothing else
+├── index.jsx                               entry: mounts App, imports global.css
+├── index.html                              page title + favicon, loads index.jsx
+├── global.css                              Tailwind import + design tokens (@theme)
+├── vite.config.js                          React + Tailwind plugins
+├── .env.example
+├── .lintstagedrc.json
+├── .npmrc                                  save-exact=true — every dependency pinned
+├── eslint.config.js                        same rules as app's, ES module syntax
+├── package.json
+└── README.md                               setup, scripts, env vars, app↔web mapping
+```
+
+**`app/` and `web/` share no code** (no workspace, no shared package). Small files are copied instead: `roles.js`, `demoUsers.js`, the API client, the auth API and mock, and `AuthContext`. Change a copy and its twin in the same PR; `web/README.md` lists each pair.
+
+---
+
 ## Naming conventions
 
 | Thing | Convention | Example |
 |---|---|---|
-| Server layer files | `<resource>.<layer>.js` | `auth.controller.js`, `token.service.js` |
-| Models | `<entity>.model.js`, singular | `user.model.js` |
-| React components | PascalCase, one per file | `Button.js`, `ScreenHeader.js` |
+| Server classes | PascalCase, one class per file, `<Resource><Layer>.js` | `AuthController.js`, `TokenService.js` |
+| Models | PascalCase, singular | `User.js` |
+| React components | PascalCase, one per file (`.jsx` in `web/`) | `Button.js`, `ScreenHeader.jsx` |
 | Screens | PascalCase + `Screen` suffix | `LoginScreen.js` |
-| Navigators | PascalCase + `Navigator` / `Stack` / `Tabs` | `RootNavigator.js`, `MainTabs.js` |
+| Navigators | PascalCase + `Navigator` / `Stack` / `Tabs` (`web/`: `Routes` / `Layout`) | `RootNavigator.js`, `MainTabs.js`, `ConsoleRoutes.jsx` |
 | Hooks | camelCase, `use` prefix | `useAuth.js` |
 | API modules | camelCase + `Api` suffix | `uploadApi.js` |
 | Test files | `tests/integration/` or `tests/unit/`, `<resource>.<behaviour>.test.js` | `tests/integration/auth.login.test.js` |
@@ -257,18 +371,18 @@ Routes are plural, lowercase, hyphenated: `/api/uploads`, `/api/item-categories`
 
 ## Linting, formatting, and the pre-commit hook
 
-Both `app/` and `server/` share one Prettier config (`.prettierrc.json` at the repo root) and each has its own ESLint config (`app/eslint.config.js`, `server/eslint.config.js`). `eslint-config-prettier` is applied in both so ESLint never fights Prettier over formatting — ESLint owns code-quality rules, Prettier owns style.
+`app/`, `web/` and `server/` share one Prettier config (`.prettierrc.json` at the repo root) and each has its own ESLint config (`app/eslint.config.js`, `web/eslint.config.js`, `server/eslint.config.js`). `eslint-config-prettier` is applied in all three so ESLint never fights Prettier over formatting — ESLint owns code-quality rules, Prettier owns style.
 
-**Run locally**, from inside `app/` or `server/`:
+**Run locally**, from inside `app/`, `web/` or `server/`:
 
 ```bash
 npm run lint      # ESLint — code-quality rules, fails on errors
 npm run format     # Prettier --write — reformats files in place
 ```
 
-`npm run lint` is also what CI runs on every pull request targeting `develop` or `main` (`.github/workflows/ci.yml`), for both `app/` and `server/`. **The check is required on `develop`** — a PR cannot be merged while it's red.
+`npm run lint` is also what CI runs on every pull request targeting `develop` or `main` (`.github/workflows/ci.yml`), for `app/`, `web/` and `server/`; for `web/`, CI also runs `npm run build`. **The check is required on `develop`** — a PR cannot be merged while it's red.
 
-**Pre-commit hook (Husky + lint-staged).** On every `git commit`, `.husky/pre-commit` runs `npx lint-staged`, which reads `app/.lintstagedrc.json` / `server/.lintstagedrc.json` and runs `eslint --fix` then `prettier --write` against **staged files only** — not the whole project, so it stays fast.
+**Pre-commit hook (Husky + lint-staged).** On every `git commit`, `.husky/pre-commit` runs `npx lint-staged`, which reads `app/.lintstagedrc.json` / `web/.lintstagedrc.json` / `server/.lintstagedrc.json` and runs `eslint --fix` then `prettier --write` against **staged files only** — not the whole project, so it stays fast.
 
 - Pure formatting issues (spacing, quotes, semicolons) are auto-fixed and silently re-staged — you won't see a rejection for those.
 - Real lint errors (e.g. `no-unused-vars`, a broken React Hooks rule) can't be auto-fixed. The commit is **aborted** and lint-staged prints the offending file(s) and rule(s).
@@ -291,3 +405,4 @@ Don't reach for `git commit --no-verify` to skip this — it only defers the sam
 4. **JavaScript only. No TypeScript.**
 5. **Never commit secrets.** `.env` is gitignored; `.env.example` gets the dummy values.
 6. Install React Native packages with `npx expo install`, not `npm install`, so versions match the SDK.
+7. In `web/`, install with `npm install`; `web/.npmrc` pins every dependency to an exact version.

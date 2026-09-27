@@ -113,12 +113,12 @@ function CardSection() {
 
       <Section title="Card - selectable">
         <Card
-          title="I'm looking for work"
+          title="I'm a member of the public"
           description="A short description of what this option means."
           onPress={() => {}}
         />
         <Card
-          title="I'm hiring"
+          title="I'm a community volunteer"
           description="A selected card, with its description underneath."
           selected
           onPress={() => {}}
@@ -203,10 +203,10 @@ function TokenSwatch({ name, prefix, swatchClassName }) {
 
 function TokenSwatchSection() {
   return (
-    <Section title="Design tokens - v3 swatches">
+    <Section title="Design tokens - swatches">
       <Text className="text-sm text-text-secondary">
-        Every v3 colour token and radius, rendered from its Tailwind class name so the set can be
-        checked on a device instead of read out of tailwind.config.js.
+        Every design-token colour and radius, rendered from its Tailwind class name so the set can
+        be checked on a device instead of read out of tailwind.config.js.
       </Text>
 
       <View className="mt-1 flex-row flex-wrap gap-4">
@@ -244,7 +244,7 @@ function AuthPrimitivesSection() {
       <ProgressPips total={4} current={2} caption />
       <Notice>A notice gives short, helpful context about the step you&apos;re on.</Notice>
       <Notice variant="error">Something went wrong. Please try again.</Notice>
-      <RoleStrip value="I'm looking for work" onAction={() => {}} />
+      <RoleStrip value="Citizen" onAction={() => {}} />
     </Section>
   );
 }
@@ -276,34 +276,34 @@ function BadgeSection() {
 }
 
 function ChipSection() {
-  const [scheduleValue, setScheduleValue] = useState('weekday');
-  const [skillSelected, setSkillSelected] = useState(true);
+  const [hazardValue, setHazardValue] = useState('flood');
+  const [firstAidSelected, setFirstAidSelected] = useState(true);
 
   return (
     <Section title="Chip">
       <Text className="text-sm text-text-secondary">Default size, selectable</Text>
       <View className="flex-row flex-wrap gap-2">
-        <Chip selected={scheduleValue === 'weekday'} onPress={() => setScheduleValue('weekday')}>
-          Weekday evenings
+        <Chip selected={hazardValue === 'flood'} onPress={() => setHazardValue('flood')}>
+          Flood
         </Chip>
-        <Chip selected={scheduleValue === 'weekends'} onPress={() => setScheduleValue('weekends')}>
-          Weekends
+        <Chip selected={hazardValue === 'landslide'} onPress={() => setHazardValue('landslide')}>
+          Landslide
         </Chip>
       </View>
 
       <Text className="mt-3 text-sm text-text-secondary">Small size, selectable</Text>
       <View className="flex-row flex-wrap gap-2">
-        <Chip size="sm" selected={skillSelected} onPress={() => setSkillSelected((v) => !v)}>
-          Tutoring
+        <Chip size="sm" selected={firstAidSelected} onPress={() => setFirstAidSelected((v) => !v)}>
+          First aid
         </Chip>
-        <Chip size="sm" selected={!skillSelected} onPress={() => setSkillSelected((v) => !v)}>
-          Excel
+        <Chip size="sm" selected={!firstAidSelected} onPress={() => setFirstAidSelected((v) => !v)}>
+          Search and rescue
         </Chip>
       </View>
 
       <Text className="mt-3 text-sm text-text-secondary">Static (no onPress)</Text>
       <View className="flex-row flex-wrap gap-2">
-        <Chip>Customer service</Chip>
+        <Chip>Colombo</Chip>
       </View>
     </Section>
   );
@@ -316,16 +316,16 @@ function AvatarSection() {
     <Section title="Avatar">
       <Text className="text-sm text-text-secondary">With image</Text>
       <View className="flex-row items-center gap-4">
-        <Avatar uri={imageUri} name="Ashan Perera" size="sm" />
-        <Avatar uri={imageUri} name="Ashan Perera" size="md" />
-        <Avatar uri={imageUri} name="Ashan Perera" size="lg" />
+        <Avatar uri={imageUri} name="Nimal Perera" size="sm" />
+        <Avatar uri={imageUri} name="Nimal Perera" size="md" />
+        <Avatar uri={imageUri} name="Nimal Perera" size="lg" />
       </View>
 
       <Text className="mt-3 text-sm text-text-secondary">No image - initials fallback</Text>
       <View className="flex-row items-center gap-4">
-        <Avatar name="Ashan Perera" size="sm" />
-        <Avatar name="Ashan Perera" size="md" />
-        <Avatar name="Ashan Perera" size="lg" />
+        <Avatar name="Nimal Perera" size="sm" />
+        <Avatar name="Nimal Perera" size="md" />
+        <Avatar name="Nimal Perera" size="lg" />
       </View>
     </Section>
   );
@@ -334,7 +334,7 @@ function AvatarSection() {
 function SectionLabelSection() {
   return (
     <Section title="SectionLabel">
-      <SectionLabel>Skills</SectionLabel>
+      <SectionLabel>Recent reports</SectionLabel>
     </Section>
   );
 }
@@ -344,12 +344,12 @@ function ScreenHeaderSection() {
     <Section title="ScreenHeader">
       <Text className="text-sm text-text-secondary">Default title, avatar right slot</Text>
       <View className="overflow-hidden rounded-lg border border-border bg-paper">
-        <ScreenHeader title="Explore" rightSlot={<Avatar name="Ashan Perera" size="sm" />} />
+        <ScreenHeader title="Alerts" rightSlot={<Avatar name="Nimal Perera" size="sm" />} />
       </View>
 
       <Text className="mt-3 text-sm text-text-secondary">Small title, back button</Text>
       <View className="overflow-hidden rounded-lg border border-border bg-paper">
-        <ScreenHeader title="Work experience" small onBack={() => {}} />
+        <ScreenHeader title="Emergency contacts" small onBack={() => {}} />
       </View>
 
       <Text className="mt-3 text-sm text-text-secondary">
@@ -357,7 +357,7 @@ function ScreenHeaderSection() {
       </Text>
       <View className="overflow-hidden rounded-lg border border-border bg-paper">
         <ScreenHeader
-          title="Work experience"
+          title="Emergency contacts"
           small
           onBack={() => {}}
           rightSlot={<Text className="text-[14px] font-bold text-signal">+ Add</Text>}
@@ -383,10 +383,8 @@ function HeroHeaderSection() {
           scrollEventThrottle={16}
         >
           <HeroHeader>
-            <Text className="text-center font-display text-[22px] text-paper">Ashan Perera</Text>
-            <Text className="mt-1 text-center text-[13px] text-muted-dark">
-              Job Seeker · Colombo
-            </Text>
+            <Text className="text-center font-display text-[22px] text-paper">Nimal Perera</Text>
+            <Text className="mt-1 text-center text-[13px] text-muted-dark">Citizen · Colombo</Text>
           </HeroHeader>
           <HeroSheet>
             <View className="gap-3 px-5 py-6">
@@ -398,7 +396,7 @@ function HeroHeaderSection() {
         </ScrollView>
 
         <View className="absolute left-0 right-0 top-0">
-          <HeroStickyBar title="Ashan Perera" visible={stickyVisible} onBack={() => {}} />
+          <HeroStickyBar title="Nimal Perera" visible={stickyVisible} onBack={() => {}} />
         </View>
       </View>
     </Section>
@@ -413,8 +411,8 @@ function SegmentedControlSection() {
       <SegmentedControl
         options={[
           { value: 'all', label: 'All 7' },
-          { value: 'live', label: 'Live 3' },
-          { value: 'decided', label: 'Decided 4' },
+          { value: 'pending', label: 'Pending 3' },
+          { value: 'verified', label: 'Verified 4' },
         ]}
         value={status}
         onChange={setStatus}

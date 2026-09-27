@@ -15,10 +15,9 @@ function getInitials(name) {
   return (first + last).toUpperCase();
 }
 
-// A business's own avatar is square rather than round - the v3 mockup uses
-// this as the only visual marker distinguishing a business from a seeker
-// wherever an avatar appears alone, so it needs to survive independent of
-// whatever name/label sits next to it.
+// `square` draws the avatar as a rounded square instead of a circle. Where an
+// avatar appears alone, its shape is the only cue to what kind of account it
+// is, so the shape must not depend on whatever name/label sits next to it.
 export default function Avatar({ uri, name, size = 'md', square = false, className, ...props }) {
   const [failed, setFailed] = useState(false);
   const sizeStyles = SIZE_STYLES[size] ?? SIZE_STYLES.md;

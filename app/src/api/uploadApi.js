@@ -13,7 +13,7 @@ import client from './client';
  * `POST /api/uploads` - uploads a single image for the given purpose and
  * returns its stored URL (`data.url`, §6.1). `asset` is an
  * `expo-image-picker` result asset; `folder` is one of the server's closed
- * purposes (only `"avatars"` this sprint).
+ * purposes (only `"avatars"` so far).
  */
 async function uploadImage(asset, folder) {
   const mimeType = asset.mimeType || 'image/jpeg';
@@ -34,8 +34,8 @@ async function uploadImage(asset, folder) {
 }
 
 /**
- * `POST /api/uploads` for a non-image purpose (e.g. a PDF, in the `trials`
- * or `resumes` folder). `asset` has the shape of an `expo-document-picker`
+ * `POST /api/uploads` for a non-image file (e.g. a PDF). `asset` has the
+ * shape of an `expo-document-picker`
  * result asset - `{ uri, name, mimeType }` - which already carries a real
  * file name and MIME type, unlike `expo-image-picker`'s asset shape that
  * `uploadImage` above has to derive them from.

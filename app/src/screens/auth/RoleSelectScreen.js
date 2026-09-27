@@ -9,17 +9,20 @@ import Card from '../../components/ui/Card';
 import Notice from '../../components/ui/Notice';
 import ProgressPips from '../../components/ui/ProgressPips';
 import { APP_NAME } from '../../constants/config';
+import { ROLES } from '../../constants/roles';
 
-const ROLES = [
+// One card per self-sign-up role (SELF_SIGN_UP_ROLES) - every other role's
+// account is created for it by the seed script.
+const ROLE_OPTIONS = [
   {
-    role: 'seeker',
-    title: "I'm looking for work",
-    description: 'Browse gigs, apply, and get hired by businesses near you.',
+    role: ROLES.CITIZEN,
+    title: "I'm a member of the public",
+    description: 'Report hazards near you and get warnings for your area.',
   },
   {
-    role: 'business',
-    title: "I'm hiring",
-    description: 'Post gigs and find people to get the work done.',
+    role: ROLES.COMMUNITY_VOLUNTEER,
+    title: "I'm a community volunteer",
+    description: 'Report hazards and get warnings as a trained volunteer.',
   },
 ];
 
@@ -51,7 +54,7 @@ export default function RoleSelectScreen() {
       </Text>
 
       <View className="mt-6 gap-3">
-        {ROLES.map(({ role, title, description }) => (
+        {ROLE_OPTIONS.map(({ role, title, description }) => (
           <Card
             key={role}
             title={title}
@@ -64,7 +67,8 @@ export default function RoleSelectScreen() {
 
       <Notice className="mt-5">
         This sets up your whole account, so pick the one that fits how you&apos;ll mostly use{' '}
-        {APP_NAME}.
+        {APP_NAME}. Rescue team leads and officers don&apos;t sign up here - their accounts are
+        created for them.
       </Notice>
 
       <View className="flex-1" />

@@ -1,15 +1,16 @@
 import jwt from 'jsonwebtoken';
 import request from 'supertest';
-import app from '../../src/app.js';
-import { env } from '../../src/config/env.js';
+import { app } from '../../src/core/App.js';
+import { env } from '../../src/config/Config.js';
 
 const validPassword = 'Password123!';
 
 const registerUser = (email) =>
   request(app).post('/api/auth/register').send({
+    name: 'Test Citizen',
     email,
     password: validPassword,
-    role: 'seeker',
+    role: 'citizen',
   });
 
 const signExpiredAccessToken = (user) =>

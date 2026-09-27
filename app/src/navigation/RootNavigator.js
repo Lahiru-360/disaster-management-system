@@ -7,14 +7,16 @@ import Loader from '../components/ui/Loader';
 import ComponentDemoScreen from '../screens/dev/ComponentDemoScreen';
 import AccountSettingsScreen from '../screens/shared/AccountSettingsScreen';
 import ChangePasswordScreen from '../screens/shared/ChangePasswordScreen';
+import WrongPlatformScreen from '../screens/shared/WrongPlatformScreen';
+import { isMobileRole } from '../constants/roles';
 import useAuth from '../hooks/useAuth';
 import { AUTH_STATUS } from '../store/AuthContext';
 
 const Stack = createNativeStackNavigator();
 
-// Screens pushed on top of the tabs are registered here once for every role.
-// Role-specific screens go in a branch on useAuth().user.role, the same way
-// MainTabs would branch its tabs.
+// Screens pushed on top of the tabs are registered here once for every field
+// role. Role-specific screens go in a branch on useAuth().user.role, the same
+// way MainTabs would branch its tabs.
 function AppStack() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
@@ -36,7 +38,7 @@ function AppStack() {
 // Auth and app stacks are alternatives, not destinations you navigate to -
 // only one is ever mounted, so there's no back/swipe path from one into the other.
 export default function RootNavigator() {
-  const { status } = useAuth();
+  const { status, user } = useAuth();
 
   // A brand-new install should land on RoleSelect (choose a role, sign up) -
   // but anyone who signs out after having been authenticated already has an
@@ -59,7 +61,9 @@ export default function RootNavigator() {
   }
 
   if (status === AUTH_STATUS.AUTHENTICATED) {
-    return <AppStack />;
+    // This app serves the field roles only. Officers (who use the web portal)
+    // and roles it doesn't know stop here, still signed in, with a way out.
+    return isMobileRole(user?.role) ? <AppStack /> : <WrongPlatformScreen />;
   }
 
   return <AuthStack initialRouteName={wasAuthenticated ? 'Login' : 'RoleSelect'} />;

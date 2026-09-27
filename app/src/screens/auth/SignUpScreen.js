@@ -9,13 +9,9 @@ import Notice from '../../components/ui/Notice';
 import ProgressPips from '../../components/ui/ProgressPips';
 import RoleStrip from '../../components/ui/RoleStrip';
 import TextInput from '../../components/ui/TextInput';
+import { roleLabel } from '../../constants/roles';
 import useAuth from '../../hooks/useAuth';
 import { validateSignUpForm } from '../../utils/validation';
-
-const ROLE_LABELS = {
-  seeker: 'Seeker',
-  business: 'Business',
-};
 
 export default function SignUpScreen() {
   const navigation = useNavigation();
@@ -23,6 +19,7 @@ export default function SignUpScreen() {
   const { register } = useAuth();
 
   const [role] = useState(route.params?.role);
+  const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -31,7 +28,7 @@ export default function SignUpScreen() {
   const [submitting, setSubmitting] = useState(false);
 
   const handleSubmit = async () => {
-    const validationErrors = validateSignUpForm({ email, password, confirmPassword });
+    const validationErrors = validateSignUpForm({ name, email, password, confirmPassword });
     setErrors(validationErrors);
     setFormError('');
     if (Object.keys(validationErrors).length > 0) return;
@@ -39,6 +36,7 @@ export default function SignUpScreen() {
     setSubmitting(true);
     try {
       await register({
+        name: name.trim(),
         email: email.trim().toLowerCase(),
         password,
         role,
@@ -75,10 +73,20 @@ export default function SignUpScreen() {
 
       <RoleStrip
         className="mt-5"
-        value={ROLE_LABELS[role]}
+        value={roleLabel(role)}
         onAction={submitting ? undefined : () => navigation.navigate('RoleSelect')}
       />
 
+      <TextInput
+        label="Full name"
+        placeholder="Your full name"
+        autoCapitalize="words"
+        value={name}
+        onChangeText={setName}
+        error={errors.name}
+        disabled={submitting}
+        containerClassName="mt-6"
+      />
       <TextInput
         label="Email"
         placeholder="you@example.com"
@@ -88,7 +96,6 @@ export default function SignUpScreen() {
         onChangeText={setEmail}
         error={errors.email}
         disabled={submitting}
-        containerClassName="mt-6"
       />
       <TextInput
         label="Password"
