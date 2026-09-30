@@ -44,6 +44,8 @@ This is a free-tier instance, so it sleeps after periods of inactivity. The firs
 
 `npm run seed` creates one demo account per role against the shared cluster, all with the password `Password123!`. It is idempotent — an existing user (matched by email) is left untouched, so running it repeatedly never creates duplicates.
 
+Before the accounts, it also seeds the geography every feature works "by district" against: the 25 districts of Sri Lanka and 8 river basins (`scripts/DistrictSeeder.js`). They are matched by name and updated in place, so a corrected coordinate reaches the database on the next seed.
+
 | Role                  | Name                  | Email                         | Client     |
 | --------------------- | --------------------- | ----------------------------- | ---------- |
 | `citizen`             | Nimal Perera          | citizen@example.test          | Mobile app |
