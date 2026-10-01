@@ -3,6 +3,7 @@ import helmet from 'helmet';
 import cors from 'cors';
 import morgan from 'morgan';
 import { ErrorHandler } from '../middleware/ErrorHandler.js';
+import { areaRoutes } from '../routes/AreaRoutes.js';
 import { authRoutes } from '../routes/AuthRoutes.js';
 import { healthRoutes } from '../routes/HealthRoutes.js';
 import { uploadRoutes } from '../routes/UploadRoutes.js';
@@ -13,7 +14,7 @@ import { uploadRoutes } from '../routes/UploadRoutes.js';
 export class App {
   #express = express();
 
-  constructor(routeGroups = [healthRoutes, authRoutes, uploadRoutes]) {
+  constructor(routeGroups = [healthRoutes, authRoutes, uploadRoutes, areaRoutes]) {
     this.#registerMiddleware();
     this.#registerRoutes(routeGroups);
     this.#registerErrorHandlers();

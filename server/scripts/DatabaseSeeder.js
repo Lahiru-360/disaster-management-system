@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import { env } from '../src/config/Config.js';
 import { Role } from '../src/enums/Role.js';
 import { User } from '../src/models/User.js';
+import { DistrictSeeder } from './DistrictSeeder.js';
 
 // Seeds one demo account per role. Safe to re-run: accounts are matched by
 // email and only created when missing ($setOnInsert), so an existing one is
@@ -36,6 +37,8 @@ export class DatabaseSeeder {
 
   async run() {
     await mongoose.connect(env.mongoUri);
+
+    await new DistrictSeeder().run();
 
     const passwordHash = await bcrypt.hash(DatabaseSeeder.#PASSWORD, DatabaseSeeder.#SALT_ROUNDS);
 

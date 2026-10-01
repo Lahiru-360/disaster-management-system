@@ -2,7 +2,7 @@
 
 **Purpose:** the single source of truth for how every endpoint in this project looks — the shape of a request, the shape of a response, and what each status code means here. Client code is written against this document, not against whichever server behavior happens to exist yet. If a real endpoint disagrees with this document, the endpoint is wrong.
 
-This contract covers the auth and upload endpoints in full. New endpoints are added under these same conventions — they get their own sections when specified, not their own rules.
+This contract covers the auth, upload and areas endpoints in full. New endpoints are added under these same conventions — they get their own sections when specified, not their own rules.
 
 ---
 
@@ -654,7 +654,115 @@ A `502` means the file itself may have been fine — try again. A `400` means th
 
 ---
 
-## 7. Adding a new endpoint later
+## 7. Areas endpoints
+
+The registered geography every feature works "by district" against: the 25 districts of Sri Lanka and the river basins that span them. A district and a river basin are both a **target area** — the thing a hazard warning is aimed at — so every other section refers to them by the `id` these endpoints return (`areaIds`, `districtId`, `districtIds`). No other section defines its own list of districts.
+
+Both endpoints are read-only reference data, seeded by `npm run seed` and never edited through the API. Both require `Authorization: Bearer <accessToken>`, and admit **every role** — citizens need the district list as much as officers do.
+
+**Request:** no body and no query parameters. The full list is always returned, sorted by `name` ascending, without pagination.
+
+`bounds` is a bounding box, not the district's real outline — an accepted approximation that is only used to work out which district a point falls in. `centroid` is the reference point for distance calculations.
+
+### 7.1 List districts — `GET /api/districts`
+
+**Success — `200 OK`** (two of the 25 districts shown)
+
+```json
+{
+  "success": true,
+  "data": {
+    "districts": [
+      {
+        "id": "66f7c1a2b3c4d5e6f7a8b901",
+        "name": "Colombo",
+        "province": "Western",
+        "centroid": { "lat": 6.9271, "lng": 79.8612 },
+        "bounds": { "minLat": 6.75, "maxLat": 6.98, "minLng": 79.83, "maxLng": 80.22 },
+        "createdAt": "2026-09-28T08:00:00.000Z",
+        "updatedAt": "2026-09-28T08:00:00.000Z"
+      },
+      {
+        "id": "66f7c1a2b3c4d5e6f7a8b902",
+        "name": "Gampaha",
+        "province": "Western",
+        "centroid": { "lat": 7.0917, "lng": 79.9999 },
+        "bounds": { "minLat": 6.98, "maxLat": 7.33, "minLng": 79.82, "maxLng": 80.26 },
+        "createdAt": "2026-09-28T08:00:00.000Z",
+        "updatedAt": "2026-09-28T08:00:00.000Z"
+      }
+    ]
+  }
+}
+```
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | string | The district's id. Use this, never `name`, to refer to a district in any request. |
+| `name` | string | Unique, e.g. `"Colombo"`. |
+| `province` | string | The province it belongs to, e.g. `"Western"`. |
+| `centroid` | `{ lat, lng }` | Decimal degrees (WGS 84). |
+| `bounds` | `{ minLat, maxLat, minLng, maxLng }` | Decimal degrees (WGS 84). |
+| `createdAt`, `updatedAt` | ISO 8601 string | |
+
+### 7.2 List river basins — `GET /api/river-basins`
+
+**Success — `200 OK`** (one basin shown)
+
+```json
+{
+  "success": true,
+  "data": {
+    "riverBasins": [
+      {
+        "id": "66f7c1a2b3c4d5e6f7a8b9a1",
+        "name": "Kelani",
+        "districts": [
+          { "id": "66f7c1a2b3c4d5e6f7a8b901", "name": "Colombo" },
+          { "id": "66f7c1a2b3c4d5e6f7a8b902", "name": "Gampaha" }
+        ],
+        "createdAt": "2026-09-28T08:00:00.000Z",
+        "updatedAt": "2026-09-28T08:00:00.000Z"
+      }
+    ]
+  }
+}
+```
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | string | The basin's id. A basin id is accepted wherever a request takes target areas (`areaIds`), and stands for every district it spans. |
+| `name` | string | Unique, e.g. `"Kelani"`. |
+| `districts` | `[{ id, name }]` | The districts the basin spans, at least one, sorted by `name`. Each `id` is a district id from §7.1, so a client can show "Kelani (Colombo, Gampaha)" without a second request. |
+| `createdAt`, `updatedAt` | ISO 8601 string | |
+
+### 7.3 Error codes for these endpoints
+
+Neither endpoint takes input, so neither can fail validation, and an empty list is `200` with `[]`, not `404`.
+
+| Status | Code | When |
+|---|---|---|
+| `401` | `AUTH_HEADER_MISSING` | No `Authorization` header. |
+| `401` | `AUTH_HEADER_MALFORMED` | Header present but not `Bearer <token>`. |
+| `401` | `TOKEN_EXPIRED` | Access token expired. |
+| `401` | `TOKEN_INVALID` | Access token invalid, or its user no longer exists or has been deactivated. |
+| `500` | `INTERNAL_ERROR` | Unhandled server-side failure, e.g. the database is unreachable. |
+
+**Failure — `401 Unauthorized`** (no `Authorization` header)
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "AUTH_HEADER_MISSING",
+    "message": "Authorization header is missing."
+  }
+}
+```
+
+---
+
+## 8. Adding a new endpoint later
 
 1. Pick a plural, lowercase, hyphenated resource name.
 2. Reuse the envelopes in sections 2 and 3 exactly — don't invent a new outer shape.
