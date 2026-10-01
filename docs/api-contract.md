@@ -577,7 +577,7 @@ Stores a file in Supabase Storage and returns its public URL. The client never t
 | Field | Rule |
 |---|---|
 | `file` | **Required.** The file itself. PNG, JPG or PDF only, checked against both its MIME type and its extension. Max 5MB. |
-| `folder` | **Required.** A closed list of purposes, not a free path — a caller can't write anywhere else in the bucket. Currently only `avatars`; a feature that needs another purpose adds it to the list. Every folder shares the same 5MB cap and PNG/JPG/PDF allow-list, whatever the calling screen further restricts client-side. |
+| `folder` | **Required.** A closed list of purposes, not a free path — a caller can't write anywhere else in the bucket. Currently `avatars` (profile pictures) and `hazard-reports` (UC02 hazard report photos); a feature that needs another purpose adds it to the list. Every folder shares the same 5MB cap and PNG/JPG/PDF allow-list, whatever the calling screen further restricts client-side. |
 
 **Success — `201 Created`**
 
@@ -601,7 +601,7 @@ The returned name is generated server-side and unguessable — never the filenam
     "code": "VALIDATION_ERROR",
     "message": "Request validation failed.",
     "errors": [
-      { "field": "folder", "message": "must be one of [avatars]" }
+      { "field": "folder", "message": "must be one of [avatars, hazard-reports]" }
     ]
   }
 }
@@ -641,7 +641,7 @@ A `502` means the file itself may have been fine — try again. A `400` means th
 
 | Status | Code | When |
 |---|---|---|
-| `400` | `VALIDATION_ERROR` | `folder` missing or not in the closed list. Carries `errors`. |
+| `400` | `VALIDATION_ERROR` | `folder` missing or not in the closed list (`avatars`, `hazard-reports`). Carries `errors`. |
 | `400` | `FILE_MISSING` | No file in the `file` field. |
 | `400` | `UNSUPPORTED_FILE_TYPE` | File's MIME type isn't PNG, JPG or PDF. |
 | `400` | `FILE_TYPE_MISMATCH` | File's extension doesn't match its reported MIME type — catches a renamed file. |

@@ -155,4 +155,84 @@ describe('POST /api/uploads', () => {
     expect(url).not.toContain(citizen.userId);
     expect(url).toMatch(/\/avatars\/[0-9a-f-]{36}\.png$/);
   });
+
+  describe('folder=hazard-reports (UC02 Main 5)', () => {
+    it('Main 5: stores a JPG photo under hazard-reports/<uuid>.jpg', async () => {
+      const citizen = await registerCitizen('upload-hazard-photo@example.com');
+
+      const res = await request(app)
+        .post('/api/uploads')
+        .set('Authorization', `Bearer ${citizen.accessToken}`)
+        .field('folder', 'hazard-reports')
+        .attach('file', Buffer.from('fake-image'), {
+          filename: 'river-flood.jpg',
+          contentType: 'image/jpeg',
+        });
+
+      expect(res.status).toBe(201);
+      const url = res.body.data.url;
+
+      expect(url).toMatch(/\/hazard-reports\/[0-9a-f-]{36}\.jpg$/);
+      expect(url).not.toContain('river-flood');
+      expect(mockUpload).toHaveBeenCalledTimes(1);
+      const [key, , options] = mockUpload.mock.calls[0];
+      expect(key).toMatch(/^hazard-reports\//);
+      expect(options).toEqual({ contentType: 'image/jpeg' });
+    });
+
+    it('Main 5: applies the same 5MB cap to hazard-reports', async () => {
+      const citizen = await registerCitizen('upload-hazard-too-large@example.com');
+      const oversized = Buffer.alloc(5 * 1024 * 1024 + 1, 'a');
+
+      const res = await request(app)
+        .post('/api/uploads')
+        .set('Authorization', `Bearer ${citizen.accessToken}`)
+        .field('folder', 'hazard-reports')
+        .attach('file', oversized, { filename: 'big.jpg', contentType: 'image/jpeg' });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error.code).toBe('FILE_TOO_LARGE');
+      expect(mockUpload).not.toHaveBeenCalled();
+    });
+
+    it('Main 5: rejects a non-PNG/JPG/PDF file in hazard-reports', async () => {
+      const citizen = await registerCitizen('upload-hazard-gif@example.com');
+
+      const res = await request(app)
+        .post('/api/uploads')
+        .set('Authorization', `Bearer ${citizen.accessToken}`)
+        .field('folder', 'hazard-reports')
+        .attach('file', Buffer.from('fake-gif'), {
+          filename: 'animation.gif',
+          contentType: 'image/gif',
+        });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error.code).toBe('UNSUPPORTED_FILE_TYPE');
+      expect(mockUpload).not.toHaveBeenCalled();
+    });
+
+    it('Main 5: still rejects an unknown folder, listing both allowed values', async () => {
+      const citizen = await registerCitizen('upload-hazard-near-miss@example.com');
+
+      const res = await request(app)
+        .post('/api/uploads')
+        .set('Authorization', `Bearer ${citizen.accessToken}`)
+        .field('folder', 'hazard-report')
+        .attach('file', Buffer.from('fake-image'), {
+          filename: 'photo.jpg',
+          contentType: 'image/jpeg',
+        });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error.code).toBe('VALIDATION_ERROR');
+      expect(res.body.error.errors).toEqual([
+        {
+          field: 'folder',
+          message: expect.stringContaining('must be one of [avatars, hazard-reports]'),
+        },
+      ]);
+      expect(mockUpload).not.toHaveBeenCalled();
+    });
+  });
 });
