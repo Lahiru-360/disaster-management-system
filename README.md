@@ -53,7 +53,11 @@ server/
 │   │   └── Database.js                     Mongoose connect + graceful shutdown
 │   │
 │   ├── enums/                              frozen string enums shared across layers
-│   │   └── Role.js                         the six role values
+│   │   ├── Role.js                         the six role values
+│   │   ├── ReportHazardType.js             UC02 hazard types a citizen can report
+│   │   ├── ReportStatus.js                 PENDING / CONFIRMED / DISMISSED
+│   │   ├── LocationSource.js               GPS / MANUAL
+│   │   └── DismissalReason.js              why an officer dismissed a report
 │   │
 │   ├── domain/                             plain classes from the design — no Mongoose, no req/res
 │   │   └── people/                         one class per role; `extends` is the role hierarchy
