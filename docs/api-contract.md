@@ -2,7 +2,7 @@
 
 **Purpose:** the single source of truth for how every endpoint in this project looks — the shape of a request, the shape of a response, and what each status code means here. Client code is written against this document, not against whichever server behavior happens to exist yet. If a real endpoint disagrees with this document, the endpoint is wrong.
 
-This contract covers the auth, upload and areas endpoints in full. New endpoints are added under these same conventions — they get their own sections when specified, not their own rules.
+This contract covers the auth, upload, areas, hazard events and organisations endpoints in full. New endpoints are added under these same conventions — they get their own sections when specified, not their own rules.
 
 ---
 
@@ -762,7 +762,176 @@ Neither endpoint takes input, so neither can fail validation, and an empty list 
 
 ---
 
-## 8. Adding a new endpoint later
+## 8. Hazard events endpoints
+
+A **hazard event** is the incident other sections group their records under: UC03's coordination dashboard opens against the one `ACTIVE` event for a district, and UC04's post-event report is generated from one `CLOSED` event. Both read the same record — there is no separate "incident" concept.
+
+Both endpoints are read-only reference data, seeded by `npm run seed`. **Provisional:** `hazardType` here reuses UC01's `AlertHazardType` enum (`FLOOD`, `LANDSLIDE`, `CYCLONE`, `DROUGHT`); confirmed at the contract freeze (§10, DMS-112) once DMS-120.2 lands. Opening and closing an event is seed-only in this phase — no endpoint here creates, updates or closes one.
+
+### 8.1 List hazard events — `GET /api/hazard-events`
+
+Requires `Authorization: Bearer <accessToken>`. Admits every role.
+
+**Request:** no body.
+
+| Query param | Rule |
+|---|---|
+| `status` | Optional. One of `ACTIVE`, `CLOSED`. Any other value → `400 VALIDATION_ERROR` on `status`. |
+| `districtId` | Optional. A district id from §7.1. Matches an event whose `districts` includes it. A malformed id (not a valid id shape) → `400 VALIDATION_ERROR` on `districtId`; a well-formed but unknown id returns an empty list, not an error. |
+
+With neither param, every event is returned.
+
+**Success — `200 OK`** (sorted by `startDate` descending — most recent first)
+
+```json
+{
+  "success": true,
+  "data": {
+    "hazardEvents": [
+      {
+        "id": "66f7c1a2b3c4d5e6f7a8b9c1",
+        "name": "Flood – Gampaha District",
+        "hazardType": "FLOOD",
+        "status": "ACTIVE",
+        "startDate": "2026-09-25T00:00:00.000Z",
+        "endDate": null,
+        "districts": [{ "id": "66f7c1a2b3c4d5e6f7a8b902", "name": "Gampaha" }],
+        "createdAt": "2026-09-28T08:00:00.000Z",
+        "updatedAt": "2026-09-28T08:00:00.000Z"
+      },
+      {
+        "id": "66f7c1a2b3c4d5e6f7a8b9c2",
+        "name": "Kelani basin floods",
+        "hazardType": "FLOOD",
+        "status": "CLOSED",
+        "startDate": "2026-06-08T00:00:00.000Z",
+        "endDate": "2026-06-20T00:00:00.000Z",
+        "districts": [
+          { "id": "66f7c1a2b3c4d5e6f7a8b901", "name": "Colombo" },
+          { "id": "66f7c1a2b3c4d5e6f7a8b902", "name": "Gampaha" },
+          { "id": "66f7c1a2b3c4d5e6f7a8b903", "name": "Kalutara" }
+        ],
+        "createdAt": "2026-09-28T08:00:00.000Z",
+        "updatedAt": "2026-09-28T08:00:00.000Z"
+      }
+    ]
+  }
+}
+```
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | string | The event's id. UC04 reads a report for one event at a time by this id. |
+| `name` | string | e.g. `"Kelani basin floods"`. |
+| `hazardType` | string | One of `AlertHazardType` — see the provisional note above. |
+| `status` | string | `ACTIVE` or `CLOSED`. |
+| `startDate`, `endDate` | ISO 8601 string or `null` | `endDate` is `null` while `status` is `ACTIVE`. |
+| `districts` | `[{ id, name }]` | The districts this event affects, each `id` a district id from §7.1. |
+| `createdAt`, `updatedAt` | ISO 8601 string | |
+
+**Failure — `400 Bad Request`** (unknown `status` value)
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "Request validation failed.",
+    "errors": [{ "field": "status", "message": "must be one of [ACTIVE, CLOSED]" }]
+  }
+}
+```
+
+**Failure — `401 Unauthorized`** — same codes as §7.3.
+
+---
+
+## 9. Organisations endpoints
+
+An **organisation** is who holds relief stock and rescue teams in UC03, and who a report can be shared with in UC04 — one record, read by both.
+
+### 9.1 List organisations — `GET /api/organisations`
+
+Requires `Authorization: Bearer <accessToken>`. Admits every role.
+
+**Request:** no body.
+
+| Query param | Rule |
+|---|---|
+| `type` | Optional. One of `GOVERNMENT`, `ARMED_FORCES`, `POLICE`, `NGO`, `DONOR`. Any other value → `400 VALIDATION_ERROR` on `type`. |
+
+With no param, every organisation is returned.
+
+**Success — `200 OK`** (sorted by `name` ascending; the seeded set shown in full)
+
+```json
+{
+  "success": true,
+  "data": {
+    "organisations": [
+      { "id": "66f7c1a2b3c4d5e6f7a8b9d1", "name": "ADRA", "type": "NGO", "contactEmail": null },
+      {
+        "id": "66f7c1a2b3c4d5e6f7a8b9d2",
+        "name": "Fire Service",
+        "type": "GOVERNMENT",
+        "contactEmail": null
+      },
+      {
+        "id": "66f7c1a2b3c4d5e6f7a8b9d3",
+        "name": "Government/DMC",
+        "type": "GOVERNMENT",
+        "contactEmail": null
+      },
+      {
+        "id": "66f7c1a2b3c4d5e6f7a8b9d4",
+        "name": "Red Cross Sri Lanka",
+        "type": "NGO",
+        "contactEmail": "contact@redcross.lk.example.test"
+      },
+      { "id": "66f7c1a2b3c4d5e6f7a8b9d5", "name": "SL Army", "type": "ARMED_FORCES", "contactEmail": null },
+      {
+        "id": "66f7c1a2b3c4d5e6f7a8b9d6",
+        "name": "Sri Lanka Police",
+        "type": "POLICE",
+        "contactEmail": null
+      },
+      {
+        "id": "66f7c1a2b3c4d5e6f7a8b9d7",
+        "name": "UNICEF Sri Lanka",
+        "type": "DONOR",
+        "contactEmail": "contact@unicef.example.test"
+      }
+    ]
+  }
+}
+```
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | string | The organisation's id. DMS-155 (share a report) refers to a recipient by this id. |
+| `name` | string | Unique, e.g. `"Red Cross Sri Lanka"`. |
+| `type` | string | One of `GOVERNMENT`, `ARMED_FORCES`, `POLICE`, `NGO`, `DONOR`. |
+| `contactEmail` | string or `null` | Set for organisations DMS-155 can email a shared report to; `null` otherwise. |
+| `createdAt`, `updatedAt` | ISO 8601 string | Omitted above for brevity; present on every record, same as §7. |
+
+**Failure — `400 Bad Request`** (unknown `type` value)
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "Request validation failed.",
+    "errors": [{ "field": "type", "message": "must be one of [GOVERNMENT, ARMED_FORCES, POLICE, NGO, DONOR]" }]
+  }
+}
+```
+
+**Failure — `401 Unauthorized`** — same codes as §7.3.
+
+---
+
+## 10. Adding a new endpoint later
 
 1. Pick a plural, lowercase, hyphenated resource name.
 2. Reuse the envelopes in sections 2 and 3 exactly — don't invent a new outer shape.
