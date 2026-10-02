@@ -1,7 +1,12 @@
 import { Ionicons } from '@expo/vector-icons';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 
+import AssignmentsScreen from '../screens/dispatch/AssignmentsScreen';
+import MyReportsScreen from '../screens/hazardReports/MyReportsScreen';
+import ReportHazardScreen from '../screens/hazardReports/ReportHazardScreen';
+import AccountSettingsScreen from '../screens/shared/AccountSettingsScreen';
 import HomeScreen from '../screens/shared/HomeScreen';
+import InboxScreen from '../screens/shared/InboxScreen';
 import { TAB_LABELS, TABS, tabsForRole } from '../constants/roles';
 import useAuth from '../hooks/useAuth';
 import { TAB_BAR_SCREEN_OPTIONS } from './tabBarTheme';
@@ -23,6 +28,11 @@ const ICONS = {
 // so adding a tab's screen is one line.
 const SCREENS = {
   [TABS.HOME]: HomeScreen,
+  [TABS.REPORT]: ReportHazardScreen,
+  [TABS.MY_REPORTS]: MyReportsScreen,
+  [TABS.ASSIGNMENTS]: AssignmentsScreen,
+  [TABS.INBOX]: InboxScreen,
+  [TABS.ACCOUNT]: AccountSettingsScreen,
 };
 
 // One tab navigator for every field role. Which tabs a role sees, and in what

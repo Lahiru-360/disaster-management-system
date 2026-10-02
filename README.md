@@ -184,8 +184,14 @@ app/
 │   │   ├── index.js                        resolves mock vs real from USE_MOCK flag
 │   │   ├── authApi.js                      real implementation
 │   │   ├── uploadApi.js                    real implementation (no mock)
+│   │   ├── hazardReportsApi.js             stub until DMS-130.8
+│   │   ├── dispatchesApi.js                stub until DMS-142.7
+│   │   ├── notificationsApi.js             stub until DMS-106
 │   │   └── mock/
-│   │       └── authApi.js                  same signatures, fake data, FAKES FAILURES TOO
+│   │       ├── authApi.js                  same signatures, fake data, FAKES FAILURES TOO
+│   │       ├── hazardReportsApi.js         stub until DMS-130.8
+│   │       ├── dispatchesApi.js            stub until DMS-142.7
+│   │       └── notificationsApi.js         stub until DMS-106
 │   │
 │   ├── components/
 │   │   └── ui/                             shared kit, used by every screen
@@ -221,9 +227,15 @@ app/
 │   │   │   └── ResetPasswordScreen.js
 │   │   ├── shared/                         every signed-in field role
 │   │   │   ├── HomeScreen.js               placeholder landing screen
-│   │   │   ├── AccountSettingsScreen.js
+│   │   │   ├── InboxScreen.js              Inbox tab placeholder (DMS-106.6)
+│   │   │   ├── AccountSettingsScreen.js    Account tab, and the page pushed from Home
 │   │   │   ├── ChangePasswordScreen.js
 │   │   │   └── WrongPlatformScreen.js      officer / unknown roles stop here, with Log out
+│   │   ├── hazardReports/                  citizen and volunteer
+│   │   │   ├── ReportHazardScreen.js       Report tab placeholder (DMS-130.9)
+│   │   │   └── MyReportsScreen.js          My reports tab placeholder (DMS-131.6)
+│   │   ├── dispatch/                       rescue team lead
+│   │   │   └── AssignmentsScreen.js        Assignments tab placeholder (DMS-142.7)
 │   │   └── dev/
 │   │       └── ComponentDemoScreen.js      dev only, excluded from prod nav
 │   │
