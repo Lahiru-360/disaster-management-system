@@ -21,10 +21,14 @@ export default function Modal({
   const triggerRef = useRef(null);
   // Kept in refs (not effect deps) so re-renders with a fresh `onClose`
   // closure don't tear down and re-run the focus trap while still open.
+  // Written in an effect, not during render, per react-hooks/refs.
   const onCloseRef = useRef(onClose);
   const dismissableRef = useRef(dismissable);
-  onCloseRef.current = onClose;
-  dismissableRef.current = dismissable;
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+    dismissableRef.current = dismissable;
+  });
 
   useEffect(() => {
     if (!open) return undefined;
