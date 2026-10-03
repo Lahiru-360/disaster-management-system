@@ -9,6 +9,10 @@
     "seed": "node scripts/seed.js",
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
     "test:coverage": "node --experimental-vm-modules node_modules/jest/bin/jest.js --coverage",
+    "coverage:uc01": "node scripts/coverageScope.js uc01",
+    "coverage:uc02": "node scripts/coverageScope.js uc02",
+    "coverage:uc03": "node scripts/coverageScope.js uc03",
+    "coverage:uc04": "node scripts/coverageScope.js uc04",
     "lint": "eslint .",
     "format": "prettier --write ."
   },
