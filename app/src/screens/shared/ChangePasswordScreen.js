@@ -1,18 +1,20 @@
 import { useState } from 'react';
 import { ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 
 import Button from '../../components/ui/Button';
 import Notice from '../../components/ui/Notice';
 import PasswordStrengthMeter from '../../components/ui/PasswordStrengthMeter';
 import ScreenHeader from '../../components/ui/ScreenHeader';
 import TextInput from '../../components/ui/TextInput';
+import { TABS } from '../../constants/roles';
 import useAuth from '../../hooks/useAuth';
 import { isValidPassword } from '../../utils/validation';
 
 export default function ChangePasswordScreen() {
   const navigation = useNavigation();
+  const route = useRoute();
   const { changePassword } = useAuth();
 
   const [currentPassword, setCurrentPassword] = useState('');
@@ -33,10 +35,16 @@ export default function ChangePasswordScreen() {
     setSubmitting(true);
     try {
       await changePassword({ currentPassword, newPassword });
-      // Pops back to the already-mounted AccountSettings instance (it's
-      // always what pushed this screen) and hands it the confirmation
-      // to render, rather than a plain goBack() that would say nothing.
-      navigation.navigate('AccountSettings', { passwordChanged: true });
+      // Pops back to the already-mounted Account screen that pushed this one
+      // (the Account tab inside Main, or the AccountSettings page) and hands
+      // it the confirmation to render, rather than a plain goBack() that
+      // would say nothing. popTo, because navigate() in React Navigation 7
+      // pushes a second copy instead of going back.
+      if (route.params?.returnTo === TABS.ACCOUNT) {
+        navigation.popTo('Main', { screen: TABS.ACCOUNT, params: { passwordChanged: true } });
+      } else {
+        navigation.popTo('AccountSettings', { passwordChanged: true });
+      }
     } catch (error) {
       const apiError = error.response?.data?.error;
       // Only a wrong current password gets field-level treatment and

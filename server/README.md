@@ -24,6 +24,28 @@ This is where express code exists (Back-end)
 5. To simulate an expired token, sign one directly with `jsonwebtoken` using a negative `expiresIn` instead of waiting for a real token to expire (see `auth.tokens.test.js`).
 6. Run `npm test` to confirm it passes, then check it also passes with `node --experimental-vm-modules node_modules/jest/bin/jest.js --randomize` if it depends on data another test might create, to make sure ordering isn't accidentally required.
 
+**Coverage**
+
+Coverage is measured per use case: each owner registers their own files and gets their own number, which must stay at **80% lines and 80% branches** or more.
+
+| Command                                   | What it does                                                                                                                                                                                                                                |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm run test:coverage`                   | Runs the full suite with coverage over `src/`, leaving out `src/server.js`, `src/core/Server.js` and `src/config/`. Prints a table and writes `coverage/lcov-report/index.html` and `coverage/coverage-summary.json`.                       |
+| `npm run coverage:gate`                   | Run after `test:coverage`. For each use case, adds up the lines and branches of its registered files and fails if either total is below 80%.                                                                                                |
+| `npm run coverage:uc01` … `coverage:uc04` | Runs the full suite but reports only that use case's files (written to `coverage/uc0X/`), then applies the same 80% check. This is the number for your report. Extra Jest flags go after `--`, e.g. `npm run coverage:uc03 -- --runInBand`. |
+
+CI runs `test:coverage` and then `coverage:gate` on every PR, and attaches `coverage-summary.json` to the run as the `server-coverage-summary` artifact.
+
+**Registering your files.** In the same PR that adds them, add globs (relative to `server/`) to your use case's list in `coverage-scopes.json`, e.g. `"uc03": ["src/domain/coordination/**/*.js", "src/services/ShelterService.js"]`. A leading `!` excludes, as in Jest's `collectCoverageFrom`. Only edit your own use case's list. The gate skips a use case with an empty list, and fails one whose globs match no file, so a typo can't hide your files.
+
+**Running coverage without your `.env`.** npm scripts run inside `server/`, so they load `server/.env`. If yours sets `EMAIL_TRANSPORT=brevo`, the email tests fail and the password-reset tests call Brevo for real. Run from the repo root instead, which has no `.env`:
+
+```bash
+node server/scripts/coverageScope.js uc03
+node --experimental-vm-modules server/node_modules/jest/bin/jest.js --config server/jest.config.js --rootDir server --coverage
+node server/scripts/checkCoverage.js
+```
+
 ## Deployed dev environment
 
 The API is deployed from `dev-release` to Render, auto-deploying on every push.

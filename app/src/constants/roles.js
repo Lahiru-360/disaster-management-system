@@ -43,3 +43,47 @@ export function rolePlatform(role) {
 export function isMobileRole(role) {
   return rolePlatform(role) === PLATFORMS.MOBILE;
 }
+
+// Bottom tab route names. Screens and icons are attached in MainTabs.js.
+export const TABS = Object.freeze({
+  HOME: 'Home',
+  REPORT: 'Report',
+  MY_REPORTS: 'MyReports',
+  ASSIGNMENTS: 'Assignments',
+  INBOX: 'Inbox',
+  ACCOUNT: 'Account',
+});
+
+export const TAB_LABELS = Object.freeze({
+  [TABS.HOME]: 'Home',
+  [TABS.REPORT]: 'Report',
+  [TABS.MY_REPORTS]: 'My reports',
+  [TABS.ASSIGNMENTS]: 'Assignments',
+  [TABS.INBOX]: 'Inbox',
+  [TABS.ACCOUNT]: 'Account',
+});
+
+// The tabs each mobile role sees, in tab bar order. Navigation only: the
+// server's role inheritance decides what each role may actually do.
+const ROLE_TABS = Object.freeze({
+  [ROLES.CITIZEN]: Object.freeze([
+    TABS.HOME,
+    TABS.REPORT,
+    TABS.MY_REPORTS,
+    TABS.INBOX,
+    TABS.ACCOUNT,
+  ]),
+  [ROLES.COMMUNITY_VOLUNTEER]: Object.freeze([
+    TABS.HOME,
+    TABS.REPORT,
+    TABS.MY_REPORTS,
+    TABS.INBOX,
+    TABS.ACCOUNT,
+  ]),
+  [ROLES.RESCUE_TEAM_LEAD]: Object.freeze([TABS.HOME, TABS.ASSIGNMENTS, TABS.INBOX, TABS.ACCOUNT]),
+});
+
+// Empty for a web role or a role this app doesn't know.
+export function tabsForRole(role) {
+  return ROLE_TABS[role] ?? [];
+}
