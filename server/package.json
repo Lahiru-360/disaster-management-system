@@ -8,6 +8,7 @@
     "dev": "nodemon src/server.js",
     "seed": "node scripts/seed.js",
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
+    "test:coverage": "node --experimental-vm-modules node_modules/jest/bin/jest.js --coverage",
     "lint": "eslint .",
     "format": "prettier --write ."
   },
