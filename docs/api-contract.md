@@ -103,6 +103,12 @@ Every error response — regardless of cause — returns the same outer shape:
 | `FILE_TOO_LARGE` | An uploaded file exceeds the 5MB limit. |
 | `STORAGE_UNAVAILABLE` | The storage backend (Supabase) failed or was unreachable. Always `502`. |
 | `EMAIL_UNAVAILABLE` | The transactional email provider failed or was unreachable while sending. Always `502`. |
+| `NO_ACTIVE_INCIDENT` | **Proposed (DMS-112).** A UC03 officer write while the district has no `ACTIVE` hazard event (§10.1). Always `409`. |
+| `SHELTER_NAME_TAKEN` | **Proposed (DMS-112).** Registering a shelter whose name, ignoring case and surrounding spaces, is already used in the district (§10.4.3). Always `409`. |
+| `SHELTER_NO_SPACE` | **Proposed (DMS-112).** Redirecting arrivals to a shelter that has no spare capacity (§10.4.4). Always `409`. |
+| `TEAM_NOT_AVAILABLE` | **Proposed (DMS-112).** Dispatching or assigning a rescue team that isn't `AVAILABLE`, e.g. another officer dispatched it first (§10.7.2, §10.9.2). Always `409`. |
+| `INVALID_DISPATCH_TRANSITION` | **Proposed (DMS-112).** A dispatch action its current status doesn't allow, e.g. completing an `ASSIGNED` dispatch or acknowledging after the deadline (§10.2). Always `409`. |
+| `INVALID_TEAM_TRANSITION` | **Proposed (DMS-112).** Marking a rescue team available while it is `DISPATCHED` or `ON_SITE` (§10.10.1). Always `409`. |
 
 New codes may be added for new resources; existing codes are never repurposed for a different meaning.
 
@@ -759,6 +765,764 @@ Neither endpoint takes input, so neither can fail validation, and an empty list 
   }
 }
 ```
+
+---
+
+## 10. Coordination endpoints
+
+UC03 Coordinate Shelter and Resource Allocation. While an incident is active for a district, the **district officer** runs a coordination hub with three independent sub-flows, which can be performed in any order and repeated: update shelter occupancy, dispatch rescue teams and log relief supplies. The **rescue team lead** answers dispatches from the mobile field app. **DMC officers** read the same combined operational picture, filtered by organisation if needed. Every rescue team and stock item belongs to an **organisation** (Organisations section); organisations themselves never call these endpoints.
+
+**Draft (DMS-140.1).** Every UC03 endpoint is listed here so the contract freeze (DMS-112) can review the whole use case at once. Each story refines its own subsection when it is built, and codes marked **Proposed (DMS-112)** are fixed at the freeze.
+
+### 10.1 Roles, district scoping and the active incident
+
+Every endpoint requires `Authorization: Bearer <accessToken>`. "DMC officers" means `dmc_officer` and `duty_officer`: a duty officer is a DMC officer, per the server's role inheritance.
+
+| Endpoints | Roles | Anyone else |
+|---|---|---|
+| Reads: picture (10.3), shelters (10.4), teams (10.5), relief stock (10.11.1), dispatch list and detail (10.7.3, 10.7.4) | `district_officer` for their own district; DMC officers for any district | `403 FORBIDDEN` |
+| Available teams (10.6) and officer writes: occupancy (10.4.2), register shelter (10.4.3), redirect (10.4.4), dispatch (10.7.2), queue and assign (10.9), mark available (10.10.1), log supply (10.11.2) | `district_officer` only, for records in their own district | `403 FORBIDDEN` |
+| Field app: my assignments, acknowledge, decline, on site, complete (10.7.5 – 10.8) | `rescue_team_lead`, and for a single dispatch only the lead of its assigned team | `403 FORBIDDEN` |
+
+**District scoping.** Every UC03 record belongs to one district (§7.1).
+- A district officer works in the `district` on their profile. On the reads, `districtId` is optional and defaults to that district; any other `districtId` → `403 FORBIDDEN`. A district officer with no `district` on their profile → `403 FORBIDDEN` on every endpoint.
+- DMC officers have no district of their own, so `districtId` is **required** on their reads (missing → `400 VALIDATION_ERROR` on `districtId`). They can read any district.
+- An `:id` or body id naming a shelter, team, stock item or dispatch in another district → `403 FORBIDDEN`. The district is not a secret here, unlike a citizen's report, so it is not hidden behind a `404`.
+
+**Active incident.** The UC03 precondition is "An incident is active for the district": the district's `ACTIVE` hazard event (Hazard events section) is the incident. Every **officer write** is refused with `409 NO_ACTIVE_INCIDENT` while the district has none, and nothing is changed. Reads still work and return `incident: null`. The field-app actions on an existing dispatch are not blocked: a team already on its way finishes the job.
+
+**Ids.** A malformed or unknown `:id` → `404 NOT_FOUND`. A malformed id in the body or query → `400 VALIDATION_ERROR` on that field; a well-formed but unknown one → `404 NOT_FOUND`.
+
+### 10.2 Values and objects
+
+**Enums.** Exactly the UC03 class diagram's values, in the order shown. `OrgType` belongs to the Organisations section.
+
+| Enum | Values |
+|---|---|
+| `ShelterStatus` | `AVAILABLE`, `FILLING_UP`, `NEAR_CAPACITY`, `FULL` |
+| `TeamStatus` | `AVAILABLE`, `DISPATCHED`, `ON_SITE`, `UNAVAILABLE` |
+| `DispatchStatus` | `ASSIGNED`, `ACKNOWLEDGED`, `ON_SITE`, `COMPLETED`, `DECLINED`, `UNRESPONSIVE`, plus `UNASSIGNED`. `UNASSIGNED` is the unassigned queue (E3, 10.9), an addition to the class diagram logged in the deviation log. |
+| `Priority` | `LOW`, `MEDIUM`, `HIGH`, `CRITICAL` |
+| `SupplyType` | `FOOD`, `WATER`, `MEDICINE`, `BLANKETS`, `HYGIENE_KITS` |
+
+**Shelter status** comes from the occupancy rate, `currentOccupancy / capacity`, compared exactly (no rounding at the boundaries):
+
+| Rate | Status |
+|---|---|
+| below 0.75 | `AVAILABLE` |
+| 0.75 up to 0.90 | `FILLING_UP` |
+| 0.90 up to 1.00 | `NEAR_CAPACITY` |
+| 1.00 or more | `FULL` |
+
+A shelter has **spare capacity** when its status is `AVAILABLE` or `FILLING_UP`, i.e. its rate is below 0.90.
+
+**References.** Records point at each other with small `{ id, name }` objects, so a client never needs a second request just to show a name. An organisation reference also carries its `type`: `{ id, name, type }`.
+
+**Locations** are `{ lat, lng, label }` in decimal degrees (WGS 84). `label` is an optional address or description such as `"Biyagama – flooded road"`, and is `null` when not given.
+
+#### The shelter object
+
+```json
+{
+  "id": "66fb0a1b2c3d4e5f6a7b8c01",
+  "name": "Gampaha Central College",
+  "district": { "id": "66f7c1a2b3c4d5e6f7a8b902", "name": "Gampaha" },
+  "location": { "lat": 7.0912, "lng": 79.9948, "label": "Gampaha town" },
+  "capacity": 500,
+  "currentOccupancy": 460,
+  "rate": 0.92,
+  "status": "NEAR_CAPACITY",
+  "redirectingTo": { "id": "66fb0a1b2c3d4e5f6a7b8c02", "name": "Minuwangoda National School" },
+  "createdAt": "2026-09-30T06:00:00.000Z",
+  "updatedAt": "2026-10-03T09:30:00.000Z"
+}
+```
+
+| Field | Type | Notes |
+|---|---|---|
+| `capacity` | integer | 1 or more. |
+| `currentOccupancy` | integer | 0 or more. It may exceed `capacity`: nobody is turned away by the software, and the shelter shows as `FULL`. |
+| `rate` | number | `currentOccupancy / capacity`, unrounded, e.g. `0.92`, or `1.05` over capacity. Show `status` as given rather than recomputing it from a rounded percentage. |
+| `status` | `ShelterStatus` | Derived from `rate` by the table above. |
+| `redirectingTo` | reference or `null` | The shelter new arrivals are redirected to (10.4.4). Only set while this shelter is `NEAR_CAPACITY` or `FULL`. |
+
+#### The rescue team object
+
+```json
+{
+  "id": "66fb0b1b2c3d4e5f6a7b8d01",
+  "name": "Team Alpha",
+  "organisation": { "id": "66f7c1a2b3c4d5e6f7a8b9d5", "name": "SL Army", "type": "ARMED_FORCES" },
+  "district": { "id": "66f7c1a2b3c4d5e6f7a8b902", "name": "Gampaha" },
+  "memberCount": 8,
+  "lead": { "id": "66f1a2b3c4d5e6f7a8b9c0d3", "name": "Suresh Bandara" },
+  "baseLocation": { "lat": 7.0873, "lng": 80.0144, "label": "Gampaha Army Camp" },
+  "currentLocation": { "lat": 7.0873, "lng": 80.0144, "label": "Gampaha Army Camp" },
+  "status": "DISPATCHED",
+  "currentTask": {
+    "dispatchId": "66fb0c1b2c3d4e5f6a7b8e01",
+    "status": "ACKNOWLEDGED",
+    "priority": "HIGH",
+    "incidentLocation": { "lat": 6.9555, "lng": 79.9865, "label": "Biyagama – flooded road" }
+  },
+  "createdAt": "2026-09-30T06:00:00.000Z",
+  "updatedAt": "2026-10-03T09:35:00.000Z"
+}
+```
+
+| Field | Type | Notes |
+|---|---|---|
+| `lead` | `{ id, name }` | A `rescue_team_lead` user. Only this user can answer the team's dispatches. |
+| `currentLocation` | location | Starts at `baseLocation`; becomes the incident location when the team goes on site. Distances are measured from here. |
+| `status` | `TeamStatus` | |
+| `currentTask` | object or `null` | The team's open dispatch (`ASSIGNED`, `ACKNOWLEDGED` or `ON_SITE`), for the dashboard's "Current task" column. `null` when it has none. |
+
+#### The relief stock object
+
+```json
+{
+  "id": "66fb0d1b2c3d4e5f6a7b8f01",
+  "organisation": { "id": "66f7c1a2b3c4d5e6f7a8b9d4", "name": "Red Cross Sri Lanka", "type": "NGO" },
+  "district": { "id": "66f7c1a2b3c4d5e6f7a8b902", "name": "Gampaha" },
+  "supplyType": "WATER",
+  "unit": "bottles",
+  "quantityAvailable": 1200,
+  "updatedAt": "2026-10-03T08:00:00.000Z"
+}
+```
+
+One row is what one organisation holds of one supply type in one district. `quantityAvailable` is an integer, 0 or more, and never goes negative.
+
+#### The supply distribution object
+
+```json
+{
+  "id": "66fb0e1b2c3d4e5f6a7b9001",
+  "shelter": { "id": "66fb0a1b2c3d4e5f6a7b8c01", "name": "Gampaha Central College" },
+  "stockId": "66fb0d1b2c3d4e5f6a7b8f01",
+  "organisation": { "id": "66f7c1a2b3c4d5e6f7a8b9d4", "name": "Red Cross Sri Lanka", "type": "NGO" },
+  "district": { "id": "66f7c1a2b3c4d5e6f7a8b902", "name": "Gampaha" },
+  "supplyType": "WATER",
+  "unit": "bottles",
+  "quantity": 500,
+  "distributedAt": "2026-10-03T10:15:00.000Z",
+  "loggedBy": { "id": "66f1a2b3c4d5e6f7a8b9c0d6", "name": "Dilani Wickramasinghe" }
+}
+```
+
+`organisation`, `supplyType` and `district` are copied from the stock row when the distribution is logged, so post-event reports (UC04) read them directly.
+
+#### The dispatch object
+
+```json
+{
+  "id": "66fb0c1b2c3d4e5f6a7b8e01",
+  "status": "ASSIGNED",
+  "team": {
+    "id": "66fb0b1b2c3d4e5f6a7b8d01",
+    "name": "Team Alpha",
+    "organisation": { "id": "66f7c1a2b3c4d5e6f7a8b9d5", "name": "SL Army", "type": "ARMED_FORCES" }
+  },
+  "district": { "id": "66f7c1a2b3c4d5e6f7a8b902", "name": "Gampaha" },
+  "incident": { "id": "66f7c1a2b3c4d5e6f7a8b9c1", "name": "Flood – Gampaha District" },
+  "incidentLocation": { "lat": 6.9555, "lng": 79.9865, "label": "Biyagama – flooded road" },
+  "priority": "HIGH",
+  "supportRequested": false,
+  "createdBy": { "id": "66f1a2b3c4d5e6f7a8b9c0d6", "name": "Dilani Wickramasinghe" },
+  "createdAt": "2026-10-03T09:30:00.000Z",
+  "ackDeadline": "2026-10-03T09:35:00.000Z",
+  "declineReason": null,
+  "statusHistory": [
+    {
+      "status": "ASSIGNED",
+      "at": "2026-10-03T09:30:00.000Z",
+      "by": { "id": "66f1a2b3c4d5e6f7a8b9c0d6", "name": "Dilani Wickramasinghe" }
+    }
+  ]
+}
+```
+
+| Field | Type | Notes |
+|---|---|---|
+| `status` | `DispatchStatus` | Moves only along the transitions below. |
+| `team` | object or `null` | `null` only while `UNASSIGNED`. Includes the owning organisation. |
+| `incident` | `{ id, name }` | The district's `ACTIVE` hazard event when the dispatch was created. |
+| `supportRequested` | boolean | `true` when the officer asked the DMC for support (E3, 10.9). |
+| `ackDeadline` | ISO 8601 string or `null` | When the dispatch entered `ASSIGNED`, plus `DISPATCH_ACK_TIMEOUT_MINUTES` (server setting, default 5). `null` while `UNASSIGNED`. |
+| `declineReason` | string or `null` | Set by a decline (10.8). |
+| `statusHistory` | `[{ status, at, by }]` | One entry per status, oldest first. `by` is `null` when the server made the change (a timeout). |
+
+**Dispatch transitions.** Any other move → `409 INVALID_DISPATCH_TRANSITION`.
+
+| From | To | Through | Team becomes |
+|---|---|---|---|
+| (new) | `ASSIGNED` | create (10.7.2) | `DISPATCHED` |
+| (new) | `UNASSIGNED` | create unassigned (10.9.1) | — |
+| `UNASSIGNED` | `ASSIGNED` | assign (10.9.2) | `DISPATCHED` |
+| `ASSIGNED` | `ACKNOWLEDGED` | acknowledge (10.7.6) | stays `DISPATCHED` |
+| `ASSIGNED` | `DECLINED` | decline (10.8) | `AVAILABLE` |
+| `ASSIGNED` | `UNRESPONSIVE` | the deadline passes (10.10) | `UNAVAILABLE` |
+| `ACKNOWLEDGED` | `ON_SITE` | on site (10.7.7) | `ON_SITE` |
+| `ON_SITE` | `COMPLETED` | complete (10.7.8) | `AVAILABLE` |
+
+A dispatch is **overdue** when it is `ASSIGNED` and the time is later than `ackDeadline`; at exactly the deadline it is not. An overdue dispatch is marked `UNRESPONSIVE` by a background check every 30 seconds, and also whenever it is read or acted on, so no response ever shows a stale `ASSIGNED`. Reassigning after a decline or timeout creates a **new** dispatch (10.7.2) for another team; the old one keeps its final status.
+
+### 10.3 Combined operational picture — `GET /api/operational-picture`
+
+UC03 main flow steps 1–2 and 14 (DMS-140). Everything the coordination dashboard shows, in one request. The dashboard refetches it after every action.
+
+**Roles:** `district_officer` (own district), DMC officers (any district).
+
+| Query param | Rule |
+|---|---|
+| `districtId` | A district id from §7.1. Optional for a district officer, required for DMC officers (10.1). |
+| `organisationId` | Optional. An organisation id. Narrows `teams`, `recentDistributions`, `totalsByOrganisation` and the team and supply figures in `summary` to that organisation. Shelters belong to no organisation, so they are always all shown. |
+
+**Success — `200 OK`** (lists shortened to one entry each)
+
+```json
+{
+  "success": true,
+  "data": {
+    "district": { "id": "66f7c1a2b3c4d5e6f7a8b902", "name": "Gampaha" },
+    "incident": {
+      "id": "66f7c1a2b3c4d5e6f7a8b9c1",
+      "name": "Flood – Gampaha District",
+      "hazardType": "FLOOD",
+      "startDate": "2026-09-25T00:00:00.000Z"
+    },
+    "organisation": null,
+    "summary": {
+      "shelters": 5,
+      "sheltersNearCapacity": 1,
+      "teams": 5,
+      "teamsAvailable": 3,
+      "suppliesDistributed": 2450,
+      "affectedPeople": 1505
+    },
+    "shelters": [{ "id": "66fb0a1b2c3d4e5f6a7b8c01", "name": "Gampaha Central College", "...": "the shelter object" }],
+    "teams": [{ "id": "66fb0b1b2c3d4e5f6a7b8d01", "name": "Team Alpha", "...": "the rescue team object" }],
+    "recentDistributions": [{ "id": "66fb0e1b2c3d4e5f6a7b9001", "...": "the supply distribution object" }],
+    "totalsByOrganisation": [
+      {
+        "organisation": { "id": "66f7c1a2b3c4d5e6f7a8b9d4", "name": "Red Cross Sri Lanka", "type": "NGO" },
+        "teams": 0,
+        "stockItems": 3400,
+        "distributed": 1200
+      }
+    ]
+  }
+}
+```
+
+| Field | Notes |
+|---|---|
+| `incident` | The district's `ACTIVE` hazard event, or `null` when there is none. The dashboard then shows "No active incident for Gampaha" and disables its actions (10.1). |
+| `organisation` | The `organisationId` filter as a reference, or `null` for all organisations. |
+| `summary.shelters`, `sheltersNearCapacity` | All shelters, and those `NEAR_CAPACITY` or `FULL`. |
+| `summary.teams`, `teamsAvailable` | Teams, and those `AVAILABLE`. |
+| `summary.suppliesDistributed` | The total `quantity` of the distributions counted below. |
+| `summary.affectedPeople` | The sum of `currentOccupancy` over all shelters. |
+| `shelters` | Every shelter in the district, sorted by `name`. |
+| `teams` | Every team in the district, sorted by `name`. |
+| `recentDistributions` | The 10 most recent distributions, newest first. |
+| `totalsByOrganisation` | One row per organisation with a team, stock or distribution in the district, sorted by organisation `name`. `teams` counts its teams, `stockItems` sums its `quantityAvailable` and `distributed` sums its distributed `quantity`. |
+
+Distributions are counted from the incident's `startDate`, or over all time when there is no active incident.
+
+**Failure — `403 Forbidden`** (a district officer asking for another district)
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "You can only coordinate your own district."
+  }
+}
+```
+
+### 10.4 Shelters
+
+#### 10.4.1 List shelters — `GET /api/shelters`
+
+DMS-140. **Roles:** `district_officer` (own district), DMC officers (any district). **Query:** `districtId`, as in 10.3.
+
+**Success — `200 OK`**: `{ "shelters": [ ... ] }`, every shelter object (10.2) in the district, sorted by `name`. No shelters is `200` with `[]`.
+
+#### 10.4.2 Update shelter occupancy — `PATCH /api/shelters/:id/occupancy`
+
+UC03 main flow steps 3–5, with A2 (DMS-145), E1 (DMS-147) and E2 (DMS-148). Sets the shelter's current occupancy and keeps a history record of the update for UC04.
+
+**Roles:** `district_officer`, for a shelter in their own district.
+
+**Request body**
+
+| Field | Rule |
+|---|---|
+| `occupants` | Required. A whole number, 0 or more. 0 is an empty shelter. |
+
+```json
+{ "occupants": 460 }
+```
+
+**Behaviour**
+1. Sets `currentOccupancy` and records `{ shelter, district, occupants, capacity, recordedAt, recordedBy }` in the shelter's occupancy history.
+2. Recalculates `rate` and `status` (10.2).
+3. **A2:** when the status is now `NEAR_CAPACITY` or `FULL`, the shelter is **flagged** and the response suggests the nearest other shelter in the same district with spare capacity, by distance between the shelters' locations.
+4. **E2:** when no other shelter in the district has spare capacity, there is no suggestion and every DMC officer is notified (10.12). For each district this alert is sent at most once an hour while the condition lasts, and again if space became available in between.
+
+**Success — `200 OK`** (A2: flagged, with a suggestion)
+
+```json
+{
+  "success": true,
+  "data": {
+    "shelter": { "id": "66fb0a1b2c3d4e5f6a7b8c01", "...": "the shelter object" },
+    "rate": 0.92,
+    "status": "NEAR_CAPACITY",
+    "flagged": true,
+    "alternateShelter": {
+      "id": "66fb0a1b2c3d4e5f6a7b8c02",
+      "name": "Minuwangoda National School",
+      "rate": 0.76,
+      "status": "FILLING_UP",
+      "distanceKm": 3.2
+    },
+    "dmcAlerted": false
+  }
+}
+```
+
+| Field | Notes |
+|---|---|
+| `flagged` | `true` when `status` is `NEAR_CAPACITY` or `FULL`. |
+| `alternateShelter` | The suggestion, or `null` when not flagged or when no shelter has spare capacity. `distanceKm` is rounded to one decimal place; the ordering uses the exact distance. |
+| `dmcAlerted` | `true` when flagged with no suggestion (E2): the DMC has been alerted, by this update or within the last hour. |
+
+**Failure — `400 Bad Request`** (E1: not a whole number). Nothing is saved and no history record is created.
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "Request validation failed.",
+    "errors": [{ "field": "occupants", "message": "must be a whole number, 0 or more" }]
+  }
+}
+```
+
+Also `403 FORBIDDEN` (another district), `404 NOT_FOUND` (unknown shelter) and `409 NO_ACTIVE_INCIDENT`.
+
+#### 10.4.3 Register a shelter — `POST /api/shelters`
+
+UC03 A1 (DMS-144). Opens a new shelter in the officer's own district, empty and `AVAILABLE`.
+
+**Roles:** `district_officer`. The shelter always goes in their own district; the body has no district.
+
+**Request body**
+
+| Field | Rule |
+|---|---|
+| `name` | Required. 1–100 characters after trimming. Unique within the district, ignoring case and surrounding spaces. The same name in another district is allowed. |
+| `location` | Required. `{ lat, lng, label? }`: `lat` from −90 to 90, `lng` from −180 to 180, `label` up to 200 characters. |
+| `capacity` | Required. A whole number, 1 or more. |
+
+```json
+{
+  "name": "Ja-Ela Central College",
+  "location": { "lat": 7.0744, "lng": 79.8919, "label": "Ja-Ela" },
+  "capacity": 300
+}
+```
+
+**Success — `201 Created`**: `{ "shelter": { ... } }`, the new shelter object with `currentOccupancy: 0`, `rate: 0` and `status: "AVAILABLE"`.
+
+**Failure — `409 Conflict`** (the name is taken in this district)
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "SHELTER_NAME_TAKEN",
+    "message": "A shelter named \"Ja-Ela Central College\" already exists in Gampaha."
+  }
+}
+```
+
+Also `400 VALIDATION_ERROR` (e.g. `capacity` 0, −5 or 10.5; `name` or `location` missing) and `409 NO_ACTIVE_INCIDENT`.
+
+#### 10.4.4 Redirect new arrivals — `POST /api/shelters/:id/redirects`
+
+UC03 A2.3 (DMS-145). Records that new arrivals at shelter `:id` are sent to another shelter. The dashboard then shows "Redirecting to Minuwangoda National School" on `:id`.
+
+**Roles:** `district_officer`, for a shelter in their own district.
+
+**Request body**
+
+| Field | Rule |
+|---|---|
+| `toShelterId` | Required. Another shelter in the same district, not `:id` itself. |
+
+**Success — `201 Created`**
+
+```json
+{
+  "success": true,
+  "data": {
+    "redirect": {
+      "id": "66fb0f1b2c3d4e5f6a7b9101",
+      "from": { "id": "66fb0a1b2c3d4e5f6a7b8c01", "name": "Gampaha Central College" },
+      "to": { "id": "66fb0a1b2c3d4e5f6a7b8c02", "name": "Minuwangoda National School" },
+      "district": { "id": "66f7c1a2b3c4d5e6f7a8b902", "name": "Gampaha" },
+      "by": { "id": "66f1a2b3c4d5e6f7a8b9c0d6", "name": "Dilani Wickramasinghe" },
+      "at": "2026-10-03T09:31:00.000Z"
+    }
+  }
+}
+```
+
+**Failure — `409 Conflict`** (the target filled up meanwhile)
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "SHELTER_NO_SPACE",
+    "message": "Minuwangoda National School has no spare capacity (91%)."
+  }
+}
+```
+
+Also `400 VALIDATION_ERROR` on `toShelterId` (missing, the same shelter, or a shelter in another district), `403 FORBIDDEN`, `404 NOT_FOUND` and `409 NO_ACTIVE_INCIDENT`.
+
+### 10.5 List rescue teams — `GET /api/rescue-teams`
+
+DMS-140. **Roles:** `district_officer` (own district), DMC officers (any district). **Query:** `districtId`, as in 10.3.
+
+**Success — `200 OK`**: `{ "teams": [ ... ] }`, every rescue team object (10.2) in the district, sorted by `name`.
+
+### 10.6 Nearest available teams — `GET /api/rescue-teams/available`
+
+UC03 main flow step 7 (DMS-142), and A3.3 / E4.2 when choosing another team. Lists the district's `AVAILABLE` teams, nearest to the incident first.
+
+**Roles:** `district_officer`.
+
+| Query param | Rule |
+|---|---|
+| `lat`, `lng` | Required. The incident location. |
+| `districtId` | Optional; defaults to, and must be, the officer's own district. |
+| `excludeTeamIds` | Optional. Comma-separated team ids to leave out, e.g. the team that just declined. |
+
+**Success — `200 OK`** (sorted by distance from each team's `currentLocation`, ties broken by `name`)
+
+```json
+{
+  "success": true,
+  "data": {
+    "teams": [
+      {
+        "id": "66fb0b1b2c3d4e5f6a7b8d01",
+        "name": "Team Alpha",
+        "organisation": { "id": "66f7c1a2b3c4d5e6f7a8b9d5", "name": "SL Army", "type": "ARMED_FORCES" },
+        "memberCount": 8,
+        "distanceKm": 2.5,
+        "...": "the rest of the rescue team object"
+      }
+    ]
+  }
+}
+```
+
+**E3:** no available team is `200` with `"teams": []`. The dialog then shows "No team available" and offers *Request DMC support* (10.9.1).
+
+### 10.7 Dispatches
+
+UC03 main flow steps 6–11 (DMS-142).
+
+#### 10.7.1 Dispatch settings
+
+`DISPATCH_ACK_TIMEOUT_MINUTES` (server environment, default `5`) sets how long a team lead has to acknowledge.
+
+#### 10.7.2 Dispatch a team — `POST /api/dispatches`
+
+Steps 8–9. Creates an `ASSIGNED` dispatch for an available team, sets the team to `DISPATCHED` and notifies its lead (10.12).
+
+**Roles:** `district_officer`, for a team in their own district.
+
+**Request body**
+
+| Field | Rule |
+|---|---|
+| `teamId` | Required. A team in the officer's district. |
+| `incidentLocation` | Required. `{ lat, lng, label? }`, as in 10.4.3. |
+| `priority` | Required. A `Priority`. The dialog defaults to `HIGH`. |
+
+```json
+{
+  "teamId": "66fb0b1b2c3d4e5f6a7b8d01",
+  "incidentLocation": { "lat": 6.9555, "lng": 79.9865, "label": "Biyagama – flooded road" },
+  "priority": "HIGH"
+}
+```
+
+**Success — `201 Created`**: `{ "dispatch": { ... } }`, the dispatch object (10.2), `ASSIGNED`, with its `ackDeadline`.
+
+**Failure — `409 Conflict`** (the team stopped being available, e.g. another officer dispatched it first)
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "TEAM_NOT_AVAILABLE",
+    "message": "Team Alpha is DISPATCHED and can't take a new dispatch."
+  }
+}
+```
+
+Also `400 VALIDATION_ERROR`, `403 FORBIDDEN`, `404 NOT_FOUND` (unknown team) and `409 NO_ACTIVE_INCIDENT`.
+
+#### 10.7.3 List dispatches — `GET /api/dispatches`
+
+For the officer console: the unassigned queue (10.9), and the decline and timeout prompts (10.8, 10.10), which poll this list every 15 seconds while the dashboard is open.
+
+**Roles:** `district_officer` (own district), DMC officers (any district).
+
+| Query param | Rule |
+|---|---|
+| `districtId` | As in 10.3. |
+| `status` | Optional. One `DispatchStatus`, or several separated by commas, e.g. `DECLINED,UNRESPONSIVE`. |
+
+**Success — `200 OK`**: `{ "dispatches": [ ... ] }`, dispatch objects newest first, at most 100.
+
+#### 10.7.4 Dispatch detail — `GET /api/dispatches/:id`
+
+**Roles:** `district_officer` (own district), DMC officers (any district), and the lead of the dispatch's team.
+
+**Success — `200 OK`**: `{ "dispatch": { ... } }`.
+
+#### 10.7.5 My assignments — `GET /api/dispatches/mine`
+
+The field app's Assignments tab. Answers for the team the caller leads.
+
+**Roles:** `rescue_team_lead`.
+
+**Success — `200 OK`**
+
+```json
+{
+  "success": true,
+  "data": {
+    "team": { "id": "66fb0b1b2c3d4e5f6a7b8d01", "name": "Team Alpha", "...": "the rescue team object" },
+    "dispatches": [{ "id": "66fb0c1b2c3d4e5f6a7b8e01", "status": "ASSIGNED", "...": "the dispatch object" }]
+  }
+}
+```
+
+`dispatches` holds the team's open dispatches (`ASSIGNED`, `ACKNOWLEDGED`, `ON_SITE`), newest first, followed by its most recently closed one (`COMPLETED`, `DECLINED` or `UNRESPONSIVE`), if any. That way the app can still show "Assignment expired" after a timeout until the next assignment arrives. A lead who leads no team gets `200` with `"team": null` and `"dispatches": []`.
+
+#### 10.7.6 Acknowledge — `POST /api/dispatches/:id/acknowledge`
+
+Step 10. `ASSIGNED` → `ACKNOWLEDGED`. No body.
+
+**Roles:** `rescue_team_lead` of the dispatch's team.
+
+**Success — `200 OK`**: `{ "dispatch": { ... } }`.
+
+**Failure — `409 Conflict`** (e.g. the deadline has passed, so the dispatch is already `UNRESPONSIVE`)
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "INVALID_DISPATCH_TRANSITION",
+    "message": "This dispatch is UNRESPONSIVE and can't be acknowledged."
+  }
+}
+```
+
+**Failure — `403 Forbidden`**: the lead of another team.
+
+#### 10.7.7 On site — `POST /api/dispatches/:id/on-site`
+
+Step 11. `ACKNOWLEDGED` → `ON_SITE`. The team becomes `ON_SITE` and its `currentLocation` becomes the incident location. No body. Same roles, success and failures as 10.7.6.
+
+#### 10.7.8 Complete — `POST /api/dispatches/:id/complete`
+
+Step 11. `ON_SITE` → `COMPLETED`, and the team returns to `AVAILABLE`. No body. Same roles, success and failures as 10.7.6; completing an `ASSIGNED` dispatch is `409 INVALID_DISPATCH_TRANSITION`.
+
+### 10.8 Decline an assignment — `POST /api/dispatches/:id/decline`
+
+UC03 A3 (DMS-146). `ASSIGNED` → `DECLINED`: the team returns to `AVAILABLE`, and the officer who created the dispatch is notified (10.12) to choose another team. The console then requests 10.6 again with `excludeTeamIds` set to the declining team.
+
+**Roles:** `rescue_team_lead` of the dispatch's team.
+
+**Request body**
+
+| Field | Rule |
+|---|---|
+| `reason` | Required. 1–200 characters after trimming, e.g. `"Vehicle unavailable"`. |
+
+**Success — `200 OK`**: `{ "dispatch": { ... } }`, with `declineReason` set.
+
+**Failures:** `400 VALIDATION_ERROR` on `reason`, `403 FORBIDDEN`, and `409 INVALID_DISPATCH_TRANSITION` when the dispatch is no longer `ASSIGNED` (e.g. already acknowledged).
+
+### 10.9 Unassigned queue
+
+UC03 E3 (DMS-149): no team is available, so the incident waits in the district's unassigned queue (`GET /api/dispatches?status=UNASSIGNED`).
+
+#### 10.9.1 Queue an incident — `POST /api/dispatches/unassigned`
+
+Creates an `UNASSIGNED` dispatch with no team. When `supportRequested` is `true`, every DMC officer is notified (10.12).
+
+**Roles:** `district_officer`.
+
+| Field | Rule |
+|---|---|
+| `incidentLocation` | Required, as in 10.7.2. |
+| `priority` | Required, as in 10.7.2. |
+| `supportRequested` | Optional boolean, default `true`. |
+
+**Success — `201 Created`**: `{ "dispatch": { ... } }`, `UNASSIGNED`, with `team: null` and `ackDeadline: null`.
+
+**Failures:** `400 VALIDATION_ERROR` and `409 NO_ACTIVE_INCIDENT`.
+
+#### 10.9.2 Assign a team — `POST /api/dispatches/:id/assign`
+
+`UNASSIGNED` → `ASSIGNED` once a team is free; the flow then continues as after 10.7.2, with a deadline counted from now.
+
+**Roles:** `district_officer`, for a dispatch in their own district.
+
+| Field | Rule |
+|---|---|
+| `teamId` | Required. An `AVAILABLE` team in the same district. |
+
+**Success — `200 OK`**: `{ "dispatch": { ... } }`.
+
+**Failures:** `400 VALIDATION_ERROR`, `403 FORBIDDEN`, `404 NOT_FOUND`, `409 TEAM_NOT_AVAILABLE`, `409 INVALID_DISPATCH_TRANSITION` (the dispatch isn't `UNASSIGNED`) and `409 NO_ACTIVE_INCIDENT`.
+
+### 10.10 Acknowledgement timeout and team availability
+
+UC03 E4 (DMS-150). An overdue dispatch (10.2) becomes `UNRESPONSIVE`, its team becomes `UNAVAILABLE`, and the officer who created it is notified (10.12) to reassign. The team stays out of the available list until an officer marks it available again.
+
+#### 10.10.1 Mark a team available — `POST /api/rescue-teams/:id/availability`
+
+`UNAVAILABLE` → `AVAILABLE`. No body. A team that is already `AVAILABLE` is returned unchanged.
+
+**Roles:** `district_officer`, for a team in their own district.
+
+**Success — `200 OK`**: `{ "team": { ... } }`.
+
+**Failure — `409 Conflict`** (the team is out on a dispatch)
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "INVALID_TEAM_TRANSITION",
+    "message": "Team Alpha is ON_SITE; it becomes available when its dispatch is completed."
+  }
+}
+```
+
+Also `403 FORBIDDEN`, `404 NOT_FOUND` and `409 NO_ACTIVE_INCIDENT`.
+
+### 10.11 Relief supplies
+
+UC03 main flow steps 12–13 (DMS-143), with E5 (DMS-151).
+
+#### 10.11.1 List relief stock — `GET /api/relief-stock`
+
+Feeds the Log Relief Supply dialog: the owner organisations, their supply types and the available stock.
+
+**Roles:** `district_officer` (own district), DMC officers (any district).
+
+| Query param | Rule |
+|---|---|
+| `districtId` | As in 10.3. |
+| `organisationId` | Optional. One organisation's stock only. |
+| `supplyType` | Optional. One `SupplyType` only. |
+
+**Success — `200 OK`**: `{ "stock": [ ... ] }`, relief stock objects (10.2), sorted by organisation `name`, then `supplyType`. Rows with nothing left are included, showing `0`.
+
+#### 10.11.2 Log a distribution — `POST /api/supply-distributions`
+
+Records that a quantity of one stock row went to a shelter, and reduces the stock by it. Two logs can never overdraw the same stock between them: the stock is reduced only if enough remains at that moment.
+
+**Roles:** `district_officer`, for a shelter and a stock row in their own district.
+
+**Request body**
+
+| Field | Rule |
+|---|---|
+| `shelterId` | Required. The receiving shelter. |
+| `stockId` | Required. The stock row it comes from, which fixes the organisation and supply type. |
+| `quantity` | Required. A whole number from 1 to the stock's `quantityAvailable`, in the stock's `unit`. |
+
+```json
+{ "shelterId": "66fb0a1b2c3d4e5f6a7b8c01", "stockId": "66fb0d1b2c3d4e5f6a7b8f01", "quantity": 500 }
+```
+
+**Success — `201 Created`**
+
+```json
+{
+  "success": true,
+  "data": {
+    "distribution": { "id": "66fb0e1b2c3d4e5f6a7b9001", "quantity": 500, "...": "the supply distribution object" },
+    "stock": { "id": "66fb0d1b2c3d4e5f6a7b8f01", "quantityAvailable": 700, "...": "the relief stock object" }
+  }
+}
+```
+
+**Failure — `400 Bad Request`** (E5: more than the stock holds). The message shows the available quantity at the moment of the request, also when another log took the stock first. The stock is unchanged and nothing is recorded.
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "Request validation failed.",
+    "errors": [{ "field": "quantity", "message": "must be between 1 and 1200 (available)" }]
+  }
+}
+```
+
+When nothing is left, the message is `"no stock available (0 bottles)"`. Also `400 VALIDATION_ERROR` for a `quantity` of 0 or less or not a whole number, `403 FORBIDDEN` (a shelter or stock row in another district), `404 NOT_FOUND` and `409 NO_ACTIVE_INCIDENT`.
+
+### 10.12 Notifications sent
+
+Inbox notifications (Notifications section), one per recipient.
+
+| When | Recipients | Text |
+|---|---|---|
+| A team is dispatched (10.7.2) or assigned (10.9.2) | The team's lead | "New assignment – Biyagama – flooded road (HIGH). Respond within 5 min." Links to the dispatch. |
+| A lead declines (10.8) | The officer who created the dispatch | "Team Alpha declined (Vehicle unavailable) – choose another team" |
+| A dispatch times out (10.10) | The officer who created the dispatch | "No response from Team Alpha – reassign" |
+| No shelter with space (10.4.2, E2) | Every DMC officer | "All shelters in Gampaha are near capacity or full (Gampaha Central College 92%)" |
+| Support requested (10.9.1, E3) | Every DMC officer | "Gampaha requests rescue support – Biyagama – flooded road, HIGH" |
+
+A failed notification never fails the request that triggered it.
+
+### 10.13 Error codes for these endpoints
+
+| Status | Code | When |
+|---|---|---|
+| `400` | `VALIDATION_ERROR` | A body or query field failed its rule, including a quantity above the available stock (10.11.2). Carries `errors`, one entry per field. |
+| `401` | `AUTH_HEADER_MISSING` | No `Authorization` header. |
+| `401` | `AUTH_HEADER_MALFORMED` | Header present but not `Bearer <token>`. |
+| `401` | `TOKEN_EXPIRED` | Access token expired. |
+| `401` | `TOKEN_INVALID` | Access token invalid, or its user no longer exists or has been deactivated. |
+| `403` | `FORBIDDEN` | The caller's role isn't admitted, the record or `districtId` is in another district, or a lead acts on another team's dispatch (10.1). |
+| `404` | `NOT_FOUND` | The shelter, team, stock row or dispatch doesn't exist, or the id isn't valid. |
+| `409` | `NO_ACTIVE_INCIDENT` | **Proposed (DMS-112).** An officer write while the district has no `ACTIVE` hazard event. |
+| `409` | `SHELTER_NAME_TAKEN` | **Proposed (DMS-112).** Registering a shelter whose name is already used in the district. |
+| `409` | `SHELTER_NO_SPACE` | **Proposed (DMS-112).** Redirecting to a shelter without spare capacity. |
+| `409` | `TEAM_NOT_AVAILABLE` | **Proposed (DMS-112).** Dispatching or assigning a team that isn't `AVAILABLE`. |
+| `409` | `INVALID_DISPATCH_TRANSITION` | **Proposed (DMS-112).** A dispatch action its current status doesn't allow (10.2). |
+| `409` | `INVALID_TEAM_TRANSITION` | **Proposed (DMS-112).** Marking available a team that is `DISPATCHED` or `ON_SITE`. |
+| `500` | `INTERNAL_ERROR` | Unhandled server-side failure. |
 
 ---
 
