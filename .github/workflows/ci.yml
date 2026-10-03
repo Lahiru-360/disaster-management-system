@@ -82,5 +82,18 @@ jobs:
       - name: Lint
         run: npm run lint
 
-      - name: Test
-        run: npm test --if-present
+      # One run gives both the test result and the coverage report.
+      - name: Test with coverage
+        run: npm run test:coverage
+
+      - name: Coverage gate (80% lines and branches per use case)
+        run: npm run coverage:gate
+
+      # Kept even when the gate fails, as evidence for the report.
+      - name: Upload coverage summary
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-coverage-summary
+          path: server/coverage/coverage-summary.json
+          if-no-files-found: warn
