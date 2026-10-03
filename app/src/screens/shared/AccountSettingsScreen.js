@@ -10,7 +10,7 @@ import Loader from '../../components/ui/Loader';
 import Notice from '../../components/ui/Notice';
 import ScreenHeader from '../../components/ui/ScreenHeader';
 import SectionLabel from '../../components/ui/SectionLabel';
-import { roleLabel } from '../../constants/roles';
+import { roleLabel, TABS } from '../../constants/roles';
 import useAuth from '../../hooks/useAuth';
 import { formatShortDate } from '../../utils/format';
 
@@ -45,6 +45,11 @@ export default function AccountSettingsScreen() {
   const navigation = useNavigation();
   const route = useRoute();
   const { user, logout, deactivateAccount } = useAuth();
+
+  // Mounted twice: as the Account tab and as the AccountSettings page pushed
+  // over the tabs. The tab has no back button, and the tab bar already
+  // covers the bottom safe-area inset.
+  const isTab = route.name === TABS.ACCOUNT;
 
   // AuthContext's user already carries createdAt from login/register/bootstrap
   // (docs/api-contract.md §5.1-5.2, §5.5), so this only round-trips to
@@ -125,8 +130,8 @@ export default function AccountSettingsScreen() {
   }
 
   return (
-    <SafeAreaView className="flex-1 bg-paper" edges={['top', 'bottom']}>
-      <ScreenHeader title="Account" small onBack={() => navigation.goBack()} />
+    <SafeAreaView className="flex-1 bg-paper" edges={isTab ? ['top'] : ['top', 'bottom']}>
+      <ScreenHeader title="Account" small onBack={isTab ? undefined : () => navigation.goBack()} />
 
       <ScrollView className="flex-1" contentContainerClassName="px-[22px] pb-6">
         {passwordChangedNotice ? (
@@ -149,7 +154,10 @@ export default function AccountSettingsScreen() {
 
         <SectionLabel className="mt-6">Security</SectionLabel>
         <View className="mt-2">
-          <NavRow label="Change password" onPress={() => navigation.navigate('ChangePassword')} />
+          <NavRow
+            label="Change password"
+            onPress={() => navigation.navigate('ChangePassword', { returnTo: route.name })}
+          />
           <Divider />
           <NavRow label="Log out" onPress={() => setLogoutConfirmVisible(true)} />
         </View>
