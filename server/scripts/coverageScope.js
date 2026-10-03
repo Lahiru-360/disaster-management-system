@@ -1,14 +1,16 @@
 import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { CoverageGate } from './CoverageGate.js';
 
 // Runs the whole server suite but reports coverage only for one use case's
-// files, as registered in coverage-scopes.json:
+// files, as registered in coverage-scopes.json, then applies the 80% gate:
 //   node scripts/coverageScope.js uc03 [extra jest args]
 // Config and rootDir are passed as absolute paths, so it also works from a
 // folder without server/.env (e.g. the repo root).
 const serverDir = fileURLToPath(new URL('..', import.meta.url));
-const scopes = JSON.parse(readFileSync(new URL('../coverage-scopes.json', import.meta.url)));
+const scopes = JSON.parse(readFileSync(path.join(serverDir, 'coverage-scopes.json')));
 
 const [scope, ...jestArgs] = process.argv.slice(2);
 
@@ -26,21 +28,26 @@ if (scopes[scope].length === 0) {
   process.exit(1);
 }
 
+const coverageDir = path.join(serverDir, 'coverage', scope);
 const result = spawnSync(
   process.execPath,
   [
     '--experimental-vm-modules',
-    fileURLToPath(new URL('../node_modules/jest/bin/jest.js', import.meta.url)),
+    path.join(serverDir, 'node_modules/jest/bin/jest.js'),
     '--config',
-    fileURLToPath(new URL('../jest.config.js', import.meta.url)),
+    path.join(serverDir, 'jest.config.js'),
     '--rootDir',
     serverDir,
     '--coverage',
     `--collectCoverageFrom=${JSON.stringify(scopes[scope])}`,
-    `--coverageDirectory=coverage/${scope}`,
+    `--coverageDirectory=${coverageDir}`,
     ...jestArgs,
   ],
   { stdio: 'inherit' },
 );
 
-process.exit(result.status ?? 1);
+if (result.status !== 0) process.exit(result.status ?? 1);
+
+const summary = JSON.parse(readFileSync(path.join(coverageDir, 'coverage-summary.json')));
+const gate = new CoverageGate({ rootDir: serverDir, scopes });
+process.exit(gate.print(gate.evaluate(summary, [scope])) ? 0 : 1);
