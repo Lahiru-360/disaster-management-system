@@ -1,12 +1,13 @@
 import bcrypt from 'bcryptjs';
 import { Role } from '../src/enums/Role.js';
 import { User } from '../src/models/User.js';
+import { Seeder } from './Seeder.js';
 
 // Seeds one demo account per role. Safe to re-run: accounts are matched by
 // email and only created when missing ($setOnInsert), so an existing one is
 // never duplicated or overwritten. Expects an open connection - DatabaseSeeder
 // owns it.
-export class PeopleSeeder {
+export class PeopleSeeder extends Seeder {
   static #PASSWORD = 'Password123!';
 
   static #SALT_ROUNDS = 10;
