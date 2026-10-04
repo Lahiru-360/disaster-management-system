@@ -2,7 +2,7 @@
 
 **Purpose:** the single source of truth for how every endpoint in this project looks — the shape of a request, the shape of a response, and what each status code means here. Client code is written against this document, not against whichever server behavior happens to exist yet. If a real endpoint disagrees with this document, the endpoint is wrong.
 
-This contract covers the auth, upload, areas, hazard events and organisations endpoints in full, and drafts the hazard reports endpoints (§9). New endpoints are added under these same conventions — they get their own sections when specified, not their own rules.
+This contract covers the auth, upload, areas, hazard events and organisations endpoints in full, and drafts the hazard reports endpoints (§9) and the notifications endpoints (§11). New endpoints are added under these same conventions — they get their own sections when specified, not their own rules.
 
 ---
 
@@ -1404,7 +1404,182 @@ With no param, every organisation is returned.
 **Failure — `401 Unauthorized`** — same codes as §7.3.
 
 ---
-## 11. Adding a new endpoint later
+
+## 11. Notifications endpoints
+
+> **Draft (DMS-106.1)** — not frozen until the DMS-112 review.
+
+The **in-app inbox** every user has: the console's bell (web) and the app's _Inbox_ tab. Every use case that tells a person something stores one inbox item for them, through the shared notification service: UC01's warnings (as the visible stand-in for the mocked push, SMS and audible delivery), UC02's report updates (§9.10) and UC03's assignments and capacity alerts. Nothing in this section sends anything; these two endpoints only read the inbox and mark items read.
+
+An inbox item is a **user notification**. It is deliberately not UC01's `Notification`, which records one delivery attempt per citizen and channel for a hazard warning, and never reaches a client as an inbox item.
+
+Both endpoints require `Authorization: Bearer <accessToken>` and admit **every role**. A user only ever sees their own items: another user's item — or an `:id` that is unknown or not a valid id — is `404 NOT_FOUND`, so its existence isn't revealed.
+
+### 11.1 The user notification object
+
+```json
+{
+  "id": "66fa1b2c3d4e5f6a7b8c9d01",
+  "type": "REPORT_CONFIRMED",
+  "title": "Report confirmed",
+  "body": "Your report GR-2481 was confirmed by the duty officer. Thank you.",
+  "link": "/my-reports/66f9a0c1b2c3d4e5f6a7b801",
+  "severity": null,
+  "readAt": null,
+  "createdAt": "2026-10-02T05:01:00.000Z"
+}
+```
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | string | The item's id. |
+| `type` | enum | What the item is about (`NotificationType`), so a client can pick an icon or a card. See the table below. |
+| `title` | string | 1–80 characters. The bold first line. |
+| `body` | string | 1–500 characters. The message itself. |
+| `link` | string or `null` | A client route to open when the item is tapped, e.g. `/my-reports/<id>` or `/assignments/<id>`. A client that doesn't know the route shows the item without navigating. |
+| `severity` | enum or `null` | `LOW`, `MEDIUM`, `HIGH`, `SEVERE` (UC01's `SeverityLevel`). Set only for `HAZARD_ALERT`, which the app shows as an alert card coloured by severity; `null` for every other type. |
+| `readAt` | ISO 8601 string or `null` | When the owner marked it read (11.3). `null` means unread. |
+| `createdAt` | ISO 8601 string | Set by the server. The inbox is sorted by this, newest first. |
+
+**`type` values.** A closed list: a new kind of message adds a row here first.
+
+| `type` | Sent by | To |
+|---|---|---|
+| `HAZARD_ALERT` | UC01 broadcast, update and all-clear (DMS-121, 123, 124) | Every citizen in the warning's scope |
+| `REPORT_SUBMITTED` | UC02 submit (§9.2) | The duty officers on shift for the report's district |
+| `REPORT_CONFIRMED` | UC02 confirm (§9.6) | The reporter |
+| `REPORT_DISMISSED` | UC02 dismiss (§9.7) | The reporter |
+| `ASSIGNMENT` | UC03 dispatch (DMS-142) | The rescue team lead |
+| `SHELTER_CAPACITY` | UC03 E2, all shelters near capacity (DMS-148) | DMC officers |
+| `SUPPORT_REQUEST` | UC03 E3, no team available (DMS-149) | DMC officers |
+
+### 11.2 My inbox — `GET /api/notifications/me`
+
+The caller's own items, newest first, one page at a time. The web bell polls this every 30 seconds, so it also returns the unread count across the whole inbox.
+
+**Query**
+
+| Parameter | Rule |
+|---|---|
+| `page` | Optional. An integer ≥ 1. Defaults to `1`. |
+| `limit` | Optional. An integer from 1 to 50. Defaults to `20`. |
+
+**Success — `200 OK`**
+
+```json
+{
+  "success": true,
+  "data": {
+    "notifications": [
+      {
+        "id": "66fa1b2c3d4e5f6a7b8c9d02",
+        "type": "HAZARD_ALERT",
+        "title": "Flood Warning: SEVERE",
+        "body": "Flood Warning: SEVERE. Move to higher ground and follow official guidance.",
+        "link": null,
+        "severity": "SEVERE",
+        "readAt": null,
+        "createdAt": "2026-10-02T06:30:00.000Z"
+      },
+      {
+        "id": "66fa1b2c3d4e5f6a7b8c9d01",
+        "type": "REPORT_CONFIRMED",
+        "title": "Report confirmed",
+        "body": "Your report GR-2481 was confirmed by the duty officer. Thank you.",
+        "link": "/my-reports/66f9a0c1b2c3d4e5f6a7b801",
+        "severity": null,
+        "readAt": "2026-10-02T05:10:00.000Z",
+        "createdAt": "2026-10-02T05:01:00.000Z"
+      }
+    ],
+    "page": 1,
+    "limit": 20,
+    "total": 2,
+    "unreadCount": 1
+  }
+}
+```
+
+| Field | Notes |
+|---|---|
+| `notifications` | The requested page, newest first (ties broken by `id`, so pages never overlap). An empty inbox, or a page past the end, is `200` with `[]`. |
+| `page`, `limit` | The values actually used, after defaults. |
+| `total` | Every item the caller has, read or not. |
+| `unreadCount` | Every item with `readAt: null`, across all pages. The number on the bell. |
+
+**Failure — `400 Bad Request`** (`limit` out of range)
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "Request validation failed.",
+    "errors": [{ "field": "limit", "message": "must be less than or equal to 50" }]
+  }
+}
+```
+
+### 11.3 Mark one read — `PATCH /api/notifications/:id/read`
+
+**Request:** no body.
+
+Sets `readAt` on the caller's own item and returns it. Marking an item that is already read is not an error: it returns `200` and keeps the original `readAt`.
+
+**Success — `200 OK`**
+
+```json
+{
+  "success": true,
+  "data": {
+    "notification": {
+      "id": "66fa1b2c3d4e5f6a7b8c9d02",
+      "type": "HAZARD_ALERT",
+      "readAt": "2026-10-02T06:41:00.000Z",
+      "...": "the rest of the user notification object from 11.1"
+    }
+  }
+}
+```
+
+**Failure — `404 Not Found`** (someone else's item, an unknown id, or an id that isn't valid)
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "Notification not found."
+  }
+}
+```
+
+### 11.4 Error codes for these endpoints
+
+| Status | Code | When |
+|---|---|---|
+| `400` | `VALIDATION_ERROR` | `page` or `limit` failed its rule (11.2). Carries `errors`. |
+| `401` | `AUTH_HEADER_MISSING` | No `Authorization` header. |
+| `401` | `AUTH_HEADER_MALFORMED` | Header present but not `Bearer <token>`. |
+| `401` | `TOKEN_EXPIRED` | Access token expired. |
+| `401` | `TOKEN_INVALID` | Access token invalid, or its user no longer exists or has been deactivated. |
+| `404` | `NOT_FOUND` | 11.3 only: the item isn't the caller's, doesn't exist, or the id isn't valid. |
+| `500` | `INTERNAL_ERROR` | Unhandled server-side failure. |
+
+No new error codes.
+
+### 11.5 How other sections send one
+
+For server code, not clients. A use case never writes an inbox item itself; it calls the shared `NotificationService` (DMS-106):
+
+- `notifyUser(userId, { type, title, body, link?, severity? })` — one item for one user.
+- `notifyRole(role, { districtId?, districtField? }, payload)` — one item for every active user holding `role`, through role inheritance (`dmc_officer` also reaches every `duty_officer`), optionally only those whose `districtField` (`homeDistrict`, `district` or `shiftDistrict`) is `districtId`.
+
+**A notification that fails is recorded and never fails the caller's request**, as §9.10 already relies on.
+
+---
+
+## 12. Adding a new endpoint later
 
 1. Pick a plural, lowercase, hyphenated resource name.
 2. Reuse the envelopes in sections 2 and 3 exactly — don't invent a new outer shape.
