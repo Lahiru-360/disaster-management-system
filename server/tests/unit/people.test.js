@@ -60,6 +60,13 @@ describe('Person hierarchy', () => {
     expect(new Citizen({ homeDistrict: 'Colombo' }).homeDistrict).toBe('Colombo');
   });
 
+  it('DMS-105: builds every role with no details at all', () => {
+    expect(new Citizen().homeDistrict).toBeUndefined();
+    expect(new DistrictOfficer().district).toBeUndefined();
+    expect(new DutyOfficer().shiftDistrict).toBeUndefined();
+    expect(new RescueTeamLead().name).toBeUndefined();
+  });
+
   it('takes its role from its class', () => {
     expect(new Citizen({}).role).toBe(Role.CITIZEN);
     expect(new CommunityVolunteer({}).role).toBe(Role.COMMUNITY_VOLUNTEER);
