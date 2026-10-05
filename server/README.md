@@ -91,14 +91,16 @@ Seeding never removes anything, so an account whose role is no longer in `Role` 
 
 `scripts/DatabaseSeeder.js` runs one seeder per domain, in this order, because each relies on the ones before it:
 
-| `--only` name | Seeder           | Creates                                                |
-| ------------- | ---------------- | ------------------------------------------------------ |
-| `district`    | `DistrictSeeder` | The 25 districts and 8 river basins                    |
-| `people`      | `PeopleSeeder`   | The demo accounts above and the 500 synthetic citizens |
-| `uc01`        | `Uc01Seeder`     | UC01 demo data (Anupa): hazard alerts, notifications   |
-| `uc02`        | `Uc02Seeder`     | UC02 demo data (Bineth): hazard reports                |
-| `uc03`        | `Uc03Seeder`     | UC03 demo data (Lahiru): shelters, teams, stock        |
-| `uc04`        | `Uc04Seeder`     | UC04 demo data (Sayuni): the closed-event dataset      |
+| `--only` name  | Seeder               | Creates                                                                                                                           |
+| -------------- | -------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `district`     | `DistrictSeeder`     | The 25 districts and 8 river basins                                                                                               |
+| `people`       | `PeopleSeeder`       | The demo accounts above and the 500 synthetic citizens                                                                            |
+| `organisation` | `OrganisationSeeder` | 7 organisations: SL Army, Sri Lanka Police, Fire Service, Government/DMC, Red Cross Sri Lanka, ADRA, UNICEF Sri Lanka             |
+| `hazard-event` | `HazardEventSeeder`  | CLOSED "Kelani basin floods" (8–20 Jun 2026; Colombo, Gampaha, Kalutara) and ACTIVE "Flood – Gampaha District" (from 25 Sep 2026) |
+| `uc01`         | `Uc01Seeder`         | UC01 demo data (Anupa): hazard alerts, notifications                                                                              |
+| `uc02`         | `Uc02Seeder`         | UC02 demo data (Bineth): hazard reports                                                                                           |
+| `uc03`         | `Uc03Seeder`         | UC03 demo data (Lahiru): shelters, teams, stock                                                                                   |
+| `uc04`         | `Uc04Seeder`         | UC04 demo data (Sayuni): the closed-event dataset                                                                                 |
 
 ```bash
 npm run seed                              # every seeder, in order
@@ -107,7 +109,7 @@ npm run seed -- --reset-demo              # empty the demo collections, then res
 npm run seed -- --only=uc04 --reset-demo  # the same for one UC, for rehearsing it
 ```
 
-`--reset-demo` empties only the collections each selected seeder lists in `demoModels`, then runs those seeders again. Users, districts and river basins are never emptied: other records point at them by id. A new seeder extends `scripts/Seeder.js`, upserts by a natural key so a second run changes nothing, and is added to the list in `DatabaseSeeder`. Its `--only` name comes from the class name (`HazardEventSeeder` → `hazard-event`).
+`--reset-demo` empties only the collections each selected seeder lists in `demoModels`, then runs those seeders again. Users, districts and river basins are never emptied: other records point at them by id. Organisations and hazard events list no `demoModels` for the same reason: they are reference data, not rehearsal state. A new seeder extends `scripts/Seeder.js`, upserts by a natural key so a second run changes nothing, and is added to the list in `DatabaseSeeder`. Its `--only` name comes from the class name (`HazardEventSeeder` → `hazard-event`).
 
 ## Roles and the Person classes
 

@@ -4,6 +4,8 @@ import { District } from '../src/models/District.js';
 import { RiverBasin } from '../src/models/RiverBasin.js';
 import { User } from '../src/models/User.js';
 import { DistrictSeeder } from './DistrictSeeder.js';
+import { HazardEventSeeder } from './HazardEventSeeder.js';
+import { OrganisationSeeder } from './OrganisationSeeder.js';
 import { PeopleSeeder } from './PeopleSeeder.js';
 import { Uc01Seeder } from './Uc01Seeder.js';
 import { Uc02Seeder } from './Uc02Seeder.js';
@@ -115,6 +117,8 @@ export class DatabaseSeeder {
     return [
       new DistrictSeeder(),
       new PeopleSeeder(),
+      new OrganisationSeeder(),
+      new HazardEventSeeder(),
       new Uc01Seeder(),
       new Uc02Seeder(),
       new Uc03Seeder(),

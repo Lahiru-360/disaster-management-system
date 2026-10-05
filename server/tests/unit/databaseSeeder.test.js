@@ -89,9 +89,9 @@ describe('Seeder', () => {
 describe('DatabaseSeeder.seed', () => {
   // Read through an unknown --only name's error, which lists the default
   // seeders in order without running any of them.
-  it('DMS-110: runs District → People → UC01 → UC02 → UC03 → UC04 by default', async () => {
+  it('DMS-110: runs District → People → Organisation → HazardEvent → UC01–UC04 by default', async () => {
     await expect(new DatabaseSeeder().seed({ only: ['?'] })).rejects.toThrow(
-      'choose from district, people, uc01, uc02, uc03, uc04',
+      'choose from district, people, organisation, hazard-event, uc01, uc02, uc03, uc04',
     );
   });
 
