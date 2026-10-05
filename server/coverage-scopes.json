@@ -9,7 +9,8 @@
     "src/enums/SupplyType.js",
     "src/models/Shelter.js",
     "src/models/RescueTeam.js",
-    "src/models/ReliefStock.js"
+    "src/models/ReliefStock.js",
+    "src/domain/coordination/**/*.js"
   ],
   "uc04": [
     "src/domain/events/**/*.js",
