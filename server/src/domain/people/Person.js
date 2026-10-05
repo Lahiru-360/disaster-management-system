@@ -3,9 +3,9 @@
 // hierarchy - a CommunityVolunteer is a Citizen, so anything that admits a
 // Citizen admits a CommunityVolunteer (see AuthMiddleware.requireRole).
 //
-// Only `name` is stored on the User document today; phone and nic are part of
-// the design but not persisted yet, so they are undefined for a Person built
-// from the database.
+// `name` and `phone` are stored on the User document; nic is part of the design
+// but not persisted yet, so it is undefined for a Person built from the
+// database.
 export class Person {
   // The role string this class stands for; set by every concrete subclass.
   static role = undefined;

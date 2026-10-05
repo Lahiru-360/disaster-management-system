@@ -64,22 +64,26 @@ This is a free-tier instance, so it sleeps after periods of inactivity. The firs
 
 ## Seeding demo accounts
 
-`npm run seed` creates one demo account per role against the shared cluster, all with the password `Password123!`. It is idempotent — an existing user (matched by email) is left untouched, so running it repeatedly never creates duplicates.
+`npm run seed` creates one demo account per role against the shared cluster, all with the password `Password123!`. It is idempotent — an existing user (matched by email) keeps its name, role and password, so running it repeatedly never creates duplicates. Only the profile fields (districts, phone) are set again on every run, so an account seeded before they existed picks them up.
 
 Before the accounts, it also seeds the geography every feature works "by district" against: the 25 districts of Sri Lanka and 8 river basins (`scripts/DistrictSeeder.js`). They are matched by name and updated in place, so a corrected coordinate reaches the database on the next seed.
 
-| Role                  | Name                  | Email                         | Client     |
-| --------------------- | --------------------- | ----------------------------- | ---------- |
-| `citizen`             | Nimal Perera          | citizen@example.test          | Mobile app |
-| `community_volunteer` | Kamala Fernando       | volunteer@example.test        | Mobile app |
-| `rescue_team_lead`    | Suresh Bandara        | rescue.lead@example.test      | Mobile app |
-| `dmc_officer`         | Ruwan Jayasinghe      | dmc.officer@example.test      | Web portal |
-| `duty_officer`        | Kasun Silva           | duty.officer@example.test     | Web portal |
-| `district_officer`    | Dilani Wickramasinghe | district.officer@example.test | Web portal |
+| Role                  | Name                  | Email                         | District                | Client     |
+| --------------------- | --------------------- | ----------------------------- | ----------------------- | ---------- |
+| `citizen`             | Nimal Perera          | citizen@example.test          | `homeDistrict` Colombo  | Mobile app |
+| `community_volunteer` | Kamala Fernando       | volunteer@example.test        | `homeDistrict` Colombo  | Mobile app |
+| `rescue_team_lead`    | Suresh Bandara        | rescue.lead@example.test      | — (via Team Alpha)      | Mobile app |
+| `dmc_officer`         | Ruwan Jayasinghe      | dmc.officer@example.test      | — (national)            | Web portal |
+| `duty_officer`        | Kasun Silva           | duty.officer@example.test     | `shiftDistrict` Colombo | Web portal |
+| `district_officer`    | Dilani Wickramasinghe | district.officer@example.test | `district` Gampaha      | Web portal |
+
+The rescue team lead has no district of their own: they belong to a district through their team (Team Alpha, Gampaha), which the UC03 seeding attaches.
+
+After the demo accounts it adds **500 synthetic citizens** (`scripts/SyntheticCitizenGenerator.js`), so that "how many citizens does this alert reach" gives a realistic number. They are `citizen.synth.<n>@example.test` (n = 1–500) with deterministic names and phones, spread over 8 districts and weighted towards the demo districts: Colombo 150, Gampaha 120, Kalutara 60, Kandy 50, Galle 40, Ratnapura 30, Kurunegala 30, Matara 20. They share the demo password but aren't meant for signing in.
 
 These are dev/test-only credentials for the shared cluster, not real accounts. Only `citizen` and `community_volunteer` can register through the public API; the other four roles are only ever created this way or by direct database access.
 
-The mobile app's login screen has a one-tap picker for the three mobile accounts, driven by `app/src/constants/demoUsers.js`. Keep that list and `scripts/DatabaseSeeder.js` in step.
+The mobile app's login screen has a one-tap picker for the three mobile accounts, driven by `app/src/constants/demoUsers.js`. Keep that list and `scripts/PeopleSeeder.js` in step.
 
 Seeding never removes anything, so an account whose role is no longer in `Role` stays in the cluster until someone deletes it. Every `requireRole` check refuses it with `403`.
 
@@ -89,7 +93,7 @@ Every account is one `User` document (the model stays flat) with a `role` string
 
 ```
 Person (abstract)            name, phone, nic
-├── Citizen                  citizen — self-registrable
+├── Citizen                  citizen — self-registrable, homeDistrict
 │   └── CommunityVolunteer   community_volunteer — trainingLevel
 ├── DMCOfficer               dmc_officer
 │   └── DutyOfficer          duty_officer — shiftDistrict
@@ -100,7 +104,8 @@ Person (abstract)            name, phone, nic
 - Each class names its role in `static role`. A subclass has everything its parent is allowed because it _is_ an instance of the parent — that is the only statement of the hierarchy.
 - `PersonFactory` maps a role string to its class (`classFor`) and a `User` document to a `Person` (`fromUser`). It holds only the list of classes, so there is no separate parent map to keep in step with them.
 - `static selfRegistrable` marks the roles public registration accepts. `Citizen` sets it and `CommunityVolunteer` inherits it; `AuthValidator` reads the list from `PersonFactory.selfRegistrableRoles()`.
-- Only `name` is stored in the database today. `phone`, `nic`, `trainingLevel`, `shiftDistrict` and `district` exist on the classes but not in `User`, so they are `undefined` on a `Person` built by `fromUser`. `district` and `shiftDistrict` are plain district names until the shared `District` class exists.
+- `User` stores `name` and the optional profile fields `phone`, `homeDistrict`, `district` and `shiftDistrict` (the last three are refs to `District`; `homeDistrict` and `shiftDistrict` are indexed for recipient and duty-officer lookups). `fromUser` passes them on and each class keeps its own: `Citizen.homeDistrict` (so `CommunityVolunteer` too), `DistrictOfficer.district`, `DutyOfficer.shiftDistrict`. A district comes through as stored — an ObjectId, or the `District` document if the caller populated it.
+- All four profile fields are optional: registration doesn't set them, and accounts created before they existed still load. `nic` and `trainingLevel` exist on the classes but are not stored, so they are `undefined` on a `Person` built by `fromUser`.
 - To add a role: add its value to `Role`, write its class extending whichever role it specialises, and add the class to `PersonFactory`'s list. `tests/unit/people.test.js` fails if a `Role` value has no class, or two classes claim the same role.
 
 ## Auth middleware — protecting a route
