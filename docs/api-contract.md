@@ -2174,7 +2174,7 @@ DMS-140. **Roles:** `district_officer` (own district), DMC officers (any distric
 
 #### 10.4.2 Update shelter occupancy — `PATCH /api/shelters/:id/occupancy`
 
-UC03 main flow steps 3–5, with A2 (DMS-145), E1 (DMS-147) and E2 (DMS-148). Sets the shelter's current occupancy and keeps a history record of the update for UC04.
+UC03 main flow steps 3–5 (DMS-141), with A2 (DMS-145), E1 (DMS-147) and E2 (DMS-148). Sets how many people are in the shelter now, and keeps a history record of every update for post-event reports (UC04).
 
 **Roles:** `district_officer`, for a shelter in their own district.
 
@@ -2182,19 +2182,55 @@ UC03 main flow steps 3–5, with A2 (DMS-145), E1 (DMS-147) and E2 (DMS-148). Se
 
 | Field | Rule |
 |---|---|
-| `occupants` | Required. A whole number, 0 or more. 0 is an empty shelter. |
+| `occupants` | Required. A whole number, 0 or more. 0 is an empty shelter. It may be above `capacity`: nobody is turned away by the software, and the shelter shows as `FULL`. |
 
 ```json
 { "occupants": 460 }
 ```
 
 **Behaviour**
-1. Sets `currentOccupancy` and records `{ shelter, district, occupants, capacity, recordedAt, recordedBy }` in the shelter's occupancy history.
-2. Recalculates `rate` and `status` (10.2).
+1. Sets the shelter's `currentOccupancy` to `occupants`, and adds an occupancy record (below) to its history. Nothing else about the shelter changes; capacity is not edited here.
+2. Recalculates `rate` and `status` with the table in 10.2, on the exact ratio. For a capacity of 500:
+
+   | `occupants` | `rate` | `status` |
+   |---|---|---|
+   | 0 | 0 | `AVAILABLE` |
+   | 370 | 0.74 | `AVAILABLE` |
+   | 375 | 0.75 | `FILLING_UP` |
+   | 449 | 0.898 | `FILLING_UP` (not rounded up to 90%) |
+   | 450 | 0.9 | `NEAR_CAPACITY` |
+   | 499 | 0.998 | `NEAR_CAPACITY` |
+   | 500 | 1 | `FULL` |
+   | 505 | 1.01 | `FULL` |
+
 3. **A2:** when the status is now `NEAR_CAPACITY` or `FULL`, the shelter is **flagged** and the response suggests the nearest other shelter in the same district with spare capacity, by distance between the shelters' locations.
 4. **E2:** when no other shelter in the district has spare capacity, there is no suggestion and every DMC officer is notified (10.12). For each district this alert is sent at most once an hour while the condition lasts, and again if space became available in between.
 
-**Success — `200 OK`** (A2: flagged, with a suggestion)
+**Success — `200 OK`** (main flow: 380 of 500, not flagged)
+
+```json
+{
+  "success": true,
+  "data": {
+    "shelter": {
+      "id": "66fb0a1b2c3d4e5f6a7b8c01",
+      "name": "Gampaha Central College",
+      "capacity": 500,
+      "currentOccupancy": 380,
+      "rate": 0.76,
+      "status": "FILLING_UP",
+      "...": "the rest of the shelter object"
+    },
+    "rate": 0.76,
+    "status": "FILLING_UP",
+    "flagged": false,
+    "alternateShelter": null,
+    "dmcAlerted": false
+  }
+}
+```
+
+**Success — `200 OK`** (A2: 460 of 500, flagged, with a suggestion)
 
 ```json
 {
@@ -2216,13 +2252,44 @@ UC03 main flow steps 3–5, with A2 (DMS-145), E1 (DMS-147) and E2 (DMS-148). Se
 }
 ```
 
+**Success — `200 OK`** (E2: flagged, and no shelter in the district has space)
+
+```json
+{
+  "success": true,
+  "data": {
+    "shelter": { "id": "66fb0a1b2c3d4e5f6a7b8c01", "...": "the shelter object" },
+    "rate": 0.92,
+    "status": "NEAR_CAPACITY",
+    "flagged": true,
+    "alternateShelter": null,
+    "dmcAlerted": true
+  }
+}
+```
+
 | Field | Notes |
 |---|---|
+| `shelter` | The updated shelter object (10.2). |
+| `rate`, `status` | The same values as `shelter.rate` and `shelter.status`, at the top level for the dialog's indicator, e.g. "(!) 92% – Near capacity". |
 | `flagged` | `true` when `status` is `NEAR_CAPACITY` or `FULL`. |
 | `alternateShelter` | The suggestion, or `null` when not flagged or when no shelter has spare capacity. `distanceKm` is rounded to one decimal place; the ordering uses the exact distance. |
 | `dmcAlerted` | `true` when flagged with no suggestion (E2): the DMC has been alerted, by this update or within the last hour. |
 
-**Failure — `400 Bad Request`** (E1: not a whole number). Nothing is saved and no history record is created.
+**The occupancy record.** Every successful update stores one record, and nothing else creates them, so a rejected update leaves no trace. UC03 has no endpoint that returns them; post-event reports (UC04) read them directly for "shelter occupancy over time".
+
+| Field | Type | Notes |
+|---|---|---|
+| `shelter` | shelter id | The shelter the record belongs to. |
+| `district` | district id | Copied from the shelter, so UC04 can query by district without a join. |
+| `occupants` | integer | The `occupants` sent, 0 or more. |
+| `capacity` | integer | The shelter's capacity at that moment, so the rate can be recomputed later even if capacity changes. |
+| `recordedAt` | date | When the update was saved. |
+| `recordedBy` | user id | The district officer who sent it. |
+
+Records are indexed by `{ shelter, recordedAt }` and `{ district, recordedAt }`.
+
+**Failure — `400 Bad Request`** (E1: not a whole number). Nothing is saved and no occupancy record is created.
 
 ```json
 {
@@ -2235,7 +2302,13 @@ UC03 main flow steps 3–5, with A2 (DMS-145), E1 (DMS-147) and E2 (DMS-148). Se
 }
 ```
 
-Also `403 FORBIDDEN` (another district), `404 NOT_FOUND` (unknown shelter) and `409 NO_ACTIVE_INCIDENT`.
+| Status | Code | When |
+|---|---|---|
+| `400` | `VALIDATION_ERROR` | `occupants` missing, negative, not a whole number (e.g. `12.5`) or not a number (e.g. `"abc"`). Carries `errors` on `occupants`. |
+| `401` | `AUTH_HEADER_MISSING`, `AUTH_HEADER_MALFORMED`, `TOKEN_EXPIRED`, `TOKEN_INVALID` | As in 10.13. |
+| `403` | `FORBIDDEN` | The caller isn't a `district_officer`, or the shelter is in another district. |
+| `404` | `NOT_FOUND` | No shelter has this id, or the id isn't valid. |
+| `409` | `NO_ACTIVE_INCIDENT` | The shelter's district has no `ACTIVE` hazard event. |
 
 #### 10.4.3 Register a shelter — `POST /api/shelters`
 
