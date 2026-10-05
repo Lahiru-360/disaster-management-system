@@ -43,6 +43,21 @@ const userNotificationSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    // What each channel reported when the item was sent, failures included, so
+    // a failed delivery is on record without ever failing the sender. Kept off
+    // the API: the owner only sees the item itself.
+    deliveries: {
+      type: [
+        {
+          _id: false,
+          channel: { type: String, required: true },
+          status: { type: String, enum: ['SENT', 'DELIVERED', 'FAILED'], required: true },
+          reason: { type: String, default: null },
+          at: { type: Date, required: true },
+        },
+      ],
+      default: [],
+    },
   },
   {
     timestamps: true,
@@ -51,6 +66,7 @@ const userNotificationSchema = new mongoose.Schema(
         ret.id = ret._id;
         delete ret._id;
         delete ret.user;
+        delete ret.deliveries;
         delete ret.updatedAt;
         delete ret.__v;
         return ret;
