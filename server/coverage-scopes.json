@@ -4,7 +4,8 @@
     "src/enums/SeverityLevel.js",
     "src/enums/AlertStatus.js",
     "src/models/HazardAlert.js",
-    "src/domain/alerts/**/*.js"
+    "src/domain/alerts/**/*.js",
+    "src/services/CitizenRegistry.js"
   ],
   "uc02": [
     "src/enums/ReportHazardType.js",
