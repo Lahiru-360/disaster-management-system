@@ -15,6 +15,7 @@ import ScreenHeader from '../../components/ui/ScreenHeader';
 import SectionLabel from '../../components/ui/SectionLabel';
 import { TABS } from '../../constants/roles';
 import { uuidv4 } from '../../utils/uuid';
+import { hazardReportErrorsFromServer, validateHazardReport } from '../../utils/validation';
 
 // How long to wait for a GPS fix before giving up (A2 then lets the reporter
 // set it by hand - DMS-133).
@@ -55,6 +56,7 @@ export default function ReportHazardScreen() {
   const [locationStatus, setLocationStatus] = useState('locating');
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState(null);
+  const [fieldErrors, setFieldErrors] = useState({});
   const [submitted, setSubmitted] = useState(null);
 
   // Step 3: the position from the device's location service, or
@@ -79,13 +81,29 @@ export default function ReportHazardScreen() {
     currentPosition().then(showFix);
   }
 
-  const update = (field) => (value) => setForm((current) => ({ ...current, [field]: value }));
+  // Editing a field clears its error; every other input is kept as typed.
+  const update = (field) => (value) => {
+    setForm((current) => ({ ...current, [field]: value }));
+    setFieldErrors((current) => {
+      const next = { ...current };
+      delete next[field];
+      return next;
+    });
+  };
 
   // Step 5: upload the photo (§6, folder hazard-reports), then send the
   // report with its URL. The button stays disabled while this runs, so a
   // double tap can't send it twice; the same clientReportId is kept for a
   // retry after a failure.
   async function submit() {
+    // E1 on the device: the same rules the server applies, before sending.
+    const errors = validateHazardReport({ ...form, location });
+    setFieldErrors(errors);
+    if (Object.keys(errors).length > 0) {
+      setSubmitError('Check the highlighted fields.');
+      return;
+    }
+
     setSubmitting(true);
     setSubmitError(null);
     try {
@@ -102,10 +120,16 @@ export default function ReportHazardScreen() {
       });
       setSubmitted(report);
     } catch (error) {
-      setSubmitError(
-        error?.response?.data?.error?.message ??
-          'Your report could not be sent. Check your connection and try again.',
-      );
+      const body = error?.response?.data?.error;
+      if (body?.code === 'VALIDATION_ERROR') {
+        // E1.2: the server's field errors outline the same fields.
+        setFieldErrors(hazardReportErrorsFromServer(body.errors));
+        setSubmitError('Check the highlighted fields.');
+      } else {
+        setSubmitError(
+          body?.message ?? 'Your report could not be sent. Check your connection and try again.',
+        );
+      }
     } finally {
       setSubmitting(false);
     }
@@ -113,6 +137,7 @@ export default function ReportHazardScreen() {
 
   function reportAnother() {
     setSubmitted(null);
+    setFieldErrors({});
     setForm(emptyForm());
     locateAgain();
   }
@@ -135,15 +160,26 @@ export default function ReportHazardScreen() {
       <ScreenHeader title="Report a Hazard" className="px-0" />
 
       <SectionLabel className="mb-2 mt-2">Photo of the hazard</SectionLabel>
-      <PhotoCapture photo={form.photo} onChange={update('photo')} disabled={submitting} />
+      <PhotoCapture
+        photo={form.photo}
+        onChange={update('photo')}
+        error={fieldErrors.photo}
+        disabled={submitting}
+      />
 
       <SectionLabel className="mb-2">Location</SectionLabel>
-      <LocationRow location={location} status={locationStatus} onRetry={locateAgain} />
+      <LocationRow
+        location={location}
+        status={locationStatus}
+        onRetry={locateAgain}
+        error={fieldErrors.location}
+      />
 
       <SectionLabel className="mb-2">Description</SectionLabel>
       <DescriptionField
         value={form.description}
         onChangeText={update('description')}
+        error={fieldErrors.description}
         disabled={submitting}
       />
 
@@ -151,6 +187,7 @@ export default function ReportHazardScreen() {
       <HazardTypeChips
         value={form.hazardType}
         onChange={update('hazardType')}
+        error={fieldErrors.hazardType}
         disabled={submitting}
       />
 
