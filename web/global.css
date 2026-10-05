@@ -39,9 +39,50 @@
   --color-success: #12b76a;
   --color-success-soft: #dcfae6;
   --color-success-ink: #067647;
+  /* Orange - between warning and danger: a shelter near capacity, a HIGH severity. */
+  --color-caution: #ef6820;
+  --color-caution-soft: #fdead7;
+  --color-caution-ink: #b93815;
 
   /* The system UI font. */
   --font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
+/*
+ * Domain colours - named after what they mean, each pointing at a colour
+ * above, so a screen says `bg-shelter-full-soft` or `text-severity-high-ink`
+ * and the palette stays in one place. `inline` makes the utilities use the
+ * colour itself rather than a variable pointing at another variable.
+ */
+@theme inline {
+  /* Shelter occupancy (UC03): Available below 75%, Filling up 75-89%,
+     Near capacity 90-99%, Full at 100% or more. */
+  --color-shelter-available: var(--color-success);
+  --color-shelter-available-soft: var(--color-success-soft);
+  --color-shelter-available-ink: var(--color-success-ink);
+  --color-shelter-filling: var(--color-warning);
+  --color-shelter-filling-soft: var(--color-warning-soft);
+  --color-shelter-filling-ink: var(--color-warning-ink);
+  --color-shelter-near-capacity: var(--color-caution);
+  --color-shelter-near-capacity-soft: var(--color-caution-soft);
+  --color-shelter-near-capacity-ink: var(--color-caution-ink);
+  --color-shelter-full: var(--color-danger);
+  --color-shelter-full-soft: var(--color-danger-soft);
+  --color-shelter-full-ink: var(--color-danger-ink);
+
+  /* Hazard warning severity (UC01 SeverityLevel): LOW, MEDIUM, HIGH, SEVERE. */
+  --color-severity-low: var(--color-navy);
+  --color-severity-low-soft: var(--color-navy-soft);
+  --color-severity-low-ink: var(--color-navy);
+  --color-severity-medium: var(--color-warning);
+  --color-severity-medium-soft: var(--color-warning-soft);
+  --color-severity-medium-ink: var(--color-warning-ink);
+  --color-severity-high: var(--color-caution);
+  --color-severity-high-soft: var(--color-caution-soft);
+  --color-severity-high-ink: var(--color-caution-ink);
+  --color-severity-severe: var(--color-danger);
+  --color-severity-severe-soft: var(--color-danger-soft);
+  --color-severity-severe-ink: var(--color-danger-ink);
 }
 
 @layer base {

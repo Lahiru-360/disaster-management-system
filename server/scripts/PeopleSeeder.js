@@ -2,6 +2,7 @@ import bcrypt from 'bcryptjs';
 import { Role } from '../src/enums/Role.js';
 import { District } from '../src/models/District.js';
 import { User } from '../src/models/User.js';
+import { Seeder } from './Seeder.js';
 import { SyntheticCitizenGenerator } from './SyntheticCitizenGenerator.js';
 
 // Seeds one demo account per role, then the synthetic citizens. Safe to re-run:
@@ -10,7 +11,7 @@ import { SyntheticCitizenGenerator } from './SyntheticCitizenGenerator.js';
 // never overwritten. The profile fields (districts, phone) are $set on every
 // run, so an account seeded before they existed gets them too. Expects an open
 // connection and the districts already seeded - DatabaseSeeder owns both.
-export class PeopleSeeder {
+export class PeopleSeeder extends Seeder {
   static #PASSWORD = 'Password123!';
 
   static #SALT_ROUNDS = 10;
