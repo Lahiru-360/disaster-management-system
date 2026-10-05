@@ -8,7 +8,10 @@
     "src/services/CitizenRegistry.js",
     "src/enums/Channel.js",
     "src/services/HazardAlertPresenter.js",
-    "src/services/WarningService.js"
+    "src/services/WarningService.js",
+    "src/validators/HazardAlertValidator.js",
+    "src/controllers/HazardAlertController.js",
+    "src/routes/HazardAlertRoutes.js"
   ],
   "uc02": [
     "src/enums/ReportHazardType.js",
