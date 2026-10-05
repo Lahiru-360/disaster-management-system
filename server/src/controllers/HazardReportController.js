@@ -13,11 +13,12 @@ export class HazardReportController extends BaseController {
     this.#hazardReportService = hazardReportService;
   }
 
-  // POST /api/hazard-reports - UC02 steps 5-9 (§9.2).
+  // POST /api/hazard-reports - UC02 steps 5-9 (§9.2). 201 for a new report;
+  // 200 with the stored one for a resend of the same clientReportId (A3).
   async submit(req, res) {
-    const report = await this.#hazardReportService.submit(req.user, req.body);
+    const { report, created } = await this.#hazardReportService.submit(req.user, req.body);
 
-    ApiResponse.success(res, { report }, 201);
+    ApiResponse.success(res, { report }, created ? 201 : 200);
   }
 }
 
