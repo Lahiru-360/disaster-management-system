@@ -3,7 +3,12 @@
     "src/enums/AlertHazardType.js",
     "src/enums/SeverityLevel.js",
     "src/enums/AlertStatus.js",
-    "src/models/HazardAlert.js"
+    "src/models/HazardAlert.js",
+    "src/enums/Channel.js",
+    "src/enums/DeliveryStatus.js",
+    "src/enums/NotificationKind.js",
+    "src/models/Notification.js",
+    "src/domain/alerts/**/*.js"
   ],
   "uc02": [
     "src/enums/ReportHazardType.js",
