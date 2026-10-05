@@ -8,7 +8,13 @@
     "src/models/HazardReport.js",
     "src/domain/reports/**/*.js",
     "src/models/Counter.js",
-    "src/services/ReferenceNumberGenerator.js"
+    "src/services/ReferenceNumberGenerator.js",
+    "src/constants/geo.js",
+    "src/validators/HazardReportValidator.js",
+    "src/services/DuplicateReportFinder.js",
+    "src/services/HazardReportService.js",
+    "src/controllers/HazardReportController.js",
+    "src/routes/HazardReportRoutes.js"
   ],
   "uc03": [],
   "uc04": [
