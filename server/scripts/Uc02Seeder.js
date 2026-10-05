@@ -8,6 +8,7 @@ import { HazardReport } from '../src/models/HazardReport.js';
 import { User } from '../src/models/User.js';
 import { ReferenceNumberGenerator } from '../src/services/ReferenceNumberGenerator.js';
 import { systemClock } from '../src/utils/SystemClock.js';
+import { Seeder } from './Seeder.js';
 
 // UC02 demo data: the duty officer's queue from the §5.2 wireframe, so the
 // review screen has something to review on the first sign-in. Six PENDING
@@ -19,8 +20,9 @@ import { systemClock } from '../src/utils/SystemClock.js';
 // when missing ($setOnInsert), so a report already reviewed in a rehearsal is
 // left as it is. The reference counter is moved past GR-2481 so new
 // submissions never reuse a seeded number. Expects an open connection and the
-// districts and people already seeded - DatabaseSeeder owns all three.
-export class Uc02Seeder {
+// districts and people already seeded - DatabaseSeeder owns all three
+// (`npm run seed -- --only=uc02` runs just this one).
+export class Uc02Seeder extends Seeder {
   static #HIGHEST_SEEDED = 2481;
 
   // Oldest first: the Flood cluster's id is its first report's (GR-2474), so
@@ -83,8 +85,23 @@ export class Uc02Seeder {
   #referenceNumbers;
 
   constructor({ clock = systemClock, referenceNumbers = new ReferenceNumberGenerator() } = {}) {
+    super();
     this.#clock = clock;
     this.#referenceNumbers = referenceNumbers;
+  }
+
+  // --reset-demo empties the reports, and run() puts the same demo queue back
+  // under the same ids. The GR- counter is left alone: it never drops below
+  // the seeded numbers, so a reset never reissues one.
+  get demoModels() {
+    return [HazardReport];
+  }
+
+  // A fixed id per seeded report (the contract's example prefix + its number),
+  // so a reseed after --reset-demo gives every report back the id it had and
+  // nothing that points at one breaks.
+  static #idFor(referenceNo) {
+    return new mongoose.Types.ObjectId(`66f9a0c1b2c3d4e5f6a7${referenceNo.slice(3)}`);
   }
 
   async run() {
@@ -98,7 +115,7 @@ export class Uc02Seeder {
 
     for (const { cluster, minutesAgo, reporter, location, ...fields } of Uc02Seeder.#REPORTS) {
       // A report alone in its cluster, or the first of one, is its own cluster.
-      const id = new mongoose.Types.ObjectId();
+      const id = Uc02Seeder.#idFor(fields.referenceNo);
       const doc = await HazardReport.findOneAndUpdate(
         { referenceNo: fields.referenceNo },
         {

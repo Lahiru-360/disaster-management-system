@@ -108,6 +108,28 @@ describe('Uc02Seeder', () => {
     }
   });
 
+  it('DMS-110: is selected as uc02 and lets --reset-demo empty only the reports', () => {
+    const seeder = new Uc02Seeder();
+
+    expect(seeder.name).toBe('uc02');
+    expect(seeder.demoModels).toEqual([HazardReport]);
+  });
+
+  it('DMS-110: gives each seeded report a fixed id, so a reset reseed keeps it', async () => {
+    await seed();
+    const before = await byRef();
+    await HazardReport.deleteMany({});
+
+    await seed();
+    const after = await byRef();
+
+    expect(String(after['GR-2481']._id)).toBe('66f9a0c1b2c3d4e5f6a72481');
+    for (const ref of Object.keys(before)) {
+      expect(after[ref]._id).toEqual(before[ref]._id);
+      expect(after[ref].clusterId).toEqual(before[ref].clusterId);
+    }
+  });
+
   it('stops when the districts have not been seeded', async () => {
     await District.deleteMany({});
 
