@@ -1,10 +1,17 @@
+import { lazy, Suspense } from 'react';
+import { useLocation } from 'react-router';
+
 import AuthRoutes from './AuthRoutes';
 import ConsoleRoutes from './ConsoleRoutes';
 import Loader from '../components/ui/Loader';
 import WrongPlatformScreen from '../screens/shared/WrongPlatformScreen';
+import { IS_DEV } from '../constants/config';
 import { isWebRole } from '../constants/roles';
 import useAuth from '../hooks/useAuth';
 import { AUTH_STATUS } from '../store/AuthContext';
+
+// The UI kit catalogue: dev builds only, and loaded only when visited.
+const ComponentCatalogueScreen = lazy(() => import('../screens/dev/ComponentCatalogueScreen'));
 
 // The auth and console routes are alternatives, not destinations you navigate
 // to - only one set is ever mounted, so a signed-out visitor can't reach a
@@ -13,6 +20,16 @@ import { AUTH_STATUS } from '../store/AuthContext';
 // route sets in place of React Navigation stacks.
 export default function RootNavigator() {
   const { status, user } = useAuth();
+  const { pathname } = useLocation();
+
+  // A developer tool, not a page of the portal: open signed in or out.
+  if (IS_DEV && pathname === '/dev/components') {
+    return (
+      <Suspense fallback={<Loader fullScreen />}>
+        <ComponentCatalogueScreen />
+      </Suspense>
+    );
+  }
 
   // Nothing routes until /auth/me has answered, so a signed-in officer
   // reloading a console page isn't sent to /login first.
