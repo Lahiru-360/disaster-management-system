@@ -5,7 +5,10 @@
     "src/enums/AlertStatus.js",
     "src/models/HazardAlert.js",
     "src/domain/alerts/**/*.js",
-    "src/services/CitizenRegistry.js"
+    "src/services/CitizenRegistry.js",
+    "src/enums/Channel.js",
+    "src/services/HazardAlertPresenter.js",
+    "src/services/WarningService.js"
   ],
   "uc02": [
     "src/enums/ReportHazardType.js",
