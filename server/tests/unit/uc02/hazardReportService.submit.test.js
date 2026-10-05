@@ -167,6 +167,27 @@ describe('HazardReportService.submit', () => {
       expect(String(second.clusterId)).not.toBe(String(first.clusterId));
     });
 
+    it('A4 (TC-30): joins the oldest cluster when reports from two clusters match', async () => {
+      const citizen = await createUser();
+      // Two clusters 600 m apart - too far to have joined each other - both
+      // within 500 m of a point between them.
+      const west = await service.submit(
+        citizen,
+        validInput({ location: { latitude: 6.9382, longitude: 79.8985 } }),
+      );
+      clock.advance(10 * FakeClock.MINUTE);
+      const east = await service.submit(
+        citizen,
+        validInput({ location: { latitude: 6.9382, longitude: 79.9039 } }),
+      );
+      clock.advance(10 * FakeClock.MINUTE);
+
+      const middle = await service.submit(citizen, validInput());
+
+      expect(String(east.clusterId)).not.toBe(String(west.clusterId));
+      expect(String(middle.clusterId)).toBe(String(west.clusterId));
+    });
+
     it('A4 (TC-29): does not join a report of a different type', async () => {
       const citizen = await createUser();
       await service.submit(citizen, validInput({ hazardType: 'LANDSLIDE' }));
