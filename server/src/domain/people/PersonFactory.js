@@ -38,10 +38,18 @@ export class PersonFactory {
   }
 
   // The Person a User document stands for, or null when no class has its role
-  // (e.g. an account left over from before the current roles existed).
+  // (e.g. an account left over from before the current roles existed). Every
+  // profile field is passed on and each class keeps the ones it has, so a
+  // Citizen gets homeDistrict and a DutyOfficer shiftDistrict. The districts
+  // are passed as stored: an ObjectId, or the District document if the caller
+  // populated it.
   static fromUser(user) {
     const PersonClass = PersonFactory.#BY_ROLE.get(user.role);
-    return PersonClass ? new PersonClass({ name: user.name }) : null;
+    if (!PersonClass) {
+      return null;
+    }
+    const { name, phone, homeDistrict, district, shiftDistrict } = user;
+    return new PersonClass({ name, phone, homeDistrict, district, shiftDistrict });
   }
 
   static selfRegistrableRoles() {

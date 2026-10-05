@@ -28,6 +28,29 @@ const userSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+    // Profile fields the Person classes rely on. All optional, so accounts
+    // created before they existed (and by /api/auth/register) still load.
+    phone: {
+      type: String,
+      trim: true,
+    },
+    // Where a citizen lives: who an alert for that district reaches (UC01).
+    homeDistrict: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'District',
+      index: true,
+    },
+    // The district a district officer is responsible for (UC03).
+    district: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'District',
+    },
+    // The district a duty officer covers on shift: who a report is routed to (UC02).
+    shiftDistrict: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'District',
+      index: true,
+    },
   },
   {
     timestamps: true,
