@@ -6,7 +6,9 @@
     "src/enums/LocationSource.js",
     "src/enums/DismissalReason.js",
     "src/models/HazardReport.js",
-    "src/domain/reports/**/*.js"
+    "src/domain/reports/**/*.js",
+    "src/models/Counter.js",
+    "src/services/ReferenceNumberGenerator.js"
   ],
   "uc03": [],
   "uc04": []
