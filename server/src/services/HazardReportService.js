@@ -247,6 +247,32 @@ export class HazardReportService {
   }
 
   /**
+   * UC02 A1 (§9.7): the duty officer dismisses a report in their district
+   * with a reason and an optional note. The domain class makes the change
+   * (only from PENDING; not escalatable afterwards) and the reporter is
+   * thanked politely, with the reason's label.
+   * @param {string} reportId
+   * @param {{ _id: object, shiftDistrict?: object }} officer
+   * @param {{ reason: string, note?: string|null }} dismissal Validated body.
+   * @returns {Promise<object>} The updated report (§9.1).
+   * @throws {ApiError} 404 NOT_FOUND as in getDetail; ReportAlreadyReviewedError (409) when not PENDING.
+   */
+  async dismiss(reportId, officer, { reason, note = null }) {
+    const doc = await this.#review(reportId, officer, (report, at) =>
+      report.dismiss(officer, reason, note, at),
+    );
+
+    await this.#notifyReporter(doc, {
+      type: NotificationType.REPORT_DISMISSED,
+      title: `Report ${doc.referenceNo} reviewed`,
+      body:
+        `Thank you for report ${doc.referenceNo}. After review it was not used for a warning ` +
+        `(reason: ${ReportLabels.dismissalReason(reason)}). Please keep reporting what you see.`,
+    });
+    return this.#present(doc);
+  }
+
+  /**
    * The reporter's own reports, every status, newest first (§9.3).
    * @param {{ _id: object }} reporter The signed-in citizen.
    * @returns {Promise<object[]>}

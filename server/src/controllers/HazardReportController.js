@@ -47,6 +47,13 @@ export class HazardReportController extends BaseController {
 
     ApiResponse.success(res, { report }, 200);
   }
+
+  // POST /api/hazard-reports/:id/dismiss - UC02 A1 (§9.7).
+  async dismiss(req, res) {
+    const report = await this.#hazardReportService.dismiss(req.params.id, req.user, req.body);
+
+    ApiResponse.success(res, { report }, 200);
+  }
 }
 
 export const hazardReportController = new HazardReportController();
