@@ -278,3 +278,99 @@ describe('NotificationService.notifyRole', () => {
     );
   });
 });
+
+describe('NotificationService.listForUser', () => {
+  const store = (user, minutesAfter, fields = {}) =>
+    UserNotification.create({
+      user,
+      ...payload(),
+      title: `Item ${minutesAfter}`,
+      createdAt: new Date(NOW.getTime() + minutesAfter * 60000),
+      ...fields,
+    });
+
+  it('DMS-106: returns the page newest first, with total and unread counts', async () => {
+    const owner = new mongoose.Types.ObjectId();
+    await store(owner, 1);
+    await store(owner, 3, { readAt: NOW });
+    await store(owner, 2);
+    await store(new mongoose.Types.ObjectId(), 4);
+    const service = new NotificationService({ clock });
+
+    const inbox = await service.listForUser(owner, { page: 1, limit: 2 });
+
+    expect(inbox.notifications.map((item) => item.title)).toEqual(['Item 3', 'Item 2']);
+    expect(inbox).toMatchObject({ page: 1, limit: 2, total: 3, unreadCount: 2 });
+  });
+
+  it('DMS-106: the next page continues where the first stopped, and past the end is empty', async () => {
+    const owner = new mongoose.Types.ObjectId();
+    for (const minutes of [1, 2, 3]) {
+      await store(owner, minutes);
+    }
+    const service = new NotificationService({ clock });
+
+    const second = await service.listForUser(owner, { page: 2, limit: 2 });
+    const past = await service.listForUser(owner, { page: 3, limit: 2 });
+
+    expect(second.notifications.map((item) => item.title)).toEqual(['Item 1']);
+    expect(past.notifications).toEqual([]);
+    expect(past.total).toBe(3);
+  });
+});
+
+describe('NotificationService.markRead', () => {
+  const later = new Date('2026-10-02T06:00:00.000Z');
+
+  it("DMS-106: sets readAt from the clock on the owner's unread item", async () => {
+    const owner = new mongoose.Types.ObjectId();
+    const item = await UserNotification.create({ user: owner, ...payload() });
+    const service = new NotificationService({ clock });
+
+    const read = await service.markRead(owner, item.id);
+
+    expect(read.readAt).toEqual(NOW);
+    expect((await UserNotification.findById(item.id)).readAt).toEqual(NOW);
+  });
+
+  it('DMS-106: marking an already read item keeps its first readAt', async () => {
+    const owner = new mongoose.Types.ObjectId();
+    const item = await UserNotification.create({ user: owner, ...payload(), readAt: NOW });
+    const service = new NotificationService({ clock: () => later });
+
+    const read = await service.markRead(owner, item.id);
+
+    expect(read.readAt).toEqual(NOW);
+  });
+
+  it.each([
+    [
+      "someone else's item",
+      async () =>
+        (await UserNotification.create({ user: new mongoose.Types.ObjectId(), ...payload() })).id,
+    ],
+    ['an unknown id', async () => new mongoose.Types.ObjectId().toString()],
+    ['a malformed id', async () => 'not-an-id'],
+  ])('DMS-106: %s is 404 NOT_FOUND', async (_case, idFor) => {
+    const service = new NotificationService({ clock });
+
+    await expect(
+      service.markRead(new mongoose.Types.ObjectId(), await idFor()),
+    ).rejects.toMatchObject({
+      status: 404,
+      code: 'NOT_FOUND',
+    });
+  });
+
+  it("DMS-106: refusing someone else's item leaves it unread", async () => {
+    const item = await UserNotification.create({
+      user: new mongoose.Types.ObjectId(),
+      ...payload(),
+    });
+    const service = new NotificationService({ clock });
+
+    await service.markRead(new mongoose.Types.ObjectId(), item.id).catch(() => {});
+
+    expect((await UserNotification.findById(item.id)).readAt).toBeNull();
+  });
+});

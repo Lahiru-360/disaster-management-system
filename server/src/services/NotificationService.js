@@ -1,6 +1,8 @@
+import mongoose from 'mongoose';
 import { PersonFactory } from '../domain/people/PersonFactory.js';
 import { User as UserModel } from '../models/User.js';
 import { UserNotification as UserNotificationModel } from '../models/UserNotification.js';
+import { ApiError } from '../utils/ApiError.js';
 import { InAppChannel } from './notifications/InAppChannel.js';
 
 // The one way any use case tells a person something (api-contract §11.5). It
@@ -90,6 +92,51 @@ export class NotificationService {
     return items.filter((item) => item !== null);
   }
 
+  /**
+   * One page of the user's own inbox, newest first, with the unread count
+   * across the whole inbox (api-contract §11.2).
+   * @param {string} userId
+   * @param {{ page: number, limit: number }} paging already validated
+   * @returns {Promise<{ notifications: object[], page: number, limit: number, total: number, unreadCount: number }>}
+   */
+  async listForUser(userId, { page, limit }) {
+    const [notifications, total, unreadCount] = await Promise.all([
+      this.#userNotificationModel
+        .find({ user: userId })
+        .sort({ createdAt: -1, _id: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit),
+      this.#userNotificationModel.countDocuments({ user: userId }),
+      this.#userNotificationModel.countDocuments({ user: userId, readAt: null }),
+    ]);
+    return { notifications, page, limit, total, unreadCount };
+  }
+
+  /**
+   * Marks one of the user's own items read and returns it. Already read keeps
+   * its first readAt. Someone else's item, an unknown id or a malformed one is
+   * 404, so its existence isn't revealed (api-contract §11.3).
+   * @param {string} userId
+   * @param {string} notificationId
+   * @returns {Promise<object>}
+   */
+  async markRead(userId, notificationId) {
+    if (!mongoose.isValidObjectId(notificationId)) {
+      throw NotificationService.#notFound();
+    }
+    const owned = { _id: notificationId, user: userId };
+    const item =
+      (await this.#userNotificationModel.findOneAndUpdate(
+        { ...owned, readAt: null },
+        { readAt: this.#clock() },
+        { returnDocument: 'after' },
+      )) ?? (await this.#userNotificationModel.findOne(owned));
+    if (!item) {
+      throw NotificationService.#notFound();
+    }
+    return item;
+  }
+
   // A channel's result as a delivery record. A throw becomes FAILED with its message.
   async #deliver(channel, item) {
     let result;
@@ -104,6 +151,10 @@ export class NotificationService {
       reason: result.reason ?? null,
       at: this.#clock(),
     };
+  }
+
+  static #notFound() {
+    return new ApiError(404, 'NOT_FOUND', 'Notification not found.');
   }
 
   // The role itself and every role whose class extends it, from the Person
