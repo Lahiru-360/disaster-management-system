@@ -1,3 +1,6 @@
+import { isInsideSriLanka } from '../constants/geo';
+import { DESCRIPTION_MAX_LENGTH } from '../constants/hazardReports';
+
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MIN_PASSWORD_LENGTH = 8;
 const MAX_NAME_LENGTH = 100;
@@ -74,4 +77,59 @@ export function validateImageFile({ fileSize, mimeType }) {
   }
 
   return null;
+}
+
+// UC02 E1 on the device: the server's submit rules (docs/api-contract.md
+// §9.2), checked before sending so most mistakes show at once. Keys are the
+// form's fields - `photo` for the server's photoUrl - and each message says
+// what to do.
+export function validateHazardReport({ photo, description, hazardType, location }) {
+  const errors = {};
+
+  if (!photo) {
+    errors.photo = 'Take a photo of the hazard.';
+  } else {
+    const fileError = validateImageFile(photo);
+    if (fileError) errors.photo = fileError;
+  }
+
+  if (!location) {
+    errors.location = 'Your location is needed. Try again, or move to an open area.';
+  } else if (!isInsideSriLanka(location)) {
+    errors.location = 'This location is outside Sri Lanka.';
+  }
+
+  const text = (description || '').trim();
+  if (!text) {
+    errors.description = 'Describe what you see.';
+  } else if (text.length > DESCRIPTION_MAX_LENGTH) {
+    errors.description = `Keep it to ${DESCRIPTION_MAX_LENGTH} characters.`;
+  }
+
+  if (!hazardType) {
+    errors.hazardType = 'Choose a hazard type.';
+  }
+
+  return errors;
+}
+
+// The server's 400 VALIDATION_ERROR entries (one per top-level request field)
+// as form errors, so a server-side rejection outlines the same fields.
+const SERVER_FIELD_TO_FORM_FIELD = {
+  photoUrl: 'photo',
+  location: 'location',
+  locationSource: 'location',
+  description: 'description',
+  hazardType: 'hazardType',
+};
+
+export function hazardReportErrorsFromServer(serverErrors = []) {
+  const errors = {};
+  for (const { field, message } of serverErrors) {
+    const formField = SERVER_FIELD_TO_FORM_FIELD[field];
+    if (formField && !errors[formField]) {
+      errors[formField] = message.charAt(0).toUpperCase() + message.slice(1) + '.';
+    }
+  }
+  return errors;
 }
