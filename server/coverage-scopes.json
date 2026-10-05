@@ -1,6 +1,12 @@
 {
   "uc01": [],
-  "uc02": [],
+  "uc02": [
+    "src/enums/ReportHazardType.js",
+    "src/enums/ReportStatus.js",
+    "src/enums/LocationSource.js",
+    "src/enums/DismissalReason.js",
+    "src/models/HazardReport.js"
+  ],
   "uc03": [],
   "uc04": []
 }
