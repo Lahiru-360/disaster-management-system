@@ -1,12 +1,12 @@
 import express from 'express';
-import jwt from 'jsonwebtoken';
 import request from 'supertest';
-import { env } from '../../src/config/Config.js';
 import { Role } from '../../src/enums/Role.js';
 import { ErrorHandler } from '../../src/middleware/ErrorHandler.js';
 import { authMiddleware } from '../../src/middleware/AuthMiddleware.js';
 import { User } from '../../src/models/User.js';
 import { ApiResponse } from '../../src/utils/ApiResponse.js';
+import { bearerFor } from '../helpers/authHelper.js';
+import { createUser } from '../helpers/userFactory.js';
 
 const { requireAuth, requireRole } = authMiddleware;
 
@@ -37,26 +37,12 @@ const buildProbeApp = () => {
   return probe;
 };
 
-const signAccessToken = (id, role) =>
-  jwt.sign({ id: id.toString(), role }, env.jwtAccessSecret, {
-    expiresIn: env.jwtAccessExpiresIn,
-  });
-
 // Only citizens and community volunteers can register through the public API,
-// so every role is created directly with the model - see server/README.md.
-const accessTokenFor = async (role) => {
-  const user = await User.create({
-    name: `RBAC ${role}`,
-    email: `rbac-${role}@example.com`,
-    passwordHash: 'not-a-real-hash',
-    role,
-  });
+// so createUser makes every role directly with the model - see server/README.md.
+const bearerForRole = async (role) => bearerFor(await createUser({ role }));
 
-  return signAccessToken(user.id, role);
-};
-
-const getAs = (probe, path, token) =>
-  request(probe).get(path).set('Authorization', `Bearer ${token}`);
+const getAs = (probe, path, authorization) =>
+  request(probe).get(path).set('Authorization', authorization);
 
 describe('requireRole — role-based access', () => {
   const probe = buildProbeApp();
@@ -68,7 +54,7 @@ describe('requireRole — role-based access', () => {
   });
 
   it.each(Object.values(Role))('admits a %s on its own role route', async (role) => {
-    const token = await accessTokenFor(role);
+    const token = await bearerForRole(role);
 
     const res = await getAs(probe, `/probe/${role}`, token);
 
@@ -77,7 +63,7 @@ describe('requireRole — role-based access', () => {
 
   describe('a subclass inherits its parent role', () => {
     it('admits a community volunteer on a citizen route', async () => {
-      const token = await accessTokenFor(Role.COMMUNITY_VOLUNTEER);
+      const token = await bearerForRole(Role.COMMUNITY_VOLUNTEER);
 
       const res = await getAs(probe, `/probe/${Role.CITIZEN}`, token);
 
@@ -85,7 +71,7 @@ describe('requireRole — role-based access', () => {
     });
 
     it('admits a duty officer on a DMC officer route', async () => {
-      const token = await accessTokenFor(Role.DUTY_OFFICER);
+      const token = await bearerForRole(Role.DUTY_OFFICER);
 
       const res = await getAs(probe, `/probe/${Role.DMC_OFFICER}`, token);
 
@@ -95,7 +81,7 @@ describe('requireRole — role-based access', () => {
 
   describe('a parent does not inherit its subclass role', () => {
     it('refuses a citizen on a community volunteer route with 403', async () => {
-      const token = await accessTokenFor(Role.CITIZEN);
+      const token = await bearerForRole(Role.CITIZEN);
 
       const res = await getAs(probe, `/probe/${Role.COMMUNITY_VOLUNTEER}`, token);
 
@@ -104,7 +90,7 @@ describe('requireRole — role-based access', () => {
     });
 
     it('refuses a DMC officer on a duty officer route with 403', async () => {
-      const token = await accessTokenFor(Role.DMC_OFFICER);
+      const token = await bearerForRole(Role.DMC_OFFICER);
 
       const res = await getAs(probe, `/probe/${Role.DUTY_OFFICER}`, token);
 
@@ -120,7 +106,7 @@ describe('requireRole — role-based access', () => {
     [Role.COMMUNITY_VOLUNTEER, Role.DUTY_OFFICER],
     [Role.DUTY_OFFICER, Role.DISTRICT_OFFICER],
   ])('refuses a %s on an unrelated %s route with 403', async (role, routeRole) => {
-    const token = await accessTokenFor(role);
+    const token = await bearerForRole(role);
 
     const res = await getAs(probe, `/probe/${routeRole}`, token);
 
@@ -129,7 +115,7 @@ describe('requireRole — role-based access', () => {
 
   describe('a route that admits several roles', () => {
     it('admits a subclass of any of them', async () => {
-      const token = await accessTokenFor(Role.DUTY_OFFICER);
+      const token = await bearerForRole(Role.DUTY_OFFICER);
 
       const res = await getAs(probe, '/probe/district-or-dmc', token);
 
@@ -137,7 +123,7 @@ describe('requireRole — role-based access', () => {
     });
 
     it('refuses a role that is none of them with 403', async () => {
-      const token = await accessTokenFor(Role.CITIZEN);
+      const token = await bearerForRole(Role.CITIZEN);
 
       const res = await getAs(probe, '/probe/district-or-dmc', token);
 
@@ -156,7 +142,7 @@ describe('requireRole — role-based access', () => {
       role: 'former_role',
       isActive: true,
     });
-    const token = signAccessToken(insertedId, 'former_role');
+    const token = bearerFor({ id: insertedId, role: 'former_role' });
 
     const res = await getAs(probe, `/probe/${Role.CITIZEN}`, token);
 
