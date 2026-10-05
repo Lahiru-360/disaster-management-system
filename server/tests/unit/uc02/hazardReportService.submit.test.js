@@ -177,18 +177,20 @@ describe('HazardReportService.submit', () => {
       const citizen = await createUser();
       // Two clusters 600 m apart - too far to have joined each other - both
       // within 500 m of a point between them.
-      const west = await service.submit(
+      const west = await submitReport(
+        service,
         citizen,
         validInput({ location: { latitude: 6.9382, longitude: 79.8985 } }),
       );
       clock.advance(10 * FakeClock.MINUTE);
-      const east = await service.submit(
+      const east = await submitReport(
+        service,
         citizen,
         validInput({ location: { latitude: 6.9382, longitude: 79.9039 } }),
       );
       clock.advance(10 * FakeClock.MINUTE);
 
-      const middle = await service.submit(citizen, validInput());
+      const middle = await submitReport(service, citizen, validInput());
 
       expect(String(east.clusterId)).not.toBe(String(west.clusterId));
       expect(String(middle.clusterId)).toBe(String(west.clusterId));
