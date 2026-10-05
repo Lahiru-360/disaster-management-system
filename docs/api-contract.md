@@ -2,7 +2,7 @@
 
 **Purpose:** the single source of truth for how every endpoint in this project looks — the shape of a request, the shape of a response, and what each status code means here. Client code is written against this document, not against whichever server behavior happens to exist yet. If a real endpoint disagrees with this document, the endpoint is wrong.
 
-This contract covers the auth, upload, areas, hazard events and organisations endpoints in full, and drafts the hazard reports endpoints (§9). New endpoints are added under these same conventions — they get their own sections when specified, not their own rules.
+This contract covers the auth, upload, areas, hazard events and organisations endpoints in full, and drafts the hazard reports endpoints (§9), the notifications endpoints (§11) and the hazard alerts endpoints (§12). New endpoints are added under these same conventions — they get their own sections when specified, not their own rules.
 
 ---
 
@@ -104,6 +104,7 @@ Every error response — regardless of cause — returns the same outer shape:
 | `STORAGE_UNAVAILABLE` | The storage backend (Supabase) failed or was unreachable. Always `502`. |
 | `EMAIL_UNAVAILABLE` | The transactional email provider failed or was unreachable while sending. Always `502`. |
 | `REPORT_ALREADY_REVIEWED` | **Proposed (DMS-112).** Confirm or dismiss on a hazard report that is no longer `PENDING` (§9.6–9.7). Always `409`; the message names the current status. |
+| `INVALID_ALERT_TRANSITION` | **Proposed (DMS-112).** An action a hazard alert's current status doesn't allow, e.g. previewing or editing an alert that is no longer `DRAFT` (§12.3–12.4). Always `409`; the message names the current status. |
 | `NO_ACTIVE_INCIDENT` | **Proposed (DMS-112).** A UC03 officer write while the district has no `ACTIVE` hazard event (§10.1). Always `409`. |
 | `SHELTER_NAME_TAKEN` | **Proposed (DMS-112).** Registering a shelter whose name, ignoring case and surrounding spaces, is already used in the district (§10.4.3). Always `409`. |
 | `SHELTER_NO_SPACE` | **Proposed (DMS-112).** Redirecting arrivals to a shelter that has no spare capacity (§10.4.4). Always `409`. |
@@ -1410,6 +1411,485 @@ With no param, every organisation is returned.
 **Failure — `401 Unauthorized`** — same codes as §7.3.
 
 ---
+
+## 11. Notifications endpoints
+
+> **Draft (DMS-106.1)** — not frozen until the DMS-112 review.
+
+The **in-app inbox** every user has: the console's bell (web) and the app's _Inbox_ tab. Every use case that tells a person something stores one inbox item for them, through the shared notification service: UC01's warnings (as the visible stand-in for the mocked push, SMS and audible delivery), UC02's report updates (§9.10) and UC03's assignments and capacity alerts. Nothing in this section sends anything; these two endpoints only read the inbox and mark items read.
+
+An inbox item is a **user notification**. It is deliberately not UC01's `Notification`, which records one delivery attempt per citizen and channel for a hazard warning, and never reaches a client as an inbox item.
+
+Both endpoints require `Authorization: Bearer <accessToken>` and admit **every role**. A user only ever sees their own items: another user's item — or an `:id` that is unknown or not a valid id — is `404 NOT_FOUND`, so its existence isn't revealed.
+
+### 11.1 The user notification object
+
+```json
+{
+  "id": "66fa1b2c3d4e5f6a7b8c9d01",
+  "type": "REPORT_CONFIRMED",
+  "title": "Report confirmed",
+  "body": "Your report GR-2481 was confirmed by the duty officer. Thank you.",
+  "link": "/my-reports/66f9a0c1b2c3d4e5f6a7b801",
+  "severity": null,
+  "readAt": null,
+  "createdAt": "2026-10-02T05:01:00.000Z"
+}
+```
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | string | The item's id. |
+| `type` | enum | What the item is about (`NotificationType`), so a client can pick an icon or a card. See the table below. |
+| `title` | string | 1–80 characters. The bold first line. |
+| `body` | string | 1–500 characters. The message itself. |
+| `link` | string or `null` | A client route to open when the item is tapped, e.g. `/my-reports/<id>` or `/assignments/<id>`. A client that doesn't know the route shows the item without navigating. |
+| `severity` | enum or `null` | `LOW`, `MEDIUM`, `HIGH`, `SEVERE` (UC01's `SeverityLevel`). Set only for `HAZARD_ALERT`, which the app shows as an alert card coloured by severity; `null` for every other type. |
+| `readAt` | ISO 8601 string or `null` | When the owner marked it read (11.3). `null` means unread. |
+| `createdAt` | ISO 8601 string | Set by the server. The inbox is sorted by this, newest first. |
+
+**`type` values.** A closed list: a new kind of message adds a row here first.
+
+| `type` | Sent by | To |
+|---|---|---|
+| `HAZARD_ALERT` | UC01 broadcast, update and all-clear (DMS-121, 123, 124) | Every citizen in the warning's scope |
+| `REPORT_SUBMITTED` | UC02 submit (§9.2) | The duty officers on shift for the report's district |
+| `REPORT_CONFIRMED` | UC02 confirm (§9.6) | The reporter |
+| `REPORT_DISMISSED` | UC02 dismiss (§9.7) | The reporter |
+| `ASSIGNMENT` | UC03 dispatch (DMS-142) | The rescue team lead |
+| `SHELTER_CAPACITY` | UC03 E2, all shelters near capacity (DMS-148) | DMC officers |
+| `SUPPORT_REQUEST` | UC03 E3, no team available (DMS-149) | DMC officers |
+
+### 11.2 My inbox — `GET /api/notifications/me`
+
+The caller's own items, newest first, one page at a time. The web bell polls this every 30 seconds, so it also returns the unread count across the whole inbox.
+
+**Query**
+
+| Parameter | Rule |
+|---|---|
+| `page` | Optional. An integer ≥ 1. Defaults to `1`. |
+| `limit` | Optional. An integer from 1 to 50. Defaults to `20`. |
+
+**Success — `200 OK`**
+
+```json
+{
+  "success": true,
+  "data": {
+    "notifications": [
+      {
+        "id": "66fa1b2c3d4e5f6a7b8c9d02",
+        "type": "HAZARD_ALERT",
+        "title": "Flood Warning: SEVERE",
+        "body": "Flood Warning: SEVERE. Move to higher ground and follow official guidance.",
+        "link": null,
+        "severity": "SEVERE",
+        "readAt": null,
+        "createdAt": "2026-10-02T06:30:00.000Z"
+      },
+      {
+        "id": "66fa1b2c3d4e5f6a7b8c9d01",
+        "type": "REPORT_CONFIRMED",
+        "title": "Report confirmed",
+        "body": "Your report GR-2481 was confirmed by the duty officer. Thank you.",
+        "link": "/my-reports/66f9a0c1b2c3d4e5f6a7b801",
+        "severity": null,
+        "readAt": "2026-10-02T05:10:00.000Z",
+        "createdAt": "2026-10-02T05:01:00.000Z"
+      }
+    ],
+    "page": 1,
+    "limit": 20,
+    "total": 2,
+    "unreadCount": 1
+  }
+}
+```
+
+| Field | Notes |
+|---|---|
+| `notifications` | The requested page, newest first (ties broken by `id`, so pages never overlap). An empty inbox, or a page past the end, is `200` with `[]`. |
+| `page`, `limit` | The values actually used, after defaults. |
+| `total` | Every item the caller has, read or not. |
+| `unreadCount` | Every item with `readAt: null`, across all pages. The number on the bell. |
+
+**Failure — `400 Bad Request`** (`limit` out of range)
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "Request validation failed.",
+    "errors": [{ "field": "limit", "message": "must be less than or equal to 50" }]
+  }
+}
+```
+
+### 11.3 Mark one read — `PATCH /api/notifications/:id/read`
+
+**Request:** no body.
+
+Sets `readAt` on the caller's own item and returns it. Marking an item that is already read is not an error: it returns `200` and keeps the original `readAt`.
+
+**Success — `200 OK`**
+
+```json
+{
+  "success": true,
+  "data": {
+    "notification": {
+      "id": "66fa1b2c3d4e5f6a7b8c9d02",
+      "type": "HAZARD_ALERT",
+      "readAt": "2026-10-02T06:41:00.000Z",
+      "...": "the rest of the user notification object from 11.1"
+    }
+  }
+}
+```
+
+**Failure — `404 Not Found`** (someone else's item, an unknown id, or an id that isn't valid)
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "Notification not found."
+  }
+}
+```
+
+### 11.4 Error codes for these endpoints
+
+| Status | Code | When |
+|---|---|---|
+| `400` | `VALIDATION_ERROR` | `page` or `limit` failed its rule (11.2). Carries `errors`. |
+| `401` | `AUTH_HEADER_MISSING` | No `Authorization` header. |
+| `401` | `AUTH_HEADER_MALFORMED` | Header present but not `Bearer <token>`. |
+| `401` | `TOKEN_EXPIRED` | Access token expired. |
+| `401` | `TOKEN_INVALID` | Access token invalid, or its user no longer exists or has been deactivated. |
+| `404` | `NOT_FOUND` | 11.3 only: the item isn't the caller's, doesn't exist, or the id isn't valid. |
+| `500` | `INTERNAL_ERROR` | Unhandled server-side failure. |
+
+No new error codes.
+
+### 11.5 How other sections send one
+
+For server code, not clients. A use case never writes an inbox item itself; it calls the shared `NotificationService` (DMS-106):
+
+- `notifyUser(userId, { type, title, body, link?, severity? })` — one item for one user.
+- `notifyRole(role, { districtId?, districtField? }, payload)` — one item for every active user holding `role`, through role inheritance (`dmc_officer` also reaches every `duty_officer`), optionally only those whose `districtField` (`homeDistrict`, `district` or `shiftDistrict`) is `districtId`.
+
+**A notification that fails is recorded and never fails the caller's request**, as §9.10 already relies on.
+
+---
+
+## 12. Hazard alerts endpoints
+
+> **Draft (DMS-120.1)** — not frozen until the DMS-112 review. New codes here are proposals.
+
+UC01 Issue Hazard Warning. An officer composes a location-specific warning, previews how many citizens it will reach and what they will read, and then broadcasts it (DMS-121). This section covers **composing** (UC01 main flow steps 1–8): starting a draft, previewing it, saving an edited message and reading an alert back. **Nothing in this section sends anything**, and no delivery record exists while an alert is `DRAFT`.
+
+Every endpoint requires `Authorization: Bearer <accessToken>` and admits `dmc_officer` and `duty_officer` (a duty officer is a DMC officer). Every other role is `403 FORBIDDEN`. Drafts are shared work: any admitted officer can open, preview and edit any draft, not only its creator.
+
+An `:id` that is unknown or not a valid id is `404 NOT_FOUND`.
+
+### 12.1 The alert object
+
+Every endpoint below that returns an alert returns this shape. A new draft has no type, severity, scope or message yet; they are filled in by the preview (12.3).
+
+```json
+{
+  "id": "66fb2c3d4e5f6a7b8c9d0e01",
+  "referenceNo": "HA-1043",
+  "hazardType": "FLOOD",
+  "severity": "SEVERE",
+  "message": "Flood Warning: SEVERE. Move to higher ground and follow official guidance.",
+  "status": "DRAFT",
+  "version": 1,
+  "targets": [
+    { "kind": "District", "id": "66f7c1a2b3c4d5e6f7a8b901", "name": "Colombo" },
+    { "kind": "RiverBasin", "id": "66f7c1a2b3c4d5e6f7a8b9a1", "name": "Kelani" }
+  ],
+  "event": { "id": "66f7c1a2b3c4d5e6f7a8b9c1", "name": "Flood – Gampaha District" },
+  "sourceReport": null,
+  "createdBy": { "id": "64f1a2b3c4d5e6f7a8b9c0d5", "name": "Kasun Silva" },
+  "issuedBy": null,
+  "issuedAt": null,
+  "statusHistory": [
+    {
+      "status": "DRAFT",
+      "version": 1,
+      "at": "2026-10-02T06:20:00.000Z",
+      "by": { "id": "64f1a2b3c4d5e6f7a8b9c0d5", "name": "Kasun Silva" }
+    }
+  ],
+  "createdAt": "2026-10-02T06:20:00.000Z",
+  "updatedAt": "2026-10-02T06:24:00.000Z"
+}
+```
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | string | The alert's id. |
+| `referenceNo` | string | `HA-` plus a zero-padded number, unique and assigned by the server when the draft is created, e.g. `"HA-1043"`. This is what officers see ("Delivery summary – Alert HA-1043"). |
+| `hazardType` | enum or `null` | `FLOOD`, `LANDSLIDE`, `CYCLONE`, `DROUGHT` (`AlertHazardType`). Not the same list as UC02's report hazard types. `null` until the first preview. |
+| `severity` | enum or `null` | `LOW`, `MEDIUM`, `HIGH`, `SEVERE` (`SeverityLevel`). `null` until the first preview. |
+| `message` | string or `null` | What citizens will read, 1–160 characters so it fits in one SMS. Generated by the preview, then optionally edited (12.4); always the latest of the two. `null` until the first preview. |
+| `status` | enum | `DRAFT` → `BROADCAST` → `UPDATED` (each update) → `CANCELLED` (all-clear) (`AlertStatus`). `BROADCAST` and `UPDATED` are *active*. Everything in this section only ever sees `DRAFT`. |
+| `version` | integer | `1` for a new alert; each update adds one (DMS-123). |
+| `targets` | `[{ kind, id, name }]` | The target scope: `kind` is `District` or `RiverBasin`, and `id` is an area id from §7, in the order they were chosen. `[]` until the first preview. |
+| `event` | `{ id, name }` or `null` | The `ACTIVE` hazard event (§8) that covers the scope, set by the preview when there is one, so UC04 can group alerts by event. |
+| `sourceReport` | `{ id, referenceNo }` or `null` | The confirmed hazard report this warning was escalated from (UC01 A1, DMS-122). `null` otherwise. |
+| `createdBy` | `{ id, name }` | The officer who started the draft. |
+| `issuedBy`, `issuedAt` | `{ id, name }` / ISO 8601 string, or `null` | Set when the alert is broadcast (DMS-121). `null` while `DRAFT`. |
+| `statusHistory` | `[{ status, version, at, by }]` | One entry per status change, oldest first. A new draft has exactly one: `DRAFT`, version `1`. |
+| `createdAt`, `updatedAt` | ISO 8601 string | |
+
+### 12.2 Start a draft — `POST /api/hazard-alerts`
+
+UC01 main flow steps 1–2. The web console calls this as soon as the officer opens *Issue Hazard Warning*, so the draft exists while they compose it.
+
+**Request:** an empty object `{}`. (DMS-122 adds an optional `sourceReportId` for escalating a confirmed report; it is documented there.)
+
+**Success — `201 Created`**
+
+```json
+{
+  "success": true,
+  "data": {
+    "alert": {
+      "id": "66fb2c3d4e5f6a7b8c9d0e01",
+      "referenceNo": "HA-1043",
+      "hazardType": null,
+      "severity": null,
+      "message": null,
+      "status": "DRAFT",
+      "version": 1,
+      "targets": [],
+      "event": null,
+      "...": "the rest of the alert object from 12.1"
+    }
+  }
+}
+```
+
+**Failure — `403 Forbidden`** (`district_officer`, a citizen, or any field role)
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "You do not have permission to perform this action."
+  }
+}
+```
+
+**Failure — `401 Unauthorized`** — see 12.6.
+
+Checked by TC-01–TC-03.
+
+### 12.3 Preview — `POST /api/hazard-alerts/:id/preview`
+
+UC01 main flow steps 3–7. Sent whenever the officer has chosen a hazard type, a severity and at least one area, and again whenever they change one.
+
+**Request**
+
+```json
+{
+  "hazardType": "FLOOD",
+  "severity": "SEVERE",
+  "areaIds": ["66f7c1a2b3c4d5e6f7a8b901", "66f7c1a2b3c4d5e6f7a8b9a1"]
+}
+```
+
+| Field | Rule |
+|---|---|
+| `hazardType` | **Required.** One of the `hazardType` values in 12.1. |
+| `severity` | **Required.** One of the `severity` values in 12.1. |
+| `areaIds` | **Required.** At least one area id from §7: a district id or a river basin id, in any mix. A repeated id counts once. |
+
+The server then:
+
+1. **Validates the scope** (step 6). Every id must be a registered district or river basin; otherwise the request fails with `400` on `areaIds`, naming the unknown ids (UC01 E1, DMS-126).
+2. **Checks for an active warning** of the same hazard type covering any of the same districts (UC01 A2, DMS-123), and returns it as `activeWarning`.
+3. **Counts the recipients** (step 7): the active `citizen` and `community_volunteer` accounts whose home district is covered by the scope. A basin covers every district it spans, and **each citizen is counted once**, even when a district and a basin covering it are both selected.
+4. **Generates the message** from the hazard type and severity, at most 160 characters.
+5. **Stores** the hazard type, severity, scope, message and covering `ACTIVE` event on the draft. The status stays `DRAFT`.
+
+A preview that finds **no recipients is not an error**: it is `200` with `recipientCount: 0` (UC01 E2, DMS-127), and the broadcast is refused later.
+
+**Success — `200 OK`**
+
+```json
+{
+  "success": true,
+  "data": {
+    "alert": {
+      "id": "66fb2c3d4e5f6a7b8c9d0e01",
+      "referenceNo": "HA-1043",
+      "hazardType": "FLOOD",
+      "severity": "SEVERE",
+      "message": "Flood Warning: SEVERE. Move to higher ground and follow official guidance.",
+      "status": "DRAFT",
+      "targets": [
+        { "kind": "District", "id": "66f7c1a2b3c4d5e6f7a8b901", "name": "Colombo" },
+        { "kind": "RiverBasin", "id": "66f7c1a2b3c4d5e6f7a8b9a1", "name": "Kelani" }
+      ],
+      "...": "the rest of the alert object from 12.1"
+    },
+    "recipientCount": 48200,
+    "message": "Flood Warning: SEVERE. Move to higher ground and follow official guidance.",
+    "channels": [
+      { "channel": "PUSH", "ready": true },
+      { "channel": "SMS", "ready": true },
+      { "channel": "AUDIBLE", "ready": true }
+    ],
+    "activeWarning": null
+  }
+}
+```
+
+| Field | Notes |
+|---|---|
+| `alert` | The draft as now stored. |
+| `recipientCount` | Distinct citizens in scope. The web shows it as "48,200 citizens in target scope". |
+| `message` | The generated message, the same as `alert.message`. The officer may edit it (12.4). |
+| `channels` | Every channel the broadcast will use (`PUSH`, `SMS`, `AUDIBLE`), in that order, with whether it is ready. |
+| `activeWarning` | `null`, or the conflicting active warning as `{ id, referenceNo, hazardType, severity, targets, version }` (DMS-123). |
+
+**Failure — `400 Bad Request`** (UC01 E1: an unknown area)
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "Request validation failed.",
+    "errors": [
+      { "field": "areaIds", "message": "unknown area ids: 66f7c1a2b3c4d5e6f7a8b999" }
+    ]
+  }
+}
+```
+
+An empty `areaIds` is `400` on `areaIds` too ("must contain at least 1 items"), as is a malformed id. A missing or unknown `hazardType` or `severity` is `400` on that field.
+
+**Failure — `409 Conflict`** (the alert is no longer a draft)
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "INVALID_ALERT_TRANSITION",
+    "message": "Only a DRAFT alert can be previewed – current status: BROADCAST"
+  }
+}
+```
+
+**Failure — `404 Not Found`** and **`403 Forbidden`** — see 12.6.
+
+Checked by TC-04–TC-06; E1 by TC-32–TC-35; E2 by TC-36–TC-38.
+
+### 12.4 Save the edited message — `PATCH /api/hazard-alerts/:id/draft`
+
+UC01 main flow step 8. The officer has edited the generated message.
+
+**Request**
+
+```json
+{ "message": "Flood Warning: SEVERE. Move to higher ground now. Kelani river is rising fast." }
+```
+
+| Field | Rule |
+|---|---|
+| `message` | **Required.** 1–160 characters after trimming, so it fits in one SMS. |
+
+Only the message changes. A later preview generates a new message and replaces it, because the type or severity it was written for may have changed.
+
+**Success — `200 OK`**
+
+```json
+{
+  "success": true,
+  "data": {
+    "alert": {
+      "id": "66fb2c3d4e5f6a7b8c9d0e01",
+      "message": "Flood Warning: SEVERE. Move to higher ground now. Kelani river is rising fast.",
+      "status": "DRAFT",
+      "...": "the rest of the alert object from 12.1"
+    }
+  }
+}
+```
+
+**Failure — `400 Bad Request`** (161 characters)
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "Request validation failed.",
+    "errors": [{ "field": "message", "message": "length must be less than or equal to 160 characters long" }]
+  }
+}
+```
+
+**Failure — `409 Conflict`** `INVALID_ALERT_TRANSITION` — the alert is no longer a draft, as in 12.3.
+
+**Failure — `404 Not Found`** and **`403 Forbidden`** — see 12.6.
+
+Checked by TC-07, TC-08.
+
+### 12.5 Read one alert — `GET /api/hazard-alerts/:id`
+
+Any status. Used to reopen a draft, and by the delivery summary screen (DMS-121).
+
+**Request:** no body.
+
+**Success — `200 OK`**
+
+```json
+{
+  "success": true,
+  "data": {
+    "alert": { "...": "the alert object from 12.1" }
+  }
+}
+```
+
+**Failure — `404 Not Found`** (an unknown id, or one that isn't valid)
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "Hazard alert not found."
+  }
+}
+```
+
+### 12.6 Error codes for these endpoints
+
+| Status | Code | When |
+|---|---|---|
+| `400` | `VALIDATION_ERROR` | A body field failed its rule, or `areaIds` names an area that isn't registered. Carries `errors`, one entry per field. |
+| `401` | `AUTH_HEADER_MISSING` | No `Authorization` header. |
+| `401` | `AUTH_HEADER_MALFORMED` | Header present but not `Bearer <token>`. |
+| `401` | `TOKEN_EXPIRED` | Access token expired. |
+| `401` | `TOKEN_INVALID` | Access token invalid, or its user no longer exists or has been deactivated. |
+| `403` | `FORBIDDEN` | The caller isn't a `dmc_officer` or `duty_officer`. |
+| `404` | `NOT_FOUND` | The alert doesn't exist, or the id isn't valid. |
+| `409` | `INVALID_ALERT_TRANSITION` | **Proposed (DMS-112).** Preview or save-message on an alert that is no longer `DRAFT`. |
+| `500` | `INTERNAL_ERROR` | Unhandled server-side failure. |
+
+---
+
 ## 10. Coordination endpoints
 
 UC03 Coordinate Shelter and Resource Allocation. While an incident is active for a district, the **district officer** runs a coordination hub with three independent sub-flows, which can be performed in any order and repeated: update shelter occupancy, dispatch rescue teams and log relief supplies. The **rescue team lead** answers dispatches from the mobile field app. **DMC officers** read the same combined operational picture, filtered by organisation if needed. Every rescue team and stock item belongs to an **organisation** (Organisations section); organisations themselves never call these endpoints.
@@ -2168,7 +2648,7 @@ A failed notification never fails the request that triggered it.
 
 ---
 
-## 11. Adding a new endpoint later
+## 13. Adding a new endpoint later
 
 1. Pick a plural, lowercase, hyphenated resource name.
 2. Reuse the envelopes in sections 2 and 3 exactly — don't invent a new outer shape.

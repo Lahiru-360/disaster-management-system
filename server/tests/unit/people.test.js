@@ -57,6 +57,14 @@ describe('Person hierarchy', () => {
   it("keeps each subclass's own field", () => {
     expect(new CommunityVolunteer({ trainingLevel: 'First aid' }).trainingLevel).toBe('First aid');
     expect(new DistrictOfficer({ district: 'Gampaha' }).district).toBe('Gampaha');
+    expect(new Citizen({ homeDistrict: 'Colombo' }).homeDistrict).toBe('Colombo');
+  });
+
+  it('DMS-105: builds every role with no details at all', () => {
+    expect(new Citizen().homeDistrict).toBeUndefined();
+    expect(new DistrictOfficer().district).toBeUndefined();
+    expect(new DutyOfficer().shiftDistrict).toBeUndefined();
+    expect(new RescueTeamLead().name).toBeUndefined();
   });
 
   it('takes its role from its class', () => {
@@ -106,6 +114,80 @@ describe('PersonFactory', () => {
 
     expect(person).toBeInstanceOf(DutyOfficer);
     expect(person.name).toBe('Kasun Silva');
+  });
+
+  it('DMS-105: maps phone and homeDistrict onto a Citizen', () => {
+    const person = PersonFactory.fromUser({
+      name: 'Nimal Perera',
+      role: Role.CITIZEN,
+      phone: '0771234567',
+      homeDistrict: 'colombo-id',
+    });
+
+    expect(person).toBeInstanceOf(Citizen);
+    expect(person.phone).toBe('0771234567');
+    expect(person.homeDistrict).toBe('colombo-id');
+  });
+
+  it('DMS-105: gives a CommunityVolunteer the homeDistrict it inherits from Citizen', () => {
+    const person = PersonFactory.fromUser({
+      name: 'Kamala Fernando',
+      role: Role.COMMUNITY_VOLUNTEER,
+      homeDistrict: 'colombo-id',
+    });
+
+    expect(person.homeDistrict).toBe('colombo-id');
+  });
+
+  it('DMS-105: maps district onto a DistrictOfficer', () => {
+    const person = PersonFactory.fromUser({
+      name: 'Dilani Wickramasinghe',
+      role: Role.DISTRICT_OFFICER,
+      district: 'gampaha-id',
+    });
+
+    expect(person).toBeInstanceOf(DistrictOfficer);
+    expect(person.district).toBe('gampaha-id');
+  });
+
+  it('DMS-105: maps shiftDistrict onto a DutyOfficer', () => {
+    const person = PersonFactory.fromUser({
+      name: 'Kasun Silva',
+      role: Role.DUTY_OFFICER,
+      shiftDistrict: 'colombo-id',
+    });
+
+    expect(person).toBeInstanceOf(DutyOfficer);
+    expect(person.shiftDistrict).toBe('colombo-id');
+  });
+
+  it('DMS-105: passes a populated District document through unchanged', () => {
+    const colombo = { id: 'colombo-id', name: 'Colombo' };
+    const person = PersonFactory.fromUser({
+      name: 'Kasun Silva',
+      role: Role.DUTY_OFFICER,
+      shiftDistrict: colombo,
+    });
+
+    expect(person.shiftDistrict).toBe(colombo);
+  });
+
+  it("DMS-105: ignores a district field that is not the class's own", () => {
+    const person = PersonFactory.fromUser({
+      name: 'Nimal Perera',
+      role: Role.CITIZEN,
+      homeDistrict: 'colombo-id',
+      shiftDistrict: 'gampaha-id',
+    });
+
+    expect(person).not.toHaveProperty('shiftDistrict');
+  });
+
+  it('DMS-105: leaves the profile fields undefined for a User without them', () => {
+    const person = PersonFactory.fromUser({ name: 'Nimal Perera', role: Role.CITIZEN });
+
+    expect(person.phone).toBeUndefined();
+    expect(person.homeDistrict).toBeUndefined();
   });
 
   it('returns null for a User whose role no class stands for', () => {

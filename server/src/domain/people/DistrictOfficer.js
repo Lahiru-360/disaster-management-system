@@ -6,8 +6,8 @@ import { Person } from './Person.js';
 export class DistrictOfficer extends Person {
   static role = Role.DISTRICT_OFFICER;
 
-  // A district name for now; becomes a District once that class exists.
-  // Not persisted yet.
+  // The district they are responsible for. Stored on the User as a District
+  // ref (User.district).
   #district;
 
   constructor({ district, ...details } = {}) {
