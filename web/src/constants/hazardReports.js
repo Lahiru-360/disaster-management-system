@@ -15,6 +15,11 @@ const HAZARD_TYPE_SHORT = Object.freeze({
   OTHER: 'Other',
 });
 
+// How the officer sees where a location came from (UC02 A2.3): "(GPS)" or
+// "(Manual)" after the coordinates.
+const LOCATION_SOURCE_LABELS = Object.freeze({ GPS: 'GPS', MANUAL: 'Manual' });
+
+export const locationSourceLabel = (value) => LOCATION_SOURCE_LABELS[value] ?? value;
 export const hazardTypeLabel = (value) => HAZARD_TYPE_LABELS[value] ?? value;
 export const hazardTypeShort = (value) => HAZARD_TYPE_SHORT[value] ?? value;
 
