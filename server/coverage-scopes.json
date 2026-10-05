@@ -19,7 +19,8 @@
     "src/services/notifications/FakeTransport.js",
     "src/services/notifications/PushChannel.js",
     "src/services/notifications/SmsChannel.js",
-    "src/services/notifications/AudibleChannel.js"
+    "src/services/notifications/AudibleChannel.js",
+    "src/services/BroadcastService.js"
   ],
   "uc02": [
     "src/enums/ReportHazardType.js",

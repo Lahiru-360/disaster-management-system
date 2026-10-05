@@ -152,11 +152,14 @@ export class HazardAlert {
    * officer and time.
    * @param {object|string} officer The issuing officer, or their id.
    * @param {Date} at
+   * @param {string|null} [message] The text as the officer last saw it, which
+   *   replaces the draft's; null keeps it.
    * @throws {InvalidAlertTransitionError} If it isn't a DRAFT, or was never
    *   previewed so has no type, severity, scope or message.
    */
-  broadcast(officer, at) {
+  broadcast(officer, at, message = null) {
     this.#requireDraft('broadcast');
+    if (message !== null) this.#message = HazardAlert.#validMessage(message);
     if (!this.#hazardType || !this.#severity || this.#targets.length === 0 || !this.#message) {
       throw new InvalidAlertTransitionError(
         'Preview the warning before broadcasting it',
