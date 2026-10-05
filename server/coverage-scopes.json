@@ -1,7 +1,16 @@
 {
   "uc01": [],
   "uc02": [],
-  "uc03": [],
+  "uc03": [
+    "src/enums/ShelterStatus.js",
+    "src/enums/TeamStatus.js",
+    "src/enums/DispatchStatus.js",
+    "src/enums/Priority.js",
+    "src/enums/SupplyType.js",
+    "src/models/Shelter.js",
+    "src/models/RescueTeam.js",
+    "src/models/ReliefStock.js"
+  ],
   "uc04": [
     "src/domain/events/**/*.js",
     "src/models/HazardEvent.js",
