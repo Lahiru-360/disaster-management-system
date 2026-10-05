@@ -983,6 +983,8 @@ The existing report is returned, unchanged, in the same shape as `201`. Nothing 
 
 The `field` is always the top-level request field — `location` for a missing, malformed or out-of-country point, not `location.latitude` — so the app can highlight it directly.
 
+A point inside the box that falls in no district (far offshore), sent by a reporter with no home district on file, can't be routed to any duty officer, so it is refused the same way: `{ "field": "location", "message": "must be inside a district of Sri Lanka" }`.
+
 **Failure — `403 Forbidden`** (an officer or rescue team lead)
 
 ```json
