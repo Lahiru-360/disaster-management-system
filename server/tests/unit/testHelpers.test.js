@@ -4,6 +4,8 @@ import { District } from '../../src/models/District.js';
 import { User } from '../../src/models/User.js';
 import { areaRegistry } from '../../src/services/AreaRegistry.js';
 import { tokenService } from '../../src/services/TokenService.js';
+import { NotificationChannel } from '../../src/services/notifications/NotificationChannel.js';
+import { FakeChannel } from '../helpers/FakeChannel.js';
 import { FakeClock } from '../helpers/FakeClock.js';
 import { AREAS, seedAreas } from '../helpers/areaFixtures.js';
 import { accessTokenFor, bearerFor, expiredBearerFor } from '../helpers/authHelper.js';
@@ -123,6 +125,64 @@ describe('FakeClock', () => {
     clock.now().setFullYear(2000);
 
     expect(clock.now().getFullYear()).toBe(2026);
+  });
+});
+
+describe('FakeChannel', () => {
+  it('DMS-103: is a NotificationChannel, so it can stand in for any channel', () => {
+    expect(new FakeChannel()).toBeInstanceOf(NotificationChannel);
+  });
+
+  it('DMS-103: delivers by default and records every notification', async () => {
+    const channel = new FakeChannel();
+
+    await expect(channel.send({ title: 'First' })).resolves.toEqual({ status: 'DELIVERED' });
+    await channel.send({ title: 'Second' });
+
+    expect(channel.calls).toEqual([{ title: 'First' }, { title: 'Second' }]);
+  });
+
+  it('DMS-103: returns the scripted results in order, then delivers', async () => {
+    const channel = new FakeChannel().willReturn([
+      { status: 'FAILED', reason: 'no signal' },
+      { status: 'SENT' },
+    ]);
+
+    expect(await channel.send({})).toEqual({ status: 'FAILED', reason: 'no signal' });
+    expect(await channel.send({})).toEqual({ status: 'SENT' });
+    expect(await channel.send({})).toEqual({ status: 'DELIVERED' });
+  });
+
+  it('DMS-103: throws a scripted Error, as a broken channel would, and still records the call', async () => {
+    const channel = new FakeChannel().willReturn([new Error('gateway down')]);
+
+    await expect(channel.send({ title: 'Alert' })).rejects.toThrow('gateway down');
+    expect(channel.calls).toEqual([{ title: 'Alert' }]);
+  });
+
+  it('DMS-103: queues further results after those already scripted', async () => {
+    const channel = new FakeChannel().willReturn([{ status: 'SENT' }]);
+    channel.willReturn([{ status: 'FAILED' }]);
+
+    expect((await channel.send({})).status).toBe('SENT');
+    expect((await channel.send({})).status).toBe('FAILED');
+  });
+
+  it('DMS-103: reset() forgets calls and queued results', async () => {
+    const channel = new FakeChannel().willReturn([{ status: 'FAILED' }]);
+    await channel.send({});
+    channel.willReturn([{ status: 'FAILED' }]).reset();
+
+    expect(channel.calls).toEqual([]);
+    expect(await channel.send({})).toEqual({ status: 'DELIVERED' });
+  });
+
+  it('DMS-103: hands each caller its own result object', async () => {
+    const channel = new FakeChannel();
+    const first = await channel.send({});
+    first.status = 'FAILED';
+
+    expect(await channel.send({})).toEqual({ status: 'DELIVERED' });
   });
 });
 
