@@ -2552,21 +2552,57 @@ Also `403 FORBIDDEN`, `404 NOT_FOUND` and `409 NO_ACTIVE_INCIDENT`.
 
 ### 10.11 Relief supplies
 
-UC03 main flow steps 12–13 (DMS-143), with E5 (DMS-151).
+UC03 main flow steps 12–13 (DMS-143), with E5 (DMS-151). What an organisation **holds** (relief stock) is kept apart from what was **given** to a shelter (a supply distribution); logging a distribution moves quantity from the first to the second.
 
 #### 10.11.1 List relief stock — `GET /api/relief-stock`
 
-Feeds the Log Relief Supply dialog: the owner organisations, their supply types and the available stock.
+Feeds the Log Relief Supply dialog: its Owner organisation and Supply type selects, and the read-only "Available stock 1,200 bottles".
 
 **Roles:** `district_officer` (own district), DMC officers (any district).
 
 | Query param | Rule |
 |---|---|
 | `districtId` | As in 10.3. |
-| `organisationId` | Optional. One organisation's stock only. |
-| `supplyType` | Optional. One `SupplyType` only. |
+| `organisationId` | Optional. One organisation's stock only. A malformed id → `400 VALIDATION_ERROR`; an unknown one returns `[]`. |
+| `supplyType` | Optional. One `SupplyType` only. Any other value → `400 VALIDATION_ERROR` on `supplyType`. |
 
-**Success — `200 OK`**: `{ "stock": [ ... ] }`, relief stock objects (10.2), sorted by organisation `name`, then `supplyType`. Rows with nothing left are included, showing `0`.
+**Success — `200 OK`** (sorted by organisation `name`, then `supplyType`)
+
+```json
+{
+  "success": true,
+  "data": {
+    "stock": [
+      {
+        "id": "66fb0d1b2c3d4e5f6a7b8f02",
+        "organisation": { "id": "66f7c1a2b3c4d5e6f7a8b9d4", "name": "Red Cross Sri Lanka", "type": "NGO" },
+        "district": { "id": "66f7c1a2b3c4d5e6f7a8b902", "name": "Gampaha" },
+        "supplyType": "FOOD",
+        "unit": "packs",
+        "quantityAvailable": 0,
+        "updatedAt": "2026-10-03T08:00:00.000Z"
+      },
+      {
+        "id": "66fb0d1b2c3d4e5f6a7b8f01",
+        "organisation": { "id": "66f7c1a2b3c4d5e6f7a8b9d4", "name": "Red Cross Sri Lanka", "type": "NGO" },
+        "district": { "id": "66f7c1a2b3c4d5e6f7a8b902", "name": "Gampaha" },
+        "supplyType": "WATER",
+        "unit": "bottles",
+        "quantityAvailable": 1200,
+        "updatedAt": "2026-10-03T08:00:00.000Z"
+      }
+    ]
+  }
+}
+```
+
+Rows with nothing left are included, showing `0`, so the dialog can say so rather than hide the organisation. No stock is `200` with `[]`.
+
+| Status | Code | When |
+|---|---|---|
+| `400` | `VALIDATION_ERROR` | `districtId` missing for a DMC officer, or a malformed `districtId` / `organisationId`, or an unknown `supplyType`. |
+| `401` | `AUTH_HEADER_MISSING`, `AUTH_HEADER_MALFORMED`, `TOKEN_EXPIRED`, `TOKEN_INVALID` | As in 10.13. |
+| `403` | `FORBIDDEN` | A role other than `district_officer` or a DMC officer, or a district officer asking for another district. |
 
 #### 10.11.2 Log a distribution — `POST /api/supply-distributions`
 
@@ -2578,13 +2614,19 @@ Records that a quantity of one stock row went to a shelter, and reduces the stoc
 
 | Field | Rule |
 |---|---|
-| `shelterId` | Required. The receiving shelter. |
-| `stockId` | Required. The stock row it comes from, which fixes the organisation and supply type. |
-| `quantity` | Required. A whole number from 1 to the stock's `quantityAvailable`, in the stock's `unit`. |
+| `shelterId` | Required. The receiving shelter, in the officer's district. |
+| `stockId` | Required. The stock row it comes from, in the officer's district. It fixes the owner organisation and the supply type. |
+| `quantity` | Required. A whole number from 1 to the stock's `quantityAvailable`, counted in the stock's `unit`. |
 
 ```json
 { "shelterId": "66fb0a1b2c3d4e5f6a7b8c01", "stockId": "66fb0d1b2c3d4e5f6a7b8f01", "quantity": 500 }
 ```
+
+**Behaviour** (UC03 sequence diagram (c))
+1. Finds the stock row and the shelter, and checks both are in the officer's district.
+2. Checks `quantity` against the stock's `quantityAvailable` (E5, below).
+3. Reduces `quantityAvailable` by `quantity`, but only if at least `quantity` is still there at that moment. If another log took it first, nothing changes and the request fails as in E5, with the available quantity re-read.
+4. Records the distribution (below), stamped with the current time and the officer.
 
 **Success — `201 Created`**
 
@@ -2592,11 +2634,47 @@ Records that a quantity of one stock row went to a shelter, and reduces the stoc
 {
   "success": true,
   "data": {
-    "distribution": { "id": "66fb0e1b2c3d4e5f6a7b9001", "quantity": 500, "...": "the supply distribution object" },
-    "stock": { "id": "66fb0d1b2c3d4e5f6a7b8f01", "quantityAvailable": 700, "...": "the relief stock object" }
+    "distribution": {
+      "id": "66fb0e1b2c3d4e5f6a7b9001",
+      "shelter": { "id": "66fb0a1b2c3d4e5f6a7b8c01", "name": "Gampaha Central College" },
+      "stockId": "66fb0d1b2c3d4e5f6a7b8f01",
+      "organisation": { "id": "66f7c1a2b3c4d5e6f7a8b9d4", "name": "Red Cross Sri Lanka", "type": "NGO" },
+      "district": { "id": "66f7c1a2b3c4d5e6f7a8b902", "name": "Gampaha" },
+      "supplyType": "WATER",
+      "unit": "bottles",
+      "quantity": 500,
+      "distributedAt": "2026-10-03T10:15:00.000Z",
+      "loggedBy": { "id": "66f1a2b3c4d5e6f7a8b9c0d6", "name": "Dilani Wickramasinghe" }
+    },
+    "stock": {
+      "id": "66fb0d1b2c3d4e5f6a7b8f01",
+      "organisation": { "id": "66f7c1a2b3c4d5e6f7a8b9d4", "name": "Red Cross Sri Lanka", "type": "NGO" },
+      "district": { "id": "66f7c1a2b3c4d5e6f7a8b902", "name": "Gampaha" },
+      "supplyType": "WATER",
+      "unit": "bottles",
+      "quantityAvailable": 700,
+      "updatedAt": "2026-10-03T10:15:00.000Z"
+    }
   }
 }
 ```
+
+`stock` is the row after the withdrawal, so the dialog can show the new available quantity without another request. A `quantity` equal to everything available is allowed and leaves `0`.
+
+**The distribution record.** Each successful log stores one record; a rejected log stores none. Post-event reports (UC04) read these directly for "resource distribution by district".
+
+| Field | Type | Notes |
+|---|---|---|
+| `shelter` | shelter id | The receiving shelter. |
+| `stock` | stock id | The stock row it was drawn from. |
+| `organisation` | organisation id | Copied from the stock row: the owner of what was given. |
+| `supplyType` | `SupplyType` | Copied from the stock row. |
+| `district` | district id | Copied from the stock row. |
+| `quantity` | integer | 1 or more, in the stock's `unit`. |
+| `distributedAt` | date | When the log was saved. |
+| `loggedBy` | user id | The district officer who logged it. |
+
+Records are indexed by `{ district, distributedAt }` and `{ organisation }`.
 
 **Failure — `400 Bad Request`** (E5: more than the stock holds). The message shows the available quantity at the moment of the request, also when another log took the stock first. The stock is unchanged and nothing is recorded.
 
@@ -2611,7 +2689,15 @@ Records that a quantity of one stock row went to a shelter, and reduces the stoc
 }
 ```
 
-When nothing is left, the message is `"no stock available (0 bottles)"`. Also `400 VALIDATION_ERROR` for a `quantity` of 0 or less or not a whole number, `403 FORBIDDEN` (a shelter or stock row in another district), `404 NOT_FOUND` and `409 NO_ACTIVE_INCIDENT`.
+When nothing is left, the message is `"no stock available (0 bottles)"`.
+
+| Status | Code | When |
+|---|---|---|
+| `400` | `VALIDATION_ERROR` | A field is missing or malformed; `quantity` is 0 or less or not a whole number; or `quantity` is more than the stock holds (E5). Carries `errors`, one entry per field. |
+| `401` | `AUTH_HEADER_MISSING`, `AUTH_HEADER_MALFORMED`, `TOKEN_EXPIRED`, `TOKEN_INVALID` | As in 10.13. |
+| `403` | `FORBIDDEN` | The caller isn't a `district_officer`, or the shelter or stock row is in another district. |
+| `404` | `NOT_FOUND` | No shelter has `shelterId`, or no stock row has `stockId`. |
+| `409` | `NO_ACTIVE_INCIDENT` | The officer's district has no `ACTIVE` hazard event. |
 
 ### 10.12 Notifications sent
 
