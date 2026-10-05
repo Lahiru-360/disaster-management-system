@@ -4,6 +4,7 @@ import { District } from '../../src/models/District.js';
 import { User } from '../../src/models/User.js';
 import { areaRegistry } from '../../src/services/AreaRegistry.js';
 import { tokenService } from '../../src/services/TokenService.js';
+import { FakeClock } from '../helpers/FakeClock.js';
 import { AREAS, seedAreas } from '../helpers/areaFixtures.js';
 import { accessTokenFor, bearerFor, expiredBearerFor } from '../helpers/authHelper.js';
 import { createUser } from '../helpers/userFactory.js';
@@ -82,6 +83,46 @@ describe('areaFixtures.seedAreas', () => {
     const citizen = await createUser({ homeDistrict: colombo });
 
     expect(citizen.homeDistrict).toEqual(colombo._id);
+  });
+});
+
+describe('FakeClock', () => {
+  it('DMS-103: starts at the given time and stands still until advanced', () => {
+    const clock = new FakeClock('2026-09-28T08:00:00.000Z');
+
+    expect(clock.now()).toEqual(new Date('2026-09-28T08:00:00.000Z'));
+    expect(clock.now()).toEqual(clock.now());
+  });
+
+  it('DMS-103: has a fixed default start, so tests without one are deterministic', () => {
+    expect(new FakeClock().now().toISOString()).toBe('2026-09-28T08:00:00.000Z');
+  });
+
+  it('DMS-103: advance() moves time on by ms, and chains', () => {
+    const clock = new FakeClock('2026-09-28T08:00:00.000Z');
+
+    clock.advance(2 * FakeClock.HOUR).advance(5 * FakeClock.MINUTE);
+
+    expect(clock.now().toISOString()).toBe('2026-09-28T10:05:00.000Z');
+  });
+
+  it('DMS-103: set() jumps to a time', () => {
+    const clock = new FakeClock();
+
+    clock.set(new Date('2026-10-01T00:00:00.000Z'));
+
+    expect(clock.now().toISOString()).toBe('2026-10-01T00:00:00.000Z');
+  });
+
+  it('DMS-103: refuses an invalid time', () => {
+    expect(() => new FakeClock('not a date')).toThrow('is not a valid time');
+  });
+
+  it('DMS-103: returns a new Date each call, like SystemClock', () => {
+    const clock = new FakeClock();
+    clock.now().setFullYear(2000);
+
+    expect(clock.now().getFullYear()).toBe(2026);
   });
 });
 
