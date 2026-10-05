@@ -12,6 +12,11 @@ import { ReportHazardType } from '../enums/ReportHazardType.js';
 export class HazardReportValidator {
   static DESCRIPTION_MAX_LENGTH = 200;
 
+  // "must be one of [A, B]" for a closed list. The enum fields are Joi.any()
+  // rather than Joi.string(), so a value of the wrong type (e.g. a number)
+  // gives this one error, not a second "must be a string" on the same field.
+  static #oneOf = (values) => ({ 'any.only': `must be one of [${values.join(', ')}]` });
+
   // The whole location is checked by one rule so every problem with it -
   // missing, not an object, non-numeric, outside Sri Lanka - lands on
   // `location` with one message.
@@ -50,22 +55,20 @@ export class HazardReportValidator {
         'string.base': 'must be text',
         'string.max': 'must be at most {#limit} characters',
       }),
-    hazardType: Joi.string()
+    hazardType: Joi.any()
       .valid(...Object.values(ReportHazardType))
       .required()
       .messages({
         'any.required': 'is required',
-        'any.only': 'must be one of {#valids}',
-        'string.base': 'must be one of {#valids}',
+        ...HazardReportValidator.#oneOf(Object.values(ReportHazardType)),
       }),
     location: HazardReportValidator.#location,
-    locationSource: Joi.string()
+    locationSource: Joi.any()
       .valid(...Object.values(LocationSource))
       .required()
       .messages({
         'any.required': 'is required',
-        'any.only': 'must be one of {#valids}',
-        'string.base': 'must be one of {#valids}',
+        ...HazardReportValidator.#oneOf(Object.values(LocationSource)),
       }),
     photoUrl: Joi.string()
       .trim()
