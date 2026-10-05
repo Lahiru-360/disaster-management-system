@@ -20,9 +20,27 @@ This is where express code exists (Back-end)
 1. Add a `*.test.js` file under `tests/integration/` (or a new subfolder if it's a different area of the API).
 2. Import the app with `import { app } from '../../src/core/App.js'` — never `src/server.js`. `server.js` starts a `Server`, which connects to the database and calls `app.listen`, leaving the process hanging after the suite finishes; Supertest binds its own ephemeral port from the `app` instance directly.
 3. Drive the endpoint with `supertest`, e.g. `await request(app).post('/api/auth/login').send({ ... })`, and assert on `res.status` / `res.body`.
-4. If the test needs a user that can't be created through the public API (any seeded role, e.g. a `dmc_officer`), create it directly with the Mongoose model (`User.create(...)`) — the same restriction applies in tests as in production, so this is the intended workaround, not a hack.
-5. To simulate an expired token, sign one directly with `jsonwebtoken` using a negative `expiresIn` instead of waiting for a real token to expire (see `auth.tokens.test.js`).
+4. If the test needs a user that can't be created through the public API (any seeded role, e.g. a `dmc_officer`), create it directly with the model — `createUser({ role })` from `tests/helpers/userFactory.js` does this. The same restriction applies in tests as in production, so this is the intended workaround, not a hack.
+5. To simulate an expired token, use `expiredBearerFor(user)` from `tests/helpers/authHelper.js` instead of waiting for a real token to expire.
 6. Run `npm test` to confirm it passes, then check it also passes with `node --experimental-vm-modules node_modules/jest/bin/jest.js --randomize` if it depends on data another test might create, to make sure ordering isn't accidentally required.
+
+**Shared helpers (`tests/helpers/`)**
+
+Use these instead of writing your own setup, so every use case's tests read the same way (see `tests/integration/auth.rbac.test.js`). They live under `tests/`, never `src/`, so they don't count towards coverage; `tests/unit/testHelpers.test.js` checks them.
+
+| Helper            | Gives you                                                                                                                                                                                                |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `userFactory.js`  | `createUser({ role, homeDistrict, district, shiftDistrict, ...fields })`: a saved `User` in any role, with a unique email. Districts may be documents or ids. Defaults to a citizen.                     |
+| `authHelper.js`   | `bearerFor(user)` for the `Authorization` header, `expiredBearerFor(user)` for the `TOKEN_EXPIRED` path, and `accessTokenFor(user, { expiresIn })` for the raw JWT. Signed like `TokenService`.          |
+| `areaFixtures.js` | `seedAreas()`: Colombo, Gampaha and Kalutara plus the Kelani basin over Colombo and Gampaha. `AREAS` holds their centroids and boxes (the same as `DistrictSeeder`) for distance assertions.             |
+| `FakeClock.js`    | `new FakeClock(start)` with `now()`, `advance(ms)` and `set(time)`, plus `FakeClock.MINUTE` / `HOUR` / `DAY`. Pass it where a service takes `clock = systemClock` (`src/utils/SystemClock.js`).          |
+| `FakeChannel.js`  | A `NotificationChannel` whose results you script with `willReturn([{ status: 'FAILED', reason }, new Error('down'), ...])`; once the script runs out it delivers. Every notification sent is in `calls`. |
+
+```js
+const { colombo } = await seedAreas();
+const officer = await createUser({ role: Role.DUTY_OFFICER, shiftDistrict: colombo });
+const res = await request(app).get('/api/hazard-reports').set('Authorization', bearerFor(officer));
+```
 
 **Coverage**
 
