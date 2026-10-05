@@ -20,7 +20,8 @@
     "src/services/notifications/PushChannel.js",
     "src/services/notifications/SmsChannel.js",
     "src/services/notifications/AudibleChannel.js",
-    "src/services/BroadcastService.js"
+    "src/services/BroadcastService.js",
+    "src/services/DeliverySummary.js"
   ],
   "uc02": [
     "src/enums/ReportHazardType.js",

@@ -104,6 +104,43 @@ describe('BroadcastService', () => {
     });
   });
 
+  it('DMS-121: returns the delivery summary of what it just sent', async () => {
+    await citizensIn(areas.colombo, 2);
+    const id = await previewedDraft();
+
+    const { summary } = await serviceWith({
+      channels: channels({
+        push: new PushChannel({ transport: new FakeTransport({ failRate: 1 }) }),
+      }),
+    }).broadcast(id, officer, MESSAGE);
+
+    expect(summary).toMatchObject({
+      version: 1,
+      perChannel: [
+        { channel: 'PUSH', sent: 2, delivered: 0, failed: 2 },
+        { channel: 'SMS', sent: 2, delivered: 2, failed: 0 },
+        { channel: 'AUDIBLE', sent: 2, delivered: 2, failed: 0 },
+      ],
+      totals: { sent: 6, delivered: 4, failed: 2 },
+      unreachedCount: 0,
+    });
+  });
+
+  it("DMS-121: deliverySummary reads the alert and its current version's counts", async () => {
+    await citizensIn(areas.colombo, 1);
+    const id = await previewedDraft();
+    const draftSummary = await serviceWith().deliverySummary(id);
+    await serviceWith().broadcast(id, officer, MESSAGE);
+
+    const { alert, summary } = await serviceWith().deliverySummary(id);
+
+    expect(draftSummary.summary.totals).toEqual({ sent: 0, delivered: 0, failed: 0 });
+    expect(draftSummary.alert.status).toBe('DRAFT');
+    expect(alert).toMatchObject({ id, status: 'BROADCAST' });
+    expect(summary.totals).toEqual({ sent: 3, delivered: 3, failed: 0 });
+    await expect(serviceWith().deliverySummary('nope')).rejects.toMatchObject({ status: 404 });
+  });
+
   it("DMS-121: the officer's final message replaces the draft's", async () => {
     const id = await previewedDraft();
 

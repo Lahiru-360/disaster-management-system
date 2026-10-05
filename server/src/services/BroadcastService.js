@@ -12,6 +12,7 @@ import { ApiError } from '../utils/ApiError.js';
 import { systemClock } from '../utils/SystemClock.js';
 import { areaRegistry as defaultAreaRegistry } from './AreaRegistry.js';
 import { citizenRegistry as defaultCitizenRegistry } from './CitizenRegistry.js';
+import { deliverySummary as defaultDeliverySummary } from './DeliverySummary.js';
 import { HazardAlertPresenter } from './HazardAlertPresenter.js';
 import { notificationService as defaultNotificationService } from './NotificationService.js';
 import { AudibleChannel } from './notifications/AudibleChannel.js';
@@ -35,6 +36,7 @@ export class BroadcastService {
   #areaRegistry;
   #citizenRegistry;
   #notifications;
+  #summary;
   #channels;
   #clock;
 
@@ -44,6 +46,7 @@ export class BroadcastService {
     areaRegistry = defaultAreaRegistry,
     citizenRegistry = defaultCitizenRegistry,
     notifications = defaultNotificationService,
+    summary = defaultDeliverySummary,
     channels = [new PushChannel(), new SmsChannel(), new AudibleChannel()],
     clock = systemClock,
   } = {}) {
@@ -52,6 +55,7 @@ export class BroadcastService {
     this.#areaRegistry = areaRegistry;
     this.#citizenRegistry = citizenRegistry;
     this.#notifications = notifications;
+    this.#summary = summary;
     this.#channels = channels;
     this.#clock = clock;
   }
@@ -61,7 +65,8 @@ export class BroadcastService {
    * @param {string} alertId
    * @param {{ id: string }} officer The signed-in DMC or duty officer.
    * @param {string} message The text as the officer last saw it (≤160, validated).
-   * @returns {Promise<{ alert: object }>} The alert object, now BROADCAST.
+   * @returns {Promise<{ alert: object, summary: object }>} The alert object, now
+   *   BROADCAST, and its delivery summary.
    * @throws {ApiError} 404 for an unknown alert, 409 if it isn't a previewed
    *   DRAFT (or a colleague broadcast it first), 400 if its scope is no longer
    *   registered.
@@ -91,7 +96,25 @@ export class BroadcastService {
 
     await this.#deliver(alert, recipients, NotificationKind.WARNING);
     await this.#putInInboxes(alert, recipients);
-    return { alert: await HazardAlertPresenter.present(broadcastDoc) };
+    return {
+      alert: await HazardAlertPresenter.present(broadcastDoc),
+      summary: await this.#summary.forAlert(alert.id, alert.version),
+    };
+  }
+
+  /**
+   * Step 14, reopened at any time (contract §12.7): the alert and the delivery
+   * summary of its current version. A DRAFT has sent nothing, so all zeros.
+   * @param {string} alertId
+   * @returns {Promise<{ alert: object, summary: object }>}
+   * @throws {ApiError} 404 for an unknown or malformed id.
+   */
+  async deliverySummary(alertId) {
+    const doc = await this.#findDoc(alertId);
+    return {
+      alert: await HazardAlertPresenter.present(doc),
+      summary: await this.#summary.forAlert(doc.id, doc.version),
+    };
   }
 
   // The recipient × channel loop, a batch at a time: create each delivery as
