@@ -4,6 +4,7 @@ import { Coordinates } from '../domain/reports/Coordinates.js';
 import { HazardReport } from '../domain/reports/HazardReport.js';
 import { ReportLabels } from '../domain/reports/ReportLabels.js';
 import { NotificationType } from '../enums/NotificationType.js';
+import { ReportStatus } from '../enums/ReportStatus.js';
 import { Role } from '../enums/Role.js';
 import { District as DistrictModel } from '../models/District.js';
 import { HazardReport as HazardReportModel } from '../models/HazardReport.js';
@@ -141,15 +142,173 @@ export class HazardReportService {
     }
   }
 
-  // The contract's report object (§9.1): district as { id, name }, reporter
-  // as { id, role } (never their name or contact details), reviewedBy as
-  // { id, name }, and isEscalatable from the domain rule.
+  /**
+   * UC02 step 10 (§9.4): the PENDING reports in the duty officer's
+   * shiftDistrict, grouped by cluster. Clusters are ordered by their newest
+   * report and reports inside a cluster newest first, so the first report is
+   * the cluster's lead row in the queue. An officer with no shiftDistrict has
+   * an empty queue.
+   * @param {{ shiftDistrict?: object }} officer The signed-in duty officer (a User).
+   * @returns {Promise<Array<{ clusterId: string, count: number, reports: object[] }>>}
+   */
+  async getPendingByDistrict(officer) {
+    if (!officer.shiftDistrict) {
+      return [];
+    }
+    const docs = await this.#reportModel
+      .find({ status: ReportStatus.PENDING, district: officer.shiftDistrict })
+      .sort({ submittedAt: -1, _id: -1 });
+    const reports = await this.#presentAll(docs);
+
+    const clusters = new Map();
+    for (const report of reports) {
+      const clusterId = String(report.clusterId);
+      if (!clusters.has(clusterId)) {
+        clusters.set(clusterId, { clusterId, count: 0, reports: [] });
+      }
+      const cluster = clusters.get(clusterId);
+      cluster.count += 1;
+      cluster.reports.push(report);
+    }
+    return [...clusters.values()];
+  }
+
+  /**
+   * UC02 step 11 (§9.5): one report in the officer's district, whatever its
+   * status, plus the rest of its cluster (oldest first). count includes this
+   * report and every status.
+   * @param {string} reportId
+   * @param {{ shiftDistrict?: object }} officer
+   * @returns {Promise<{ report: object, cluster: { clusterId: string, count: number, others: object[] } }>}
+   * @throws {ApiError} 404 NOT_FOUND for an unknown or malformed id, or a report in another district.
+   */
+  async getDetail(reportId, officer) {
+    const doc = await this.#findInDistrict(reportId, officer);
+    const others = await this.#reportModel
+      .find({ clusterId: doc.clusterId, _id: { $ne: doc._id } })
+      .sort({ submittedAt: 1, _id: 1 })
+      .select('referenceNo status submittedAt');
+
+    return {
+      report: await this.#present(doc),
+      cluster: {
+        clusterId: String(doc.clusterId),
+        count: others.length + 1,
+        others: others.map((other) => ({
+          id: other.id,
+          referenceNo: other.referenceNo,
+          status: other.status,
+          submittedAt: other.submittedAt,
+        })),
+      },
+    };
+  }
+
+  /**
+   * The X-1 interface for UC01 (DMS-122): what escalating a report needs to
+   * know. No district scoping - UC01 does its own access checks.
+   * @param {string} reportId
+   * @returns {Promise<{ id: string, referenceNo: string, hazardType: string, location: { latitude: number, longitude: number }, district: { id: string, name: string }, status: string, isEscalatable: boolean }|null>}
+   *   null for an unknown or malformed id.
+   */
+  async findById(reportId) {
+    if (!mongoose.isValidObjectId(reportId)) {
+      return null;
+    }
+    const doc = await this.#reportModel.findById(reportId);
+    if (!doc) {
+      return null;
+    }
+    const { id, referenceNo, hazardType, location, district, status, isEscalatable } =
+      await this.#present(doc);
+    return { id: String(id), referenceNo, hazardType, location, district, status, isEscalatable };
+  }
+
+  /**
+   * UC02 steps 12-14 (§9.6): the duty officer confirms a report in their
+   * district. The domain class makes the change (only from PENDING), the
+   * reporter is told, and no warning is created or changed - escalating is
+   * UC01's, started by the officer.
+   * @param {string} reportId
+   * @param {{ _id: object, shiftDistrict?: object }} officer
+   * @returns {Promise<object>} The updated report (§9.1).
+   * @throws {ApiError} 404 NOT_FOUND as in getDetail; ReportAlreadyReviewedError (409) when not PENDING.
+   */
+  async confirm(reportId, officer) {
+    const doc = await this.#findInDistrict(reportId, officer);
+    const report = HazardReport.fromDocument(doc);
+
+    report.confirm(officer, this.#clock.now());
+    doc.set(report.reviewChanges());
+    await doc.save();
+
+    await this.#notifyReporter(doc, {
+      type: NotificationType.REPORT_CONFIRMED,
+      title: `Report ${doc.referenceNo} confirmed`,
+      body: `Your report ${doc.referenceNo} was confirmed by the duty officer. Thank you.`,
+    });
+    return this.#present(doc);
+  }
+
+  /**
+   * The reporter's own reports, every status, newest first (§9.3).
+   * @param {{ _id: object }} reporter The signed-in citizen.
+   * @returns {Promise<object[]>}
+   */
+  async listMine(reporter) {
+    const docs = await this.#reportModel
+      .find({ reporter: reporter._id })
+      .sort({ submittedAt: -1, _id: -1 });
+    return this.#presentAll(docs);
+  }
+
+  // A report the officer may see: in their shiftDistrict. Anything else - an
+  // unknown or malformed id, or another district's report - is the same 404,
+  // so a report's existence isn't revealed.
+  async #findInDistrict(reportId, officer) {
+    const doc =
+      mongoose.isValidObjectId(reportId) && officer.shiftDistrict
+        ? await this.#reportModel.findOne({ _id: reportId, district: officer.shiftDistrict })
+        : null;
+    if (!doc) {
+      throw new ApiError(404, 'NOT_FOUND', 'Hazard report not found.');
+    }
+    return doc;
+  }
+
+  // Step 14 / A1.3. Like step 9, a failure is logged and never fails the review.
+  async #notifyReporter(doc, payload) {
+    try {
+      await this.#notifications.notifyUser(doc.reporter, {
+        ...payload,
+        link: `/my-reports/${doc.id}`,
+      });
+    } catch (error) {
+      console.error(`Could not notify the reporter of ${doc.referenceNo}:`, error.message);
+    }
+  }
+
+  static #POPULATE = [
+    { path: 'district', select: 'name' },
+    { path: 'reporter', select: 'role' },
+    { path: 'reviewedBy', select: 'name' },
+  ];
+
+  async #presentAll(docs) {
+    await this.#reportModel.populate(docs, HazardReportService.#POPULATE);
+    return docs.map((doc) => HazardReportService.#toContract(doc));
+  }
+
   async #present(doc) {
-    await doc.populate([
-      { path: 'district', select: 'name' },
-      { path: 'reporter', select: 'role' },
-      { path: 'reviewedBy', select: 'name' },
-    ]);
+    await doc.populate(HazardReportService.#POPULATE);
+    return HazardReportService.#toContract(doc);
+  }
+
+  // The contract's report object (§9.1) from a populated document: district
+  // as { id, name }, reporter as { id, role } (never their name or contact
+  // details), reviewedBy as { id, name }, and isEscalatable from the domain
+  // rule.
+  static #toContract(doc) {
     const json = doc.toJSON();
     json.district = HazardReportService.#idAndFields(json.district, ['name']);
     json.reporter = HazardReportService.#idAndFields(json.reporter, ['role']);
