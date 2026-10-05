@@ -2327,15 +2327,16 @@ DMS-140. **Roles:** `district_officer` (own district), DMC officers (any distric
 
 ### 10.6 Nearest available teams — `GET /api/rescue-teams/available`
 
-UC03 main flow step 7 (DMS-142), and A3.3 / E4.2 when choosing another team. Lists the district's `AVAILABLE` teams, nearest to the incident first.
+UC03 main flow step 7 (DMS-142), and A3.3 / E4.2 when choosing another team. Lists the district's `AVAILABLE` teams with their owning organisation, nearest to the incident first, for the Dispatch Rescue Team dialog ("Team Alpha · 2.5 km · SL Army").
 
 **Roles:** `district_officer`.
 
 | Query param | Rule |
 |---|---|
-| `lat`, `lng` | Required. The incident location. |
+| `lat` | Required. The incident's latitude, −90 to 90. |
+| `lng` | Required. The incident's longitude, −180 to 180. |
 | `districtId` | Optional; defaults to, and must be, the officer's own district. |
-| `excludeTeamIds` | Optional. Comma-separated team ids to leave out, e.g. the team that just declined. |
+| `excludeTeamIds` | Optional. Comma-separated team ids to leave out, e.g. the team that just declined (A3.3). |
 
 **Success — `200 OK`** (sorted by distance from each team's `currentLocation`, ties broken by `name`)
 
@@ -2349,7 +2350,17 @@ UC03 main flow step 7 (DMS-142), and A3.3 / E4.2 when choosing another team. Lis
         "name": "Team Alpha",
         "organisation": { "id": "66f7c1a2b3c4d5e6f7a8b9d5", "name": "SL Army", "type": "ARMED_FORCES" },
         "memberCount": 8,
+        "status": "AVAILABLE",
         "distanceKm": 2.5,
+        "...": "the rest of the rescue team object"
+      },
+      {
+        "id": "66fb0b1b2c3d4e5f6a7b8d05",
+        "name": "Team Echo",
+        "organisation": { "id": "66f7c1a2b3c4d5e6f7a8b9d2", "name": "Fire Service", "type": "GOVERNMENT" },
+        "memberCount": 6,
+        "status": "AVAILABLE",
+        "distanceKm": 6.1,
         "...": "the rest of the rescue team object"
       }
     ]
@@ -2357,7 +2368,19 @@ UC03 main flow step 7 (DMS-142), and A3.3 / E4.2 when choosing another team. Lis
 }
 ```
 
+| Field | Notes |
+|---|---|
+| `distanceKm` | Straight-line (haversine) distance from the team's `currentLocation` to (`lat`, `lng`), rounded to one decimal place. The ordering uses the exact distance. |
+
+Only `AVAILABLE` teams are listed: `DISPATCHED`, `ON_SITE` and `UNAVAILABLE` teams never are. This is a read, so it works without an active incident.
+
 **E3:** no available team is `200` with `"teams": []`. The dialog then shows "No team available" and offers *Request DMC support* (10.9.1).
+
+| Status | Code | When |
+|---|---|---|
+| `400` | `VALIDATION_ERROR` | `lat` or `lng` missing or out of range, or a malformed `districtId` or id in `excludeTeamIds`. |
+| `401` | `AUTH_HEADER_MISSING`, `AUTH_HEADER_MALFORMED`, `TOKEN_EXPIRED`, `TOKEN_INVALID` | As in 10.13. |
+| `403` | `FORBIDDEN` | The caller isn't a `district_officer`, or `districtId` is another district. |
 
 ### 10.7 Dispatches
 
@@ -2365,11 +2388,11 @@ UC03 main flow steps 6–11 (DMS-142).
 
 #### 10.7.1 Dispatch settings
 
-`DISPATCH_ACK_TIMEOUT_MINUTES` (server environment, default `5`) sets how long a team lead has to acknowledge.
+`DISPATCH_ACK_TIMEOUT_MINUTES` (server environment, a whole number of minutes, default `5`) sets how long a team lead has to acknowledge. The dialog shows it as "Acknowledgement deadline: 5 min".
 
 #### 10.7.2 Dispatch a team — `POST /api/dispatches`
 
-Steps 8–9. Creates an `ASSIGNED` dispatch for an available team, sets the team to `DISPATCHED` and notifies its lead (10.12).
+Steps 8–9. Creates an `ASSIGNED` dispatch for an available team, sets the team to `DISPATCHED` and sends the assignment to its lead's field app.
 
 **Roles:** `district_officer`, for a team in their own district.
 
@@ -2378,8 +2401,8 @@ Steps 8–9. Creates an `ASSIGNED` dispatch for an available team, sets the team
 | Field | Rule |
 |---|---|
 | `teamId` | Required. A team in the officer's district. |
-| `incidentLocation` | Required. `{ lat, lng, label? }`, as in 10.4.3. |
-| `priority` | Required. A `Priority`. The dialog defaults to `HIGH`. |
+| `incidentLocation` | Required. `{ lat, lng, label? }`: `lat` from −90 to 90, `lng` from −180 to 180, `label` up to 200 characters, e.g. `"Biyagama – flooded road"`. |
+| `priority` | Required. A `Priority`: `LOW`, `MEDIUM`, `HIGH` or `CRITICAL`. The dialog defaults to `HIGH`. |
 
 ```json
 {
@@ -2389,7 +2412,45 @@ Steps 8–9. Creates an `ASSIGNED` dispatch for an available team, sets the team
 }
 ```
 
-**Success — `201 Created`**: `{ "dispatch": { ... } }`, the dispatch object (10.2), `ASSIGNED`, with its `ackDeadline`.
+**Behaviour** (UC03 sequence diagram (b))
+1. Moves the team from `AVAILABLE` to `DISPATCHED`, but only if it is still `AVAILABLE` at that moment. If another officer dispatched it first, nothing is created (`409 TEAM_NOT_AVAILABLE`).
+2. Creates the dispatch as `ASSIGNED`, for the district's `ACTIVE` hazard event, with `createdAt` now and `ackDeadline = createdAt + DISPATCH_ACK_TIMEOUT_MINUTES`, and a first `statusHistory` entry.
+3. Notifies the team's lead (10.12), which puts the assignment in the field app. A team without a lead is still dispatched; nobody is notified. A failed notification never fails the dispatch.
+
+**Success — `201 Created`**
+
+```json
+{
+  "success": true,
+  "data": {
+    "dispatch": {
+      "id": "66fb0c1b2c3d4e5f6a7b8e01",
+      "status": "ASSIGNED",
+      "team": {
+        "id": "66fb0b1b2c3d4e5f6a7b8d01",
+        "name": "Team Alpha",
+        "organisation": { "id": "66f7c1a2b3c4d5e6f7a8b9d5", "name": "SL Army", "type": "ARMED_FORCES" }
+      },
+      "district": { "id": "66f7c1a2b3c4d5e6f7a8b902", "name": "Gampaha" },
+      "incident": { "id": "66f7c1a2b3c4d5e6f7a8b9c1", "name": "Flood – Gampaha District" },
+      "incidentLocation": { "lat": 6.9555, "lng": 79.9865, "label": "Biyagama – flooded road" },
+      "priority": "HIGH",
+      "supportRequested": false,
+      "createdBy": { "id": "66f1a2b3c4d5e6f7a8b9c0d6", "name": "Dilani Wickramasinghe" },
+      "createdAt": "2026-10-03T09:30:00.000Z",
+      "ackDeadline": "2026-10-03T09:35:00.000Z",
+      "declineReason": null,
+      "statusHistory": [
+        {
+          "status": "ASSIGNED",
+          "at": "2026-10-03T09:30:00.000Z",
+          "by": { "id": "66f1a2b3c4d5e6f7a8b9c0d6", "name": "Dilani Wickramasinghe" }
+        }
+      ]
+    }
+  }
+}
+```
 
 **Failure — `409 Conflict`** (the team stopped being available, e.g. another officer dispatched it first)
 
@@ -2403,7 +2464,14 @@ Steps 8–9. Creates an `ASSIGNED` dispatch for an available team, sets the team
 }
 ```
 
-Also `400 VALIDATION_ERROR`, `403 FORBIDDEN`, `404 NOT_FOUND` (unknown team) and `409 NO_ACTIVE_INCIDENT`.
+| Status | Code | When |
+|---|---|---|
+| `400` | `VALIDATION_ERROR` | `teamId` missing or malformed, `incidentLocation` missing or out of range, or `priority` not a `Priority`. Carries `errors`. |
+| `401` | `AUTH_HEADER_MISSING`, `AUTH_HEADER_MALFORMED`, `TOKEN_EXPIRED`, `TOKEN_INVALID` | As in 10.13. |
+| `403` | `FORBIDDEN` | The caller isn't a `district_officer`, or the team is in another district. |
+| `404` | `NOT_FOUND` | No team has `teamId`. |
+| `409` | `TEAM_NOT_AVAILABLE` | The team is `DISPATCHED`, `ON_SITE` or `UNAVAILABLE`. |
+| `409` | `NO_ACTIVE_INCIDENT` | The officer's district has no `ACTIVE` hazard event. |
 
 #### 10.7.3 List dispatches — `GET /api/dispatches`
 
@@ -2426,7 +2494,7 @@ For the officer console: the unassigned queue (10.9), and the decline and timeou
 
 #### 10.7.5 My assignments — `GET /api/dispatches/mine`
 
-The field app's Assignments tab. Answers for the team the caller leads.
+The field app's Assignments tab ("Rescue Team App – Team Alpha"). Answers for the team the caller leads.
 
 **Roles:** `rescue_team_lead`.
 
@@ -2437,20 +2505,61 @@ The field app's Assignments tab. Answers for the team the caller leads.
   "success": true,
   "data": {
     "team": { "id": "66fb0b1b2c3d4e5f6a7b8d01", "name": "Team Alpha", "...": "the rescue team object" },
-    "dispatches": [{ "id": "66fb0c1b2c3d4e5f6a7b8e01", "status": "ASSIGNED", "...": "the dispatch object" }]
+    "dispatches": [
+      {
+        "id": "66fb0c1b2c3d4e5f6a7b8e01",
+        "status": "ASSIGNED",
+        "incidentLocation": { "lat": 6.9555, "lng": 79.9865, "label": "Biyagama – flooded road" },
+        "priority": "HIGH",
+        "ackDeadline": "2026-10-03T09:35:00.000Z",
+        "...": "the rest of the dispatch object"
+      }
+    ]
   }
 }
 ```
 
-`dispatches` holds the team's open dispatches (`ASSIGNED`, `ACKNOWLEDGED`, `ON_SITE`), newest first, followed by its most recently closed one (`COMPLETED`, `DECLINED` or `UNRESPONSIVE`), if any. That way the app can still show "Assignment expired" after a timeout until the next assignment arrives. A lead who leads no team gets `200` with `"team": null` and `"dispatches": []`.
+`dispatches` holds the team's open dispatches (`ASSIGNED`, `ACKNOWLEDGED`, `ON_SITE`), newest first, followed by its most recently closed one (`COMPLETED`, `DECLINED` or `UNRESPONSIVE`), if any. That way the app can still show "Assignment expired" after a timeout until the next assignment arrives. The app counts down to `ackDeadline` ("respond within 04:32") on an `ASSIGNED` card. A lead who leads no team gets `200` with `"team": null` and `"dispatches": []`.
+
+| Status | Code | When |
+|---|---|---|
+| `401` | `AUTH_HEADER_MISSING`, `AUTH_HEADER_MALFORMED`, `TOKEN_EXPIRED`, `TOKEN_INVALID` | As in 10.13. |
+| `403` | `FORBIDDEN` | The caller isn't a `rescue_team_lead`. |
 
 #### 10.7.6 Acknowledge — `POST /api/dispatches/:id/acknowledge`
 
-Step 10. `ASSIGNED` → `ACKNOWLEDGED`. No body.
+Step 10. `ASSIGNED` → `ACKNOWLEDGED`; the team stays `DISPATCHED` while it travels. No body.
 
 **Roles:** `rescue_team_lead` of the dispatch's team.
 
-**Success — `200 OK`**: `{ "dispatch": { ... } }`.
+An overdue dispatch (10.2) is marked `UNRESPONSIVE` before the action is tried, so acknowledging after the deadline fails with `409`, even if the background check hasn't run yet.
+
+**Success — `200 OK`**
+
+```json
+{
+  "success": true,
+  "data": {
+    "dispatch": {
+      "id": "66fb0c1b2c3d4e5f6a7b8e01",
+      "status": "ACKNOWLEDGED",
+      "statusHistory": [
+        {
+          "status": "ASSIGNED",
+          "at": "2026-10-03T09:30:00.000Z",
+          "by": { "id": "66f1a2b3c4d5e6f7a8b9c0d6", "name": "Dilani Wickramasinghe" }
+        },
+        {
+          "status": "ACKNOWLEDGED",
+          "at": "2026-10-03T09:32:10.000Z",
+          "by": { "id": "66f1a2b3c4d5e6f7a8b9c0d3", "name": "Suresh Bandara" }
+        }
+      ],
+      "...": "the rest of the dispatch object"
+    }
+  }
+}
+```
 
 **Failure — `409 Conflict`** (e.g. the deadline has passed, so the dispatch is already `UNRESPONSIVE`)
 
@@ -2464,15 +2573,24 @@ Step 10. `ASSIGNED` → `ACKNOWLEDGED`. No body.
 }
 ```
 
-**Failure — `403 Forbidden`**: the lead of another team.
+| Status | Code | When |
+|---|---|---|
+| `401` | `AUTH_HEADER_MISSING`, `AUTH_HEADER_MALFORMED`, `TOKEN_EXPIRED`, `TOKEN_INVALID` | As in 10.13. |
+| `403` | `FORBIDDEN` | The caller isn't a `rescue_team_lead`, or leads another team. |
+| `404` | `NOT_FOUND` | No dispatch has this id, or the id isn't valid. |
+| `409` | `INVALID_DISPATCH_TRANSITION` | The dispatch isn't `ASSIGNED`, including one that just passed its deadline. |
 
 #### 10.7.7 On site — `POST /api/dispatches/:id/on-site`
 
-Step 11. `ACKNOWLEDGED` → `ON_SITE`. The team becomes `ON_SITE` and its `currentLocation` becomes the incident location. No body. Same roles, success and failures as 10.7.6.
+Step 11. `ACKNOWLEDGED` → `ON_SITE`. The team becomes `ON_SITE` and its `currentLocation` becomes the incident location. No body.
+
+**Roles, success and failures:** as in 10.7.6, with the dispatch in `ON_SITE`. Going on site from any status but `ACKNOWLEDGED` is `409 INVALID_DISPATCH_TRANSITION`.
 
 #### 10.7.8 Complete — `POST /api/dispatches/:id/complete`
 
-Step 11. `ON_SITE` → `COMPLETED`, and the team returns to `AVAILABLE`. No body. Same roles, success and failures as 10.7.6; completing an `ASSIGNED` dispatch is `409 INVALID_DISPATCH_TRANSITION`.
+Step 11. `ON_SITE` → `COMPLETED`, and the team returns to `AVAILABLE`, so it is listed again in 10.6. No body.
+
+**Roles, success and failures:** as in 10.7.6, with the dispatch in `COMPLETED`. Completing from any status but `ON_SITE`, e.g. an `ASSIGNED` dispatch, is `409 INVALID_DISPATCH_TRANSITION`.
 
 ### 10.8 Decline an assignment — `POST /api/dispatches/:id/decline`
 
