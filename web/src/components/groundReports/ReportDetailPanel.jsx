@@ -1,6 +1,11 @@
 import { useId, useState } from 'react';
 
-import { formatCoordinates, formatTime, hazardTypeLabel } from '../../constants/hazardReports';
+import {
+  formatCoordinates,
+  formatTime,
+  hazardTypeLabel,
+  locationSourceLabel,
+} from '../../constants/hazardReports';
 import Button from '../ui/Button';
 import MapView from '../ui/MapView';
 import Modal from '../ui/Modal';
@@ -77,7 +82,7 @@ export default function ReportDetailPanel({
 
       <dl className="flex flex-col gap-1.5">
         <Field label="Location">
-          {formatCoordinates(report.location)} ({report.locationSource})
+          {formatCoordinates(report.location)} ({locationSourceLabel(report.locationSource)})
         </Field>
         <Field label="Submitted">
           {formatTime(report.submittedAt)} by {reporterHandle(report.reporter)}
