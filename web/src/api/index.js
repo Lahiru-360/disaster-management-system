@@ -5,5 +5,8 @@
 import { USE_MOCK } from '../constants/config';
 import authApiMock from './mock/authApi';
 import authApiReal from './authApi';
+import hazardAlertsApiMock from './mock/hazardAlertsApi';
+import hazardAlertsApiReal from './hazardAlertsApi';
 
 export const authApi = USE_MOCK ? authApiMock : authApiReal;
+export const hazardAlertsApi = USE_MOCK ? hazardAlertsApiMock : hazardAlertsApiReal;
