@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import { ClusterAssigner } from '../domain/reports/ClusterAssigner.js';
 import { Coordinates } from '../domain/reports/Coordinates.js';
 import { HazardReport } from '../domain/reports/HazardReport.js';
+import { ReportAlreadyReviewedError } from '../domain/reports/ReportAlreadyReviewedError.js';
 import { ReportLabels } from '../domain/reports/ReportLabels.js';
 import { NotificationType } from '../enums/NotificationType.js';
 import { ReportStatus } from '../enums/ReportStatus.js';
@@ -235,12 +236,7 @@ export class HazardReportService {
    * @throws {ApiError} 404 NOT_FOUND as in getDetail; ReportAlreadyReviewedError (409) when not PENDING.
    */
   async confirm(reportId, officer) {
-    const doc = await this.#findInDistrict(reportId, officer);
-    const report = HazardReport.fromDocument(doc);
-
-    report.confirm(officer, this.#clock.now());
-    doc.set(report.reviewChanges());
-    await doc.save();
+    const doc = await this.#review(reportId, officer, (report, at) => report.confirm(officer, at));
 
     await this.#notifyReporter(doc, {
       type: NotificationType.REPORT_CONFIRMED,
@@ -260,6 +256,28 @@ export class HazardReportService {
       .find({ reporter: reporter._id })
       .sort({ submittedAt: -1, _id: -1 });
     return this.#presentAll(docs);
+  }
+
+  // Confirm and dismiss (E3). The domain class makes the change on the
+  // report as loaded, refusing one that is no longer PENDING; the write is
+  // then one conditional update on { status: PENDING }, so when two officers
+  // review the same report at the same moment exactly one write lands and
+  // the other gets ReportAlreadyReviewedError with the status it lost to.
+  async #review(reportId, officer, change) {
+    const doc = await this.#findInDistrict(reportId, officer);
+    const report = HazardReport.fromDocument(doc);
+    change(report, this.#clock.now());
+
+    const updated = await this.#reportModel.findOneAndUpdate(
+      { _id: doc._id, status: ReportStatus.PENDING },
+      { $set: report.reviewChanges() },
+      { returnDocument: 'after', runValidators: true },
+    );
+    if (!updated) {
+      const current = await this.#reportModel.findById(doc._id).select('status');
+      throw new ReportAlreadyReviewedError(current.status);
+    }
+    return updated;
   }
 
   // A report the officer may see: in their shiftDistrict. Anything else - an
