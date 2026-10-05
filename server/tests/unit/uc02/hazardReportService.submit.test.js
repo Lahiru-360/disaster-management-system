@@ -254,3 +254,35 @@ describe('HazardReportService.submit', () => {
     });
   });
 });
+
+describe('resend (A3, DMS-134.4)', () => {
+  const clientReportId = 'b4f0c9e2-6a1d-4c7e-9f3a-2d8e5b7a1c60';
+
+  it('A3: answers created true, then created false with the same report', async () => {
+    const citizen = await createUser();
+
+    const first = await service.submit(citizen, validInput({ clientReportId }));
+    const second = await service.submit(citizen, validInput({ clientReportId }));
+
+    expect(first.created).toBe(true);
+    expect(second.created).toBe(false);
+    expect(second.report.id).toEqual(first.report.id);
+  });
+
+  it('A3: a copy that loses the race at the unique index returns the stored report', async () => {
+    const citizen = await createUser();
+    const create = HazardReport.create.bind(HazardReport);
+    // The other copy lands between this one's lookup and its insert.
+    jest.spyOn(HazardReport, 'create').mockImplementationOnce(async (fields) => {
+      await create({ ...fields, _id: undefined, referenceNo: 'GR-9999' });
+      return create(fields);
+    });
+
+    const result = await service.submit(citizen, validInput({ clientReportId }));
+
+    expect(result.created).toBe(false);
+    expect(result.report.referenceNo).toBe('GR-9999');
+    expect(await HazardReport.countDocuments()).toBe(1);
+    jest.restoreAllMocks();
+  });
+});
