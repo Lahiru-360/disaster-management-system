@@ -1,13 +1,14 @@
 import { Province } from '../src/enums/Province.js';
 import { District } from '../src/models/District.js';
 import { RiverBasin } from '../src/models/RiverBasin.js';
+import { Seeder } from './Seeder.js';
 
 // Seeds the registered geography: the 25 districts of Sri Lanka, then the
 // river basins that span them. Safe to re-run: each district and basin is
 // matched by name and updated in place ($set), so a corrected coordinate
 // reaches the database on the next seed and nothing is ever duplicated.
 // Expects an open connection - DatabaseSeeder owns it.
-export class DistrictSeeder {
+export class DistrictSeeder extends Seeder {
   // centroid is the district capital's coordinates: the point the district's
   // name refers to, and the reference for distances. bounds is a hand-set
   // bounding box around the district - an approximation, so neighbouring boxes
