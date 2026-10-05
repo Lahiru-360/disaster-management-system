@@ -4,6 +4,11 @@
 // service. send() resolves to { status: 'SENT' | 'DELIVERED' | 'FAILED', reason? };
 // a channel may also throw, and the service records that as FAILED.
 export class NotificationChannel {
+  // How the channel is named in a delivery record, e.g. "InAppChannel".
+  get name() {
+    return this.constructor.name;
+  }
+
   /**
    * Delivers one notification.
    * @param {object} _notification the stored notification to deliver

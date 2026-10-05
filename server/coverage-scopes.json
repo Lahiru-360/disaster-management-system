@@ -11,5 +11,18 @@
     "src/services/ReferenceNumberGenerator.js"
   ],
   "uc03": [],
-  "uc04": []
+  "uc04": [
+    "src/domain/events/**/*.js",
+    "src/models/HazardEvent.js",
+    "src/models/Organisation.js",
+    "src/services/HazardEventService.js",
+    "src/services/OrganisationService.js",
+    "src/controllers/HazardEventController.js",
+    "src/controllers/OrganisationController.js",
+    "src/validators/HazardEventValidator.js",
+    "src/validators/OrganisationValidator.js",
+    "src/routes/HazardEventRoutes.js",
+    "src/routes/OrganisationRoutes.js",
+    "src/utils/SriLankaCalendar.js"
+  ]
 }
