@@ -6,6 +6,7 @@ import { ErrorHandler } from '../middleware/ErrorHandler.js';
 import { areaRoutes } from '../routes/AreaRoutes.js';
 import { authRoutes } from '../routes/AuthRoutes.js';
 import { hazardEventRoutes } from '../routes/HazardEventRoutes.js';
+import { hazardReportRoutes } from '../routes/HazardReportRoutes.js';
 import { healthRoutes } from '../routes/HealthRoutes.js';
 import { notificationRoutes } from '../routes/NotificationRoutes.js';
 import { organisationRoutes } from '../routes/OrganisationRoutes.js';
@@ -26,6 +27,7 @@ export class App {
       hazardEventRoutes,
       organisationRoutes,
       notificationRoutes,
+      hazardReportRoutes,
     ],
   ) {
     this.#registerMiddleware();
