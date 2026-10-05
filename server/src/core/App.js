@@ -5,7 +5,9 @@ import morgan from 'morgan';
 import { ErrorHandler } from '../middleware/ErrorHandler.js';
 import { areaRoutes } from '../routes/AreaRoutes.js';
 import { authRoutes } from '../routes/AuthRoutes.js';
+import { hazardEventRoutes } from '../routes/HazardEventRoutes.js';
 import { healthRoutes } from '../routes/HealthRoutes.js';
+import { organisationRoutes } from '../routes/OrganisationRoutes.js';
 import { uploadRoutes } from '../routes/UploadRoutes.js';
 
 // Builds the Express application: global middleware first, then every route
@@ -14,7 +16,16 @@ import { uploadRoutes } from '../routes/UploadRoutes.js';
 export class App {
   #express = express();
 
-  constructor(routeGroups = [healthRoutes, authRoutes, uploadRoutes, areaRoutes]) {
+  constructor(
+    routeGroups = [
+      healthRoutes,
+      authRoutes,
+      uploadRoutes,
+      areaRoutes,
+      hazardEventRoutes,
+      organisationRoutes,
+    ],
+  ) {
     this.#registerMiddleware();
     this.#registerRoutes(routeGroups);
     this.#registerErrorHandlers();
