@@ -1,7 +1,10 @@
 import mongoose from 'mongoose';
 import { Role } from '../../src/enums/Role.js';
+import { District } from '../../src/models/District.js';
 import { User } from '../../src/models/User.js';
+import { areaRegistry } from '../../src/services/AreaRegistry.js';
 import { tokenService } from '../../src/services/TokenService.js';
+import { AREAS, seedAreas } from '../helpers/areaFixtures.js';
 import { accessTokenFor, bearerFor, expiredBearerFor } from '../helpers/authHelper.js';
 import { createUser } from '../helpers/userFactory.js';
 
@@ -48,6 +51,37 @@ describe('userFactory.createUser', () => {
       email: 'kasun@example.test',
       isActive: false,
     });
+  });
+});
+
+describe('areaFixtures.seedAreas', () => {
+  it('DMS-103: seeds Colombo, Gampaha and Kalutara, and Kelani over the first two', async () => {
+    const { colombo, gampaha, kalutara, kelani } = await seedAreas();
+
+    expect([colombo.name, gampaha.name, kalutara.name]).toEqual(['Colombo', 'Gampaha', 'Kalutara']);
+    expect(kelani.districts.map(String)).toEqual([colombo.id, gampaha.id]);
+    expect(await District.countDocuments()).toBe(3);
+  });
+
+  it('DMS-103: gives the districts the known centroids in AREAS', async () => {
+    const { colombo } = await seedAreas();
+
+    expect(colombo.centroid.toObject()).toEqual(AREAS.colombo.centroid);
+  });
+
+  it('DMS-103: puts a point in the right district through AreaRegistry', async () => {
+    const { gampaha } = await seedAreas();
+    const { lat, lng } = AREAS.gampaha.centroid;
+
+    expect(String((await areaRegistry.findDistrictForPoint(lat, lng)).areaId)).toBe(gampaha.id);
+  });
+
+  it('DMS-103: feeds createUser a district document directly', async () => {
+    const { colombo } = await seedAreas();
+
+    const citizen = await createUser({ homeDistrict: colombo });
+
+    expect(citizen.homeDistrict).toEqual(colombo._id);
   });
 });
 
