@@ -1,5 +1,10 @@
 {
-  "uc01": [],
+  "uc01": [
+    "src/enums/AlertHazardType.js",
+    "src/enums/SeverityLevel.js",
+    "src/enums/AlertStatus.js",
+    "src/models/HazardAlert.js"
+  ],
   "uc02": [
     "src/enums/ReportHazardType.js",
     "src/enums/ReportStatus.js",
