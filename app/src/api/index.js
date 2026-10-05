@@ -11,13 +11,11 @@ import hazardReportsApiMock from './mock/hazardReportsApi';
 import hazardReportsApiReal from './hazardReportsApi';
 import notificationsApiMock from './mock/notificationsApi';
 import notificationsApiReal from './notificationsApi';
+import uploadApiMock from './mock/uploadApi';
 import uploadApiReal from './uploadApi';
 
 export const authApi = USE_MOCK ? authApiMock : authApiReal;
 export const hazardReportsApi = USE_MOCK ? hazardReportsApiMock : hazardReportsApiReal;
 export const dispatchesApi = USE_MOCK ? dispatchesApiMock : dispatchesApiReal;
 export const notificationsApi = USE_MOCK ? notificationsApiMock : notificationsApiReal;
-
-// No mock adapter exists for the upload endpoint, so it reaches the server
-// even when USE_MOCK is set. Add a mock module here if one is needed.
-export const uploadApi = uploadApiReal;
+export const uploadApi = USE_MOCK ? uploadApiMock : uploadApiReal;

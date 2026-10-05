@@ -22,6 +22,18 @@
     },
     "plugins": [
       "expo-secure-store",
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "The camera is used to photograph a hazard you report, so the duty officer can verify it."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Your location is attached to a hazard report so it reaches the duty officer for that district."
+        }
+      ],
       "expo-font",
       [
         "@react-native-community/datetimepicker",
