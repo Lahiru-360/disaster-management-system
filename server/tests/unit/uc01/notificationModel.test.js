@@ -88,4 +88,11 @@ describe('Notification model (delivery record)', () => {
     ]);
     expect(indexes.map(([keys]) => keys)).toContainEqual({ alert: 1, status: 1 });
   });
+
+  it("DMS-124: indexes by alert and citizen for the all-clear's original recipients", () => {
+    expect(Notification.schema.indexes().map(([keys]) => keys)).toContainEqual({
+      alert: 1,
+      citizen: 1,
+    });
+  });
 });

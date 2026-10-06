@@ -37,6 +37,25 @@ describe('MessageTemplate', () => {
     expect(MessageTemplate.generate('LANDSLIDE', 'MEDIUM')).toContain('be ready to leave');
   });
 
+  it.each(Object.values(AlertHazardType))(
+    'DMS-124: the %s all-clear names its type and fits in one SMS',
+    (type) => {
+      const label = type.charAt(0) + type.slice(1).toLowerCase();
+      const message = MessageTemplate.allClear(type);
+
+      expect(message).toBe(
+        `ALL CLEAR: The ${label} warning has ended. It is now safe, but follow official guidance.`,
+      );
+      expect(message.length).toBeLessThanOrEqual(MessageTemplate.MAX_LENGTH);
+      expect(MessageTemplate.allClearTitle(type)).toBe(`${label} Warning: ALL CLEAR`);
+    },
+  );
+
+  it('DMS-124: the all-clear refuses an unknown type', () => {
+    expect(() => MessageTemplate.allClear('TSUNAMI')).toThrow('unknown hazard type');
+    expect(() => MessageTemplate.allClearTitle('TSUNAMI')).toThrow('unknown hazard type');
+  });
+
   it('DMS-120: refuses an unknown type or severity', () => {
     expect(() => MessageTemplate.generate('RISING_RIVER_FLOOD', 'LOW')).toThrow(
       'unknown hazard type',
