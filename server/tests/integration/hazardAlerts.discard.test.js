@@ -238,7 +238,7 @@ describe('GET /api/hazard-alerts?status=draft', () => {
 
   it.each([
     ['missing', {}, 'is required'],
-    ['not draft', { status: 'active' }, 'must be one of [draft]'],
+    ['not draft or active', { status: 'cancelled' }, 'must be one of [draft, active]'],
   ])('DMS-125: status %s is 400 VALIDATION_ERROR on status', async (_case, query, message) => {
     const res = await listDrafts(query);
 

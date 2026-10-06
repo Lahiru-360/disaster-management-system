@@ -52,15 +52,14 @@ export class HazardAlertValidator {
     }),
   });
 
-  // GET /api/hazard-alerts (§12.11): only the drafts for now (A4); DMS-124
-  // adds the active warnings.
+  // GET /api/hazard-alerts (§12.11): the drafts (A4) or the active warnings (A3).
   static listQuery = Joi.object({
     status: Joi.string()
-      .valid('draft')
+      .valid('draft', 'active')
       .required()
       .messages({
         'any.required': 'is required',
-        ...HazardAlertValidator.#oneOf(['draft']),
+        ...HazardAlertValidator.#oneOf(['draft', 'active']),
       }),
   });
 
@@ -101,6 +100,10 @@ export class HazardAlertValidator {
       : value;
 
   static #changeMessages = { 'any.custom': '{#message}' };
+
+  // POST /api/hazard-alerts/:id/all-clear (§12.15): nothing to send, since the
+  // all-clear message isn't editable. Anything sent is ignored.
+  static allClearSchema = Joi.object({});
 
   // POST /api/hazard-alerts/:id/update-preview (§12.13).
   static updatePreviewSchema = Joi.object(HazardAlertValidator.#change)
