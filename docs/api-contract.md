@@ -116,6 +116,7 @@ Every error response — regardless of cause — returns the same outer shape:
 | `EMAIL_UNAVAILABLE` | The transactional email provider failed or was unreachable while sending. Always `502`. |
 | `REPORT_ALREADY_REVIEWED` | Confirm or dismiss on a hazard report that is no longer `PENDING` (§9.6–9.7). Always `409`; the message names the current status. |
 | `INVALID_ALERT_TRANSITION` | An action a hazard alert's current status doesn't allow, e.g. previewing, editing or broadcasting an alert that is no longer `DRAFT` (§12.3–12.4, §12.6). Always `409`; the message names the current status. |
+| `NO_RECIPIENTS_IN_SCOPE` | Broadcasting a hazard alert whose scope holds no registered citizens (§12.6, UC01 E2). Always `409`; nothing is sent and the alert stays `DRAFT`. |
 | `NO_ACTIVE_INCIDENT` | A UC03 officer write while the district has no `ACTIVE` hazard event (§13.1). Always `409`. |
 | `SHELTER_NAME_TAKEN` | Registering a shelter whose name, ignoring case and surrounding spaces, is already used in the district (§13.4.3). Always `409`. |
 | `SHELTER_NO_SPACE` | Redirecting arrivals to a shelter that has no spare capacity (§13.4.4). Always `409`. |
@@ -1807,7 +1808,7 @@ A preview that finds **no recipients is not an error**: it is `200` with `recipi
 }
 ```
 
-An empty `areaIds` is `400` on `areaIds` too ("must contain at least 1 items"), as is a malformed id. A missing or unknown `hazardType` or `severity` is `400` on that field.
+An empty `areaIds` is `400` on `areaIds` too ("must contain at least 1 items"), as is a malformed id. A list holding anything but text (a number, `null`, an object) is `400` on `areaIds` with "must be a list of area ids". A missing or unknown `hazardType` or `severity` is `400` on that field.
 
 **Failure — `409 Conflict`** (the alert is no longer a draft)
 
@@ -1959,13 +1960,27 @@ The server then:
 }
 ```
 
-A draft without a hazard type, severity or scope (it was never previewed) gets the same code, with the message "Preview the warning before broadcasting it". Either way nothing is sent and no delivery record is created. UC01 A2 and E2 add their own `409`s here (`ACTIVE_WARNING_EXISTS`, DMS-123; `NO_RECIPIENTS_IN_SCOPE`, DMS-127).
+A draft without a hazard type, severity or scope (it was never previewed) gets the same code, with the message "Preview the warning before broadcasting it". Either way nothing is sent and no delivery record is created. UC01 A2 adds its own `409` here (`ACTIVE_WARNING_EXISTS`, DMS-123).
+
+**Failure — `409 Conflict`** (UC01 E2: the scope holds no registered citizens, counted again at broadcast)
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "NO_RECIPIENTS_IN_SCOPE",
+    "message": "No registered citizens are in the selected scope"
+  }
+}
+```
+
+The alert stays `DRAFT` and no delivery record or inbox item is created. The officer changes the scope (step 5) and previews again. The preview itself never refuses an empty scope: it returns `recipientCount: 0` (12.3), and the web disables **Confirm & Broadcast**.
 
 **Failure — `400 Bad Request`** — `message` missing, empty or over 160 characters, as in 12.4.
 
 **Failure — `404 Not Found`** and **`403 Forbidden`** — see 12.8.
 
-Checked by TC-09, TC-10, TC-12–TC-14.
+Checked by TC-09, TC-10, TC-12–TC-14; E2 by TC-37 and TC-38.
 
 ### 12.7 Delivery summary — `GET /api/hazard-alerts/:id/delivery-summary`
 
@@ -2021,6 +2036,7 @@ Checked by TC-11.
 | `403` | `FORBIDDEN` | The caller isn't a `dmc_officer` or `duty_officer`. |
 | `404` | `NOT_FOUND` | The alert doesn't exist, or the id isn't valid. |
 | `409` | `INVALID_ALERT_TRANSITION` | Preview, save-message, broadcast or discard on an alert that is no longer `DRAFT`, or broadcast of a draft that was never previewed. |
+| `409` | `NO_RECIPIENTS_IN_SCOPE` | Broadcast of a draft whose scope holds no registered citizens (UC01 E2). |
 | `500` | `INTERNAL_ERROR` | Unhandled server-side failure. |
 
 ### 12.9 The delivery record
