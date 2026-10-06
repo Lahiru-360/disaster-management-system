@@ -61,9 +61,20 @@ export class HazardReportService {
    *    the submission.
    * @param {{ _id: object, homeDistrict?: object }} reporter The signed-in citizen (a User).
    * @param {{ description: string, hazardType: string, location: { latitude: number, longitude: number }, locationSource: string, photoUrl: string, clientReportId?: string }} input
-   * @returns {Promise<object>} The stored report in the contract's shape (§9.1).
+   *
+   * A3: a resend of a report the same reporter already sent (same
+   * clientReportId) returns the stored report, with created false, and
+   * nothing is stored or notified again. Two copies arriving at the same
+   * moment both pass that lookup; the unique index then refuses the second,
+   * which re-reads and returns the first.
+   * @returns {Promise<{ report: object, created: boolean }>} The report in the contract's shape (§9.1).
    */
   async submit(reporter, input) {
+    const resent = await this.#findResent(reporter, input.clientReportId);
+    if (resent) {
+      return { report: await this.#present(resent), created: false };
+    }
+
     const submittedAt = this.#clock.now();
     const location = new Coordinates(input.location);
     const id = new mongoose.Types.ObjectId();
@@ -76,23 +87,56 @@ export class HazardReportService {
     const clusterId = this.#clusterAssigner.assign(matches, id);
     const district = await this.#districtFor(location, reporter);
 
-    const doc = await this.#reportModel.create({
-      _id: id,
-      referenceNo: await this.#referenceNumbers.next(),
-      reporter: reporter._id,
-      description: input.description,
-      photoUrl: input.photoUrl,
-      hazardType: input.hazardType,
-      location: location.toGeoJSON(),
-      locationSource: input.locationSource,
-      district: district.id,
-      submittedAt,
-      clusterId,
-      clientReportId: input.clientReportId,
-    });
+    let doc;
+    try {
+      doc = await this.#reportModel.create({
+        _id: id,
+        referenceNo: await this.#referenceNumbers.next(),
+        reporter: reporter._id,
+        description: input.description,
+        photoUrl: input.photoUrl,
+        hazardType: input.hazardType,
+        location: location.toGeoJSON(),
+        locationSource: input.locationSource,
+        district: district.id,
+        submittedAt,
+        clusterId,
+        clientReportId: input.clientReportId,
+      });
+    } catch (error) {
+      const raced = HazardReportService.#isDuplicateClientReportId(error)
+        ? await this.#findResent(reporter, input.clientReportId)
+        : null;
+      if (!raced) {
+        throw HazardReportService.#clientReportIdTaken(error);
+      }
+      return { report: await this.#present(raced), created: false };
+    }
 
     await this.#notifyDutyOfficers(doc, district);
-    return this.#present(doc);
+    return { report: await this.#present(doc), created: true };
+  }
+
+  // A3: the reporter's own report with this clientReportId, if they sent one.
+  async #findResent(reporter, clientReportId) {
+    if (!clientReportId) return null;
+    return this.#reportModel.findOne({ clientReportId, reporter: reporter._id });
+  }
+
+  static #isDuplicateClientReportId(error) {
+    return error?.code === 11000 && Boolean(error.keyPattern?.clientReportId);
+  }
+
+  // The unique index refused the clientReportId but the report isn't the
+  // caller's (another device made the same UUID - vanishingly unlikely). Any
+  // other database error is passed on unchanged.
+  static #clientReportIdTaken(error) {
+    if (!HazardReportService.#isDuplicateClientReportId(error)) {
+      return error;
+    }
+    return new ApiError(400, 'VALIDATION_ERROR', 'Request validation failed.', [
+      { field: 'clientReportId', message: 'is already used - generate a new one' },
+    ]);
   }
 
   // Step 8: the district the point falls in, else the reporter's home district
