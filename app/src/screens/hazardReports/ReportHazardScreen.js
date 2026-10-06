@@ -15,6 +15,8 @@ import Screen from '../../components/ui/Screen';
 import ScreenHeader from '../../components/ui/ScreenHeader';
 import SectionLabel from '../../components/ui/SectionLabel';
 import { TABS } from '../../constants/roles';
+import { OfflineQueueFullError } from '../../store/OfflineQueue';
+import offlineReportQueue from '../../store/offlineReportQueue';
 import useAuth from '../../hooks/useAuth';
 import useConnectivity from '../../hooks/useConnectivity';
 import useCurrentLocation from '../../hooks/useCurrentLocation';
@@ -79,6 +81,10 @@ export default function ReportHazardScreen() {
 
     setSubmitting(true);
     setSubmitError(null);
+    if (!isOnline) {
+      await saveOffline();
+      return;
+    }
     try {
       const photoUrl = form.photo
         ? await uploadApi.uploadImage(form.photo, 'hazard-reports')
@@ -98,11 +104,39 @@ export default function ReportHazardScreen() {
         // E1.2: the server's field errors outline the same fields.
         setFieldErrors(hazardReportErrorsFromServer(body.errors));
         setSubmitError('Check the highlighted fields.');
+      } else if (!error?.response) {
+        // A3: the connection dropped on the way - keep the report on the phone.
+        await saveOffline();
+        return;
       } else {
         setSubmitError(
           body?.message ?? 'Your report could not be sent. Check your connection and try again.',
         );
       }
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  // A3.1: keep the report on the phone; SyncService sends it when the
+  // connection is back. The photo stays a local file until then.
+  async function saveOffline() {
+    try {
+      await offlineReportQueue.enqueue({
+        clientReportId: form.clientReportId,
+        description: form.description,
+        hazardType: form.hazardType,
+        location,
+        locationSource,
+        localPhotoUri: form.photo?.uri ?? null,
+      });
+      setSubmitted({ savedOffline: true });
+    } catch (error) {
+      setSubmitError(
+        error instanceof OfflineQueueFullError
+          ? error.message
+          : 'Your report could not be saved on this phone. Try again.',
+      );
     } finally {
       setSubmitting(false);
     }
@@ -123,6 +157,7 @@ export default function ReportHazardScreen() {
         <ScreenHeader title="Report a Hazard" />
         <SubmittedState
           referenceNo={submitted.referenceNo}
+          savedOffline={Boolean(submitted.savedOffline)}
           onViewReports={() => navigation.navigate(TABS.MY_REPORTS)}
           onReportAnother={reportAnother}
         />
