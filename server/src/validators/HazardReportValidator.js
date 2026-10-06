@@ -2,6 +2,7 @@ import Joi from 'joi';
 import { isInsideSriLanka } from '../constants/geo.js';
 import { LocationSource } from '../enums/LocationSource.js';
 import { ReportHazardType } from '../enums/ReportHazardType.js';
+import { ReportStatus } from '../enums/ReportStatus.js';
 
 // Request schemas for the /api/hazard-reports endpoints (contract §9).
 //
@@ -85,5 +86,17 @@ export class HazardReportValidator {
       'string.base': 'must be a UUID v4',
       'string.guid': 'must be a UUID v4',
     }),
+  });
+
+  // GET /api/hazard-reports?status=PENDING (§9.4). Only the pending queue
+  // exists for now, so PENDING is the one accepted value.
+  static queueQuery = Joi.object({
+    status: Joi.any()
+      .valid(ReportStatus.PENDING)
+      .required()
+      .messages({
+        'any.required': 'is required',
+        ...HazardReportValidator.#oneOf([ReportStatus.PENDING]),
+      }),
   });
 }
