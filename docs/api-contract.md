@@ -2,7 +2,7 @@
 
 **Purpose:** the single source of truth for how every endpoint in this project looks — the shape of a request, the shape of a response, and what each status code means here. Client code is written against this document, not against whichever server behavior happens to exist yet. If a real endpoint disagrees with this document, the endpoint is wrong.
 
-This contract covers the auth (§5), upload (§6), areas (§7), hazard events (§8), hazard reports (§9), organisations (§10), notifications (§11), hazard alerts (§12) and coordination (§13) endpoints in full, **frozen at `contract-freeze-1`** (DMS-112). Post-event reports (§14) follow in their own PR. New endpoints are added under these same conventions — they get their own sections when specified, not their own rules — and a frozen endpoint changes only as §15 describes.
+This contract covers the auth (§5), upload (§6), areas (§7), hazard events (§8), hazard reports (§9), organisations (§10), notifications (§11), hazard alerts (§12) and coordination (§13) endpoints in full, **frozen at `contract-freeze-1`** (DMS-112). Post-event reports (§14) are a draft, pending sign-off from the owners of the data they read. New endpoints are added under these same conventions — they get their own sections when specified, not their own rules — and a frozen endpoint changes only as §15 describes.
 
 ---
 
@@ -122,6 +122,8 @@ Every error response — regardless of cause — returns the same outer shape:
 | `TEAM_NOT_AVAILABLE` | Dispatching or assigning a rescue team that isn't `AVAILABLE`, e.g. another officer dispatched it first (§13.7.2, §13.9.2). Always `409`. |
 | `INVALID_DISPATCH_TRANSITION` | A dispatch action its current status doesn't allow, e.g. completing an `ASSIGNED` dispatch or acknowledging after the deadline (§13.2). Always `409`. |
 | `INVALID_TEAM_TRANSITION` | Marking a rescue team available while it is `DISPATCHED` or `ON_SITE` (§13.10.1). Always `409`. |
+| `EVENT_NOT_CLOSED` | Generating a post-event report for a hazard event that isn't `CLOSED` (§14.3). Always `409`; the message names the current status. |
+| `NO_DATA_FOR_SELECTION` | Generating a post-event report whose every requested section has no records for the range and districts (UC04 E2, §14.3). Always `404`; nothing is stored. |
 
 New codes may be added for new resources; existing codes are never repurposed for a different meaning.
 
@@ -3081,11 +3083,434 @@ A failed notification never fails the request that triggered it.
 
 ## 14. Post-event reports endpoints
 
-Reserved for UC04 Generate Post-Event Analysis Report (DMS-153). The section, with its **Analytics data** subsection, follows in its own PR, approved by the owners of the data it reads. It reads only these frozen shapes:
+UC04 Generate Post-Event Analysis Report. After a hazard event is **closed**, a DMC officer generates a statistical report for it with four sections: the alert timeline, citizens reached, shelter occupancy over time and resource distribution. Days with no records are flagged as **incomplete data** instead of being left out. This section covers generating a report and reading it back (UC04 main flow steps 1–11, DMS-153, with E1 and E2). Exporting (DMS-154), sharing (DMS-155) and filtering (DMS-156) add their own subsections.
 
-- Hazard alerts: the alert object (§12.1) and the delivery record (§12.9).
-- Coordination: the occupancy record (§13.4.2) and the distribution record (§13.11.2).
-- Hazard events (§8) and organisations (§10).
+**Status: draft (DMS-153.1).** The Analytics data subsection (14.7) needs sign-off from the owners of the data it reads: Anupa for hazard alerts and delivery records, Lahiru for occupancy and distribution records.
+
+Every endpoint requires `Authorization: Bearer <accessToken>` and admits `dmc_officer` and `duty_officer` (a duty officer is a DMC officer). Every other role is `403 FORBIDDEN`. Reports are shared work: any admitted officer can open any report, not only the one who generated it.
+
+**Read-only.** Generating a report never writes to the data it reads. The only record it stores is the report itself.
+
+### 14.1 Days and dates
+
+A report covers whole **days in Sri Lanka time** (Asia/Colombo, UTC+05:30, no daylight saving), because that is when officers on the ground saw them.
+
+- `from` and `to` are calendar dates, `YYYY-MM-DD`, and both are **inclusive**: `from = to` is a one-day report.
+- A record belongs to the day its timestamp falls on in Sri Lanka time. For example, `2026-06-14T20:00:00.000Z` is 15 Jun at 01:30 in Sri Lanka, so it counts on 15 Jun.
+- An event's period is the Sri Lanka calendar dates of its `startDate` and `endDate` (§8). The Kelani basin floods event, `2026-06-08T00:00:00.000Z` to `2026-06-20T00:00:00.000Z`, runs 8–20 Jun.
+
+Every daily series in a report lists **every** day of the range, in order. A day with no records shows as `null`, never as `0`, so a missing day can't be mistaken for a quiet one.
+
+### 14.2 The report object
+
+`POST /api/post-event-reports` (14.3) and `GET /api/post-event-reports/:id` (14.4) return this shape. The example is the Kelani basin floods event with every section requested; the section results are cut down to a few rows.
+
+```json
+{
+  "id": "66fc4a1b2c3d4e5f6a7b9e01",
+  "event": {
+    "id": "66f7c1a2b3c4d5e6f7a8b9c2",
+    "name": "Kelani basin floods",
+    "hazardType": "FLOOD",
+    "startDate": "2026-06-08T00:00:00.000Z",
+    "endDate": "2026-06-20T00:00:00.000Z"
+  },
+  "generatedBy": { "id": "64f1a2b3c4d5e6f7a8b9c0d5", "name": "Kasun Silva" },
+  "generatedAt": "2026-10-06T09:00:00.000Z",
+  "dateFrom": "2026-06-08",
+  "dateTo": "2026-06-20",
+  "districts": [
+    { "id": "66f7c1a2b3c4d5e6f7a8b901", "name": "Colombo" },
+    { "id": "66f7c1a2b3c4d5e6f7a8b902", "name": "Gampaha" },
+    { "id": "66f7c1a2b3c4d5e6f7a8b903", "name": "Kalutara" }
+  ],
+  "filters": { "hazardType": null, "districtId": null, "organisationId": null },
+  "summary": {
+    "alertsIssued": 14,
+    "citizensReached": 128400,
+    "citizensTargeted": 136600,
+    "reachedRate": 0.93997,
+    "peakOccupancy": 4120,
+    "peakOccupancyDate": "2026-06-12",
+    "itemsDistributed": 18650
+  },
+  "hasGaps": true,
+  "gaps": [
+    {
+      "section": "occupancyOverTime",
+      "from": "2026-06-14",
+      "to": "2026-06-15",
+      "reason": "No occupancy records"
+    }
+  ],
+  "sections": [
+    { "key": "alertTimeline", "result": { "...": "see below" } },
+    { "key": "citizensReached", "result": { "...": "see below" } },
+    { "key": "occupancyOverTime", "result": { "...": "see below" } },
+    { "key": "resourceDistribution", "result": { "...": "see below" } }
+  ],
+  "createdAt": "2026-10-06T09:00:00.000Z"
+}
+```
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | string | The report's id. |
+| `event` | `{ id, name, hazardType, startDate, endDate }` | The `CLOSED` hazard event (§8) the report is about. |
+| `generatedBy`, `generatedAt` | `{ id, name }` / ISO 8601 string | The officer who generated it, and when. |
+| `dateFrom`, `dateTo` | `YYYY-MM-DD` | The range the report covers, inclusive (14.1). |
+| `districts` | `[{ id, name }]` | The districts the report covers, in the event's order. |
+| `filters` | object | The A1 filters the report was compiled with (DMS-156). All `null` for a report generated here. |
+| `summary` | object | The summary figures at the top of the report view, below. A figure whose section wasn't requested is `null`. |
+| `hasGaps` | boolean | `true` when `gaps` isn't empty. The report view then shows the incomplete-data banner, e.g. "(!) 14–15 Jun: incomplete data – figures partial, not omitted". |
+| `gaps` | `[{ section, from, to, reason }]` | Every gap in every section, by section, then oldest first. `from` and `to` are inclusive `YYYY-MM-DD` dates. |
+| `sections` | `[{ key, result }]` | The requested sections, always in the order below. |
+| `createdAt` | ISO 8601 string | When the report was stored. The same as `generatedAt`. |
+
+**Summary figures.** Each figure comes from its section's result, so the two always agree.
+
+| Field | Meaning |
+|---|---|
+| `alertsIssued` | The number of alerts in the alert timeline. |
+| `citizensReached` | Distinct citizens with at least one `DELIVERED` delivery record (citizens reached). |
+| `citizensTargeted` | Distinct citizens with any delivery record that left the queue (citizens reached). |
+| `reachedRate` | `citizensReached / citizensTargeted`, unrounded, e.g. `0.93997`; the view shows it as "94%". `null` when `citizensTargeted` is `0`. |
+| `peakOccupancy`, `peakOccupancyDate` | The highest daily total in occupancy over time, and the day it happened. A day's total is the sum of the selected districts' daily peaks that day. `null` when every day is a gap. If two days tie, the earlier one is given. |
+| `itemsDistributed` | The total `quantity` in resource distribution, summed across every supply type. |
+
+**Gaps.** In each section, every day of the range with **no records at all**, in any selected district, is a gap. Consecutive gap days are merged into one range. The `reason` names the data that is missing:
+
+| `section` | `reason` |
+|---|---|
+| `alertTimeline` | `No alert records` |
+| `citizensReached` | `No delivery records` |
+| `occupancyOverTime` | `No occupancy records` |
+| `resourceDistribution` | `No distribution records` |
+
+A gap day stays in its section's daily series as `null`; it isn't dropped. If **every** requested section is empty, no report is generated (E2, 14.3).
+
+#### Section `alertTimeline`
+
+UC04 step 6. Every alert issued for the event, as one entry per status change: issued, each update and the all-clear.
+
+```json
+{
+  "alerts": 14,
+  "entries": [
+    {
+      "at": "2026-06-08T03:10:00.000Z",
+      "date": "2026-06-08",
+      "alert": { "id": "66fb2c3d4e5f6a7b8c9d0e11", "referenceNo": "HA-1003" },
+      "status": "BROADCAST",
+      "version": 1,
+      "hazardType": "FLOOD",
+      "severity": "HIGH",
+      "areas": [{ "kind": "RiverBasin", "id": "66f7c1a2b3c4d5e6f7a8b9a1", "name": "Kelani" }]
+    },
+    {
+      "at": "2026-06-10T11:45:00.000Z",
+      "date": "2026-06-10",
+      "alert": { "id": "66fb2c3d4e5f6a7b8c9d0e11", "referenceNo": "HA-1003" },
+      "status": "UPDATED",
+      "version": 2,
+      "hazardType": "FLOOD",
+      "severity": "SEVERE",
+      "areas": [
+        { "kind": "RiverBasin", "id": "66f7c1a2b3c4d5e6f7a8b9a1", "name": "Kelani" },
+        { "kind": "District", "id": "66f7c1a2b3c4d5e6f7a8b903", "name": "Kalutara" }
+      ]
+    }
+  ],
+  "days": [
+    { "date": "2026-06-08", "entries": 3 },
+    { "date": "2026-06-09", "entries": null }
+  ]
+}
+```
+
+- **Which alerts.** An alert is included when it has been issued (it isn't `DRAFT`), its scope covers at least one selected district (a river basin covers every district it spans, §7.2), and it is linked to this event or to no event. An alert linked to a different event is left out. It also needs at least one entry inside the range.
+- **Entries.** One per `statusHistory` entry inside the range, except `DRAFT`, oldest first. `status` is `BROADCAST` (issued), `UPDATED` (an update, with its new `version`) or `CANCELLED` (the all-clear).
+- **Severity and areas** are the ones the alert had at that entry. They come from the history entry's `severity` and `targets` (requested in 14.7). An entry without them shows the alert's current values.
+- `alerts` is the number of distinct alerts in `entries`. `days[].entries` counts the entries on that day, or `null` when there are none (a gap).
+
+#### Section `citizensReached`
+
+UC04 step 7. How many citizens the event's alerts reached, and how well each channel delivered.
+
+```json
+{
+  "citizensReached": 128400,
+  "citizensTargeted": 136600,
+  "reachedRate": 0.93997,
+  "perChannel": [
+    { "channel": "PUSH", "attempted": 136600, "delivered": 121010, "failed": 15590, "deliveryRate": 0.88587 },
+    { "channel": "SMS", "attempted": 136600, "delivered": 127900, "failed": 8700, "deliveryRate": 0.93631 },
+    { "channel": "AUDIBLE", "attempted": 52000, "delivered": 50440, "failed": 1560, "deliveryRate": 0.97 }
+  ],
+  "perAlert": [
+    {
+      "alert": { "id": "66fb2c3d4e5f6a7b8c9d0e11", "referenceNo": "HA-1003" },
+      "citizensReached": 48080,
+      "perChannel": [
+        { "channel": "PUSH", "attempted": 48200, "delivered": 44910 },
+        { "channel": "SMS", "attempted": 48200, "delivered": 47960 },
+        { "channel": "AUDIBLE", "attempted": 48200, "delivered": 48080 }
+      ]
+    }
+  ],
+  "days": [
+    { "date": "2026-06-08", "attempted": 144600, "delivered": 140950 },
+    { "date": "2026-06-09", "attempted": null, "delivered": null }
+  ]
+}
+```
+
+- **Which deliveries.** The delivery records (§12.9) of the alerts in the alert timeline, every version and kind, that **left the queue** (`SENT`, `DELIVERED` or `FAILED`: the same "sent" as §12.7) with `sentAt` inside the range. The alert timeline's inclusion rule applies even when that section wasn't requested.
+- `citizensReached` counts distinct citizens with at least one `DELIVERED` record. **A citizen reached on two channels, or by two alerts, counts once.** A citizen whose records all `FAILED` isn't counted.
+- `citizensTargeted` counts distinct citizens with any of these records, and `reachedRate` is `citizensReached / citizensTargeted`.
+- `perChannel` always has all three channels, in this order, even when a count is `0`. `deliveryRate` is `delivered / attempted`, unrounded, or `null` when `attempted` is `0`.
+- `perAlert` has one row per alert in the timeline order, with its own distinct `citizensReached`.
+- `days` counts the records by the day of their `sentAt`.
+
+#### Section `occupancyOverTime`
+
+UC04 step 8. How full each district's shelters got, as a daily peak.
+
+```json
+{
+  "districts": [
+    {
+      "district": { "id": "66f7c1a2b3c4d5e6f7a8b902", "name": "Gampaha" },
+      "days": [
+        { "date": "2026-06-12", "peak": 1850 },
+        { "date": "2026-06-14", "peak": null }
+      ],
+      "peak": { "value": 1850, "date": "2026-06-12" }
+    }
+  ]
+}
+```
+
+- **The daily peak.** At each occupancy record's `recordedAt`, a district's occupancy is the sum, across its shelters, of each shelter's **latest** `occupants` at that moment. A record from before `from` gives a shelter's starting value. A day's `peak` is the **highest** of those sums that day, not the last one. TC-10 and TC-11 check this.
+- A district with no occupancy records on a day has `peak: null` that day. Values aren't carried over into a day with no records.
+- `districts` follows the report's `districts` order. Each district's `peak` is its highest day, or `null` when it has no records in the range.
+
+#### Section `resourceDistribution`
+
+UC04 step 9. Where relief supplies went, and whose they were.
+
+```json
+{
+  "rows": [
+    {
+      "district": { "id": "66f7c1a2b3c4d5e6f7a8b902", "name": "Gampaha" },
+      "supplyType": "WATER",
+      "organisation": { "id": "66f7c1a2b3c4d5e6f7a8b9d4", "name": "Red Cross Sri Lanka", "type": "NGO" },
+      "quantity": 4200
+    }
+  ],
+  "total": 18650,
+  "days": [
+    { "date": "2026-06-10", "quantity": 1500 },
+    { "date": "2026-06-14", "quantity": null }
+  ]
+}
+```
+
+- `rows` totals the distribution records (§13.11.2) with `distributedAt` inside the range, grouped by **district × supply type × organisation**. They're sorted by district name, then supply type in `SupplyType` order, then organisation name.
+- `quantity` is summed in each stock row's own unit, and `total` sums every row. The distribution record doesn't carry its unit, so different units are added together, as the wireframe's single "Items distributed" figure does.
+- `days` totals the quantity by the day of `distributedAt`.
+
+### 14.3 Generate a report — `POST /api/post-event-reports`
+
+UC04 main flow steps 4–11. The parameter screen lists only `CLOSED` events (`GET /api/hazard-events?status=CLOSED`, §8.1) and pre-fills the event's dates and districts. The officer can narrow them and untick sections, then selects **Generate report**.
+
+**Request**
+
+```json
+{
+  "eventId": "66f7c1a2b3c4d5e6f7a8b9c2",
+  "from": "2026-06-08",
+  "to": "2026-06-20",
+  "districtIds": ["66f7c1a2b3c4d5e6f7a8b901", "66f7c1a2b3c4d5e6f7a8b902", "66f7c1a2b3c4d5e6f7a8b903"],
+  "sections": ["alertTimeline", "citizensReached", "occupancyOverTime", "resourceDistribution"]
+}
+```
+
+| Field | Rule |
+|---|---|
+| `eventId` | **Required.** A hazard event id (§8). Malformed → `400` on `eventId`. Well-formed but unknown → `404 NOT_FOUND`. Not `CLOSED` → `409 EVENT_NOT_CLOSED`. |
+| `from` | **Required.** A `YYYY-MM-DD` date (14.1), not before the event's start date and not after `to`. |
+| `to` | **Required.** A `YYYY-MM-DD` date, not after the event's end date. |
+| `districtIds` | **Required.** At least one district id (§7.1), with no repeats. Every one must be a district the event affected. |
+| `sections` | **Required.** At least one of `alertTimeline`, `citizensReached`, `occupancyOverTime` and `resourceDistribution`, with no repeats. The order sent doesn't matter. |
+
+The server then:
+
+1. **Validates** the request (E1). The checks run in this order: the shapes above (`400`), the event exists (`404`), it is `CLOSED` (`409`), then the range and districts against the event (`400`). Nothing is stored when a check fails.
+2. **Compiles** each requested section in turn (steps 6–9), each against the same event, range and districts.
+3. **Marks the gaps** in every section (step 10, 14.2).
+4. **Refuses an empty report** (E2): when every requested section has no records at all, it answers `404 NO_DATA_FOR_SELECTION` and stores nothing. A report where only **some** sections are empty is generated, with those sections' days marked as gaps.
+5. **Stores** the report and returns it (step 11).
+
+**Success — `201 Created`**
+
+```json
+{
+  "success": true,
+  "data": {
+    "report": { "...": "the report object from 14.2" }
+  }
+}
+```
+
+**Failure — `400 Bad Request`** (E1: the range is outside the event period, or the start is after the end)
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "Request validation failed.",
+    "errors": [
+      { "field": "from", "message": "must not be after to" },
+      { "field": "to", "message": "must be on or before the event end date 2026-06-20" }
+    ]
+  }
+}
+```
+
+The other E1 messages are "must be on or after the event start date 2026-06-08" on `from`, "must select at least one district" or "must be a district the event affected" on `districtIds`, and "must select at least one section" on `sections`. The parameter screen highlights each field in `errors` and keeps the other inputs, so the officer resumes at step 4.
+
+**Failure — `409 Conflict`** (the event isn't `CLOSED`)
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "EVENT_NOT_CLOSED",
+    "message": "A report can only be generated for a CLOSED event – current status: ACTIVE"
+  }
+}
+```
+
+**Failure — `404 Not Found`** (E2: no records for the selection)
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "NO_DATA_FOR_SELECTION",
+    "message": "No data is available for this selection."
+  }
+}
+```
+
+The web shows the empty state "No data for this selection" and returns to event selection (step 3).
+
+**Failure — `404 NOT_FOUND`** (unknown event), **`403 Forbidden`** and **`401 Unauthorized`**: see 14.6.
+
+Checked by TC-01, TC-03–TC-18 (DMS-153), TC-35–TC-40 (E1, DMS-159) and TC-41–TC-43 (E2, DMS-160).
+
+### 14.4 Read a report — `GET /api/post-event-reports/:id`
+
+Reopens a stored report exactly as it was generated. The data isn't compiled again, so later changes to the source records don't alter it.
+
+**Request:** no body.
+
+**Success — `200 OK`**
+
+```json
+{
+  "success": true,
+  "data": {
+    "report": { "...": "the report object from 14.2" }
+  }
+}
+```
+
+**Failure — `404 Not Found`** (the report doesn't exist, or the id isn't valid), **`403 Forbidden`** and **`401 Unauthorized`**: see 14.6.
+
+### 14.5 Recent reports — `GET /api/post-event-reports?eventId=`
+
+The **Recent reports** list on the parameter screen, so the officer can reopen a report (A3, DMS-158).
+
+**Request:** no body.
+
+| Query param | Rule |
+|---|---|
+| `eventId` | **Required.** A hazard event id. Missing or malformed → `400 VALIDATION_ERROR` on `eventId`. A well-formed but unknown id returns an empty list, not an error. |
+
+**Success — `200 OK`** (newest first, by `generatedAt`; at most 20)
+
+```json
+{
+  "success": true,
+  "data": {
+    "reports": [
+      {
+        "id": "66fc4a1b2c3d4e5f6a7b9e01",
+        "event": { "id": "66f7c1a2b3c4d5e6f7a8b9c2", "name": "Kelani basin floods" },
+        "generatedBy": { "id": "64f1a2b3c4d5e6f7a8b9c0d5", "name": "Kasun Silva" },
+        "generatedAt": "2026-10-06T09:00:00.000Z",
+        "dateFrom": "2026-06-08",
+        "dateTo": "2026-06-20",
+        "districts": [
+          { "id": "66f7c1a2b3c4d5e6f7a8b901", "name": "Colombo" },
+          { "id": "66f7c1a2b3c4d5e6f7a8b902", "name": "Gampaha" },
+          { "id": "66f7c1a2b3c4d5e6f7a8b903", "name": "Kalutara" }
+        ],
+        "filters": { "hazardType": null, "districtId": null, "organisationId": null },
+        "hasGaps": true
+      }
+    ]
+  }
+}
+```
+
+Each row is the report object from 14.2 without `summary`, `gaps`, `sections` and `createdAt`; open the report (14.4) for those.
+
+**Failure — `400 Bad Request`**, **`403 Forbidden`** and **`401 Unauthorized`**: see 14.6.
+
+### 14.6 Error codes for these endpoints
+
+| Status | Code | When |
+|---|---|---|
+| `400` | `VALIDATION_ERROR` | A body field or query param failed its rule, including the E1 checks against the event (14.3). Carries `errors`, one entry per field. |
+| `401` | `AUTH_HEADER_MISSING` | No `Authorization` header. |
+| `401` | `AUTH_HEADER_MALFORMED` | Header present but not `Bearer <token>`. |
+| `401` | `TOKEN_EXPIRED` | Access token expired. |
+| `401` | `TOKEN_INVALID` | Access token invalid, or its user no longer exists or has been deactivated. |
+| `403` | `FORBIDDEN` | The caller isn't a `dmc_officer` or `duty_officer`. |
+| `404` | `NOT_FOUND` | The event (14.3) or the report (14.4) doesn't exist, or the report id isn't valid. |
+| `404` | `NO_DATA_FOR_SELECTION` | Every requested section is empty for the range and districts (E2, 14.3). Nothing is stored. |
+| `409` | `EVENT_NOT_CLOSED` | Generating a report for an event that isn't `CLOSED` (14.3). |
+| `500` | `INTERNAL_ERROR` | Unhandled server-side failure. |
+
+### 14.7 Analytics data
+
+Post-event reports read other use cases' records **directly**: the delivery, occupancy and distribution records have no endpoint of their own. These are the only fields read, and they are read only, never written. Changing any of them is a change to this section too, and follows §15 with the UC04 owner as a consumer.
+
+**Sign-off:** pending from Anupa (hazard alerts and delivery records) and Lahiru (occupancy and distribution records).
+
+| Source | Owner | Fields read | Used for |
+|---|---|---|---|
+| Hazard event (§8) | Sayuni | `id`, `name`, `hazardType`, `status`, `startDate`, `endDate`, `districts` | The event list, the period and the districts (14.3). |
+| District (§7.1) | Anupa | `id`, `name`; a river basin's districts (§7.2) | Names, and which districts an alert's scope covers. |
+| Organisation (§10) | Sayuni | `id`, `name`, `type` | Resource distribution rows. |
+| Hazard alert (§12.1) | Anupa | `id`, `referenceNo`, `hazardType`, `severity`, `status`, `targets`, `event`, `statusHistory[].status`, `statusHistory[].version`, `statusHistory[].at` | The alert timeline, and which alerts' deliveries count. |
+| Delivery record (§12.9) | Anupa | `alert`, `citizen`, `channel`, `status`, `sentAt` | Citizens reached. Relies on the `{ alert, status }` index. |
+| Occupancy record (§13.4.2) | Lahiru | `shelter`, `district`, `occupants`, `recordedAt` | Occupancy over time. Relies on the `{ district, recordedAt }` index. |
+| Distribution record (§13.11.2) | Lahiru | `district`, `supplyType`, `organisation`, `quantity`, `distributedAt` | Resource distribution. Relies on the `{ district, distributedAt }` index. |
+
+**Requested addition to §12.1 (needs Anupa's approval).** The timeline shows each update "with its version and new severity", but a `statusHistory` entry records only `{ status, version, at, by }`, and the alert keeps only its current severity and scope. Two fields are requested on every non-`DRAFT` history entry:
+
+| Field | Type | Notes |
+|---|---|---|
+| `statusHistory[].severity` | `SeverityLevel` | The alert's severity after this change. |
+| `statusHistory[].targets` | `[{ kind, area }]` | The alert's scope after this change, as stored on the alert. |
+
+Until they exist, every timeline entry shows the alert's current severity and areas (14.2).
 
 ---
 
