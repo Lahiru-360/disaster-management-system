@@ -34,9 +34,24 @@ async function getById(id) {
   return response.data.data;
 }
 
+// Steps 11-14: broadcasts the DRAFT with the message the officer confirmed;
+// resolves with { alert, summary }.
+async function broadcast(id, message) {
+  const response = await client.post(`/hazard-alerts/${id}/broadcast`, { message });
+  return response.data.data;
+}
+
+// Step 14: the per-channel counts; resolves with { alert, summary }.
+async function getDeliverySummary(id) {
+  const response = await client.get(`/hazard-alerts/${id}/delivery-summary`);
+  return response.data.data;
+}
+
 export default {
   startDraft,
   preview,
   saveDraftMessage,
   getById,
+  broadcast,
+  getDeliverySummary,
 };

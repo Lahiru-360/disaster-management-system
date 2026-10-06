@@ -2,14 +2,16 @@
 // same shapes the real client hands back and rejects with axios-shaped
 // errors, so swapping in the real client changes no calling code. It applies
 // the server's own rules - the 160-character message, unknown areas (E1),
-// DRAFT-only edits - so the screen meets the same errors, counts citizens per
-// district from ./areaFixtures.js (each once, even through a basin), and
-// generates the server's messages. Escalating a report (A1) reads it from the
-// ground reports mock, so a report confirmed there can be escalated here, and
-// anything else is refused as the server does. `mockControls.failNext` fakes
-// the failures that can't be typed in.
+// DRAFT-only edits and broadcasts - so the screen meets the same errors,
+// counts citizens per district from ./areaFixtures.js (each once, even through
+// a basin), and generates the server's messages. A broadcast delivers on every
+// channel, as the server does with its demo failure rates at 0. Escalating a
+// report (A1) reads it from the ground reports mock, so a report confirmed
+// there can be escalated here, and anything else is refused as the server does.
+// `mockControls.failNext` fakes the failures that can't be typed in.
 //
-// Alerts live in this module's memory, so reloading the page forgets them.
+// Alerts and their deliveries live in this module's memory, so reloading the
+// page forgets them.
 
 import { DEMO_USERS } from '../../constants/demoUsers';
 import { ROLES } from '../../constants/roles';
@@ -64,6 +66,8 @@ const OFFICER = {
 };
 
 const alerts = new Map();
+// Alert id -> how many citizens its broadcast went to.
+const recipients = new Map();
 let nextReference = 1043;
 let nextId = 1;
 let pendingFailure = null;
@@ -127,6 +131,38 @@ function requireDraft(alert, action) {
 }
 
 const copy = (alert) => JSON.parse(JSON.stringify(alert));
+
+function validateMessage(message) {
+  const text = typeof message === 'string' ? message.trim() : '';
+  if (text.length === 0) throw validationError([{ field: 'message', message: 'is required' }]);
+  if (text.length > MESSAGE_MAX_LENGTH) {
+    throw validationError([
+      {
+        field: 'message',
+        message: `length must be less than or equal to ${MESSAGE_MAX_LENGTH} characters long`,
+      },
+    ]);
+  }
+  return text;
+}
+
+// The server's delivery summary: every delivery of a broadcast ends DELIVERED.
+function summaryFor(alert) {
+  const count = recipients.get(alert.id) ?? 0;
+  const perChannel = CHANNELS.map((channel) => ({
+    channel,
+    sent: count,
+    delivered: count,
+    failed: 0,
+  }));
+  return {
+    version: alert.version,
+    perChannel,
+    totals: { sent: count * CHANNELS.length, delivered: count * CHANNELS.length, failed: 0 },
+    fallback: { channel: 'SMS', resent: 0 },
+    unreachedCount: 0,
+  };
+}
 
 function generateMessage(hazardType, severity) {
   const urgent = severity === 'HIGH' || severity === 'SEVERE';
@@ -235,16 +271,7 @@ async function saveDraftMessage(id, message) {
   takeFailure();
   const alert = findAlert(id);
 
-  const text = typeof message === 'string' ? message.trim() : '';
-  if (text.length === 0) throw validationError([{ field: 'message', message: 'is required' }]);
-  if (text.length > MESSAGE_MAX_LENGTH) {
-    throw validationError([
-      {
-        field: 'message',
-        message: `length must be less than or equal to ${MESSAGE_MAX_LENGTH} characters long`,
-      },
-    ]);
-  }
+  const text = validateMessage(message);
   requireDraft(alert, 'edited');
 
   alert.message = text;
@@ -256,6 +283,41 @@ async function getById(id) {
   await delay();
   takeFailure();
   return { alert: copy(findAlert(id)) };
+}
+
+async function broadcast(id, message) {
+  await delay();
+  takeFailure();
+  const alert = findAlert(id);
+
+  const text = validateMessage(message);
+  requireDraft(alert, 'broadcast');
+  if (!alert.hazardType || !alert.severity || alert.targets.length === 0) {
+    throw apiError(409, 'INVALID_ALERT_TRANSITION', 'Preview the warning before broadcasting it');
+  }
+
+  // Counted again, as the server does, in case the preview is stale.
+  const areas = alert.targets.map(({ id: areaId }) => findArea(areaId));
+  recipients.set(alert.id, citizensIn(expandToDistrictIds(areas)));
+
+  const now = new Date().toISOString();
+  Object.assign(alert, {
+    message: text,
+    status: 'BROADCAST',
+    issuedBy: OFFICER,
+    issuedAt: now,
+    updatedAt: now,
+  });
+  alert.statusHistory.push({ status: 'BROADCAST', version: alert.version, at: now, by: OFFICER });
+
+  return { alert: copy(alert), summary: summaryFor(alert) };
+}
+
+async function getDeliverySummary(id) {
+  await delay();
+  takeFailure();
+  const alert = findAlert(id);
+  return { alert: copy(alert), summary: summaryFor(alert) };
 }
 
 /**
@@ -274,4 +336,6 @@ export default {
   preview,
   saveDraftMessage,
   getById,
+  broadcast,
+  getDeliverySummary,
 };

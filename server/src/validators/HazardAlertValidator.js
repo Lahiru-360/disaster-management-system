@@ -35,7 +35,8 @@ export class HazardAlertValidator {
 
   // POST /api/hazard-alerts/:id/preview (§12.3). Whether each area id is a
   // registered district or basin is the service's check (E1), so a malformed
-  // id is reported with the unknown ones, on areaIds.
+  // id is reported with the unknown ones, on areaIds. Anything but text in the
+  // list is refused here, on areaIds as a whole.
   static previewSchema = Joi.object({
     hazardType: Joi.any()
       .valid(...Object.values(AlertHazardType))
@@ -51,13 +52,23 @@ export class HazardAlertValidator {
         'any.required': 'is required',
         ...HazardAlertValidator.#oneOf(Object.values(SeverityLevel)),
       }),
-    areaIds: Joi.array().items(Joi.any()).min(1).required().messages({
-      'any.required': 'is required',
-      'array.base': 'must be a list of area ids',
-      'array.min': 'must contain at least {#limit} items',
-    }),
+    areaIds: Joi.array()
+      .min(1)
+      .required()
+      .custom((ids, helpers) =>
+        ids.every((id) => typeof id === 'string') ? ids : helpers.error('array.base'),
+      )
+      .messages({
+        'any.required': 'is required',
+        'array.base': 'must be a list of area ids',
+        'array.min': 'must contain at least {#limit} items',
+      }),
   });
 
   // PATCH /api/hazard-alerts/:id/draft (§12.4).
   static draftMessageSchema = Joi.object({ message: HazardAlertValidator.#message });
+
+  // POST /api/hazard-alerts/:id/broadcast (§12.6): the text as the officer last
+  // saw it in the confirmation dialog.
+  static broadcastSchema = Joi.object({ message: HazardAlertValidator.#message });
 }

@@ -39,21 +39,33 @@ export class MessageTemplate {
   static #URGENT = [SeverityLevel.HIGH, SeverityLevel.SEVERE];
 
   /**
+   * The short heading for a warning, e.g. "Flood Warning: SEVERE": the inbox
+   * item's title on the citizen's phone.
+   * @param {string} hazardType An AlertHazardType.
+   * @param {string} severity A SeverityLevel.
+   * @returns {string}
+   */
+  static title(hazardType, severity) {
+    const label = MessageTemplate.#LABELS[hazardType];
+    if (!label) {
+      throw new Error(`MessageTemplate: unknown hazard type "${hazardType}"`);
+    }
+    return `${label} Warning: ${severity}`;
+  }
+
+  /**
    * The message for a hazard type and severity, at most 160 characters.
    * @param {string} hazardType An AlertHazardType.
    * @param {string} severity A SeverityLevel.
    * @returns {string}
    */
   static generate(hazardType, severity) {
-    const label = MessageTemplate.#LABELS[hazardType];
-    if (!label) {
-      throw new Error(`MessageTemplate: unknown hazard type "${hazardType}"`);
-    }
     if (!Object.values(SeverityLevel).includes(severity)) {
       throw new Error(`MessageTemplate: unknown severity "${severity}"`);
     }
+    const heading = MessageTemplate.title(hazardType, severity);
     const advice = MessageTemplate.#ADVICE[hazardType];
     const action = MessageTemplate.#URGENT.includes(severity) ? advice.urgent : advice.watch;
-    return `${label} Warning: ${severity}. ${action}`;
+    return `${heading}. ${action}`;
   }
 }
