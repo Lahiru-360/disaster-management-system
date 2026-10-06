@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import { HazardAlert } from '../../../src/models/HazardAlert.js';
 import { HazardEvent } from '../../../src/models/HazardEvent.js';
+import { Notification } from '../../../src/models/Notification.js';
 import { UserNotification } from '../../../src/models/UserNotification.js';
 import { Role } from '../../../src/enums/Role.js';
 import { WarningService, warningService } from '../../../src/services/WarningService.js';
@@ -359,9 +360,7 @@ describe('WarningService', () => {
     await service.saveDraftMessage(id, 'Edited.');
 
     expect(await UserNotification.countDocuments()).toBe(0);
-    expect(
-      await mongoose.connection.db.listCollections({ name: 'notifications' }).toArray(),
-    ).toEqual([]);
+    expect(await Notification.countDocuments()).toBe(0);
   });
 
   it('DMS-120: the shared default instance uses the real collaborators', async () => {
