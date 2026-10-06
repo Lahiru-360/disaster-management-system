@@ -311,6 +311,27 @@ describe('Updating an active warning (UC01 A2)', () => {
       expect(await HazardAlert.findById(other).lean()).toMatchObject({ status: 'BROADCAST' });
     });
 
+    it('A2: an unexpected failure discarding the replaced draft is not hidden', async () => {
+      class FailingWarnings extends WarningService {
+        async discardDraft() {
+          throw new Error('connection lost');
+        }
+      }
+      await citizensIn(areas.colombo, 1);
+      const id = await activeWarning();
+      const newDraft = await previewedDraft();
+      const failing = new BroadcastService({ clock, warnings: new FailingWarnings({ clock }) });
+
+      await expect(
+        failing.update(id, officer, {
+          severity: 'SEVERE',
+          message: UPDATE_MESSAGE,
+          replacesDraftId: newDraft,
+        }),
+      ).rejects.toThrow('connection lost');
+      expect(await HazardAlert.findById(id).lean()).toMatchObject({ status: 'UPDATED' });
+    });
+
     it('A2: an update that changes nothing is 400 and sends nothing', async () => {
       await citizensIn(areas.colombo, 1);
       const id = await activeWarning();
