@@ -39,7 +39,8 @@ const targetOf = (target) => {
 // tests can fix it.
 export class HazardAlert {
   static #MESSAGE_MAX_LENGTH = 160;
-  static #ACTIVE = [AlertStatus.BROADCAST, AlertStatus.UPDATED];
+  /** The statuses in which a warning is in force: BROADCAST and UPDATED. */
+  static ACTIVE_STATUSES = Object.freeze([AlertStatus.BROADCAST, AlertStatus.UPDATED]);
 
   #id;
   #referenceNo;
@@ -212,7 +213,7 @@ export class HazardAlert {
 
   /** True while the warning is in force: BROADCAST or UPDATED. */
   isActive() {
-    return HazardAlert.#ACTIVE.includes(this.#status);
+    return HazardAlert.ACTIVE_STATUSES.includes(this.#status);
   }
 
   #requireDraft(action) {
