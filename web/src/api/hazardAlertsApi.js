@@ -39,6 +39,18 @@ async function broadcast(id, message) {
   return response.data.data;
 }
 
+// A4: every DRAFT, most recently changed first; resolves with { alerts }.
+async function listDrafts() {
+  const response = await client.get('/hazard-alerts', { params: { status: 'draft' } });
+  return response.data.data;
+}
+
+// A4: throws a DRAFT away, nothing sent; resolves with { alert } as it was.
+async function discardDraft(id) {
+  const response = await client.delete(`/hazard-alerts/${id}`);
+  return response.data.data;
+}
+
 // Step 14: the per-channel counts; resolves with { alert, summary }.
 async function getDeliverySummary(id) {
   const response = await client.get(`/hazard-alerts/${id}/delivery-summary`);
@@ -52,4 +64,6 @@ export default {
   getById,
   broadcast,
   getDeliverySummary,
+  listDrafts,
+  discardDraft,
 };

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router';
+import { useNavigate, useSearchParams } from 'react-router';
 
 import { areasApi, hazardAlertsApi } from '../../api';
 import BroadcastPreview from '../../components/hazardWarnings/BroadcastPreview';
@@ -11,6 +11,7 @@ import ScopeSelector from '../../components/hazardWarnings/ScopeSelector';
 import SeverityPicker from '../../components/hazardWarnings/SeverityPicker';
 import Button from '../../components/ui/Button';
 import Card from '../../components/ui/Card';
+import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import Loader from '../../components/ui/Loader';
 import Notice from '../../components/ui/Notice';
 import Screen from '../../components/ui/Screen';
@@ -36,9 +37,15 @@ const fieldError = (error, field) =>
 // right, where the officer can edit it (step 8). Confirm & Broadcast opens the
 // confirmation dialog (steps 9-10); Broadcast now sends it (steps 11-13) and
 // moves on to the delivery summary (step 14).
+//
+// A4: Back in the dialog only closes it, so every input stays. Cancel offers
+// to discard the draft; leaving any other way keeps it, and the Drafts list
+// reopens it here with ?draftId=.
 export default function IssueWarningScreen() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const draftId = searchParams.get('draftId');
   const canIssue = [ROLES.DMC_OFFICER, ROLES.DUTY_OFFICER].includes(user?.role);
 
   const [alert, setAlert] = useState(null);
@@ -61,30 +68,53 @@ export default function IssueWarningScreen() {
   const [sending, setSending] = useState(false);
   const [broadcastError, setBroadcastError] = useState(null);
 
+  const [discarding, setDiscarding] = useState(false);
+  const [removing, setRemoving] = useState(false);
+
   // A remount in development must not open a second draft.
   const started = useRef(false);
   // Only the newest preview request may update the screen.
   const previewRequest = useRef(0);
+  // A resumed draft's message, which may be the officer's edit: the first
+  // preview for the same type and severity puts it back instead of the
+  // generated one.
+  const resumedMessage = useRef(null);
 
   const alertId = alert?.id;
   const complete = Boolean(hazardType && severity && areaIds.length > 0);
 
-  // Steps 1-2: open a DRAFT, and load the areas to choose from.
+  // Steps 1-2: open a DRAFT, or reopen the one being resumed (A4), and load
+  // the areas to choose from.
   useEffect(() => {
     if (!canIssue || started.current) return;
     started.current = true;
     Promise.all([
-      hazardAlertsApi.startDraft(),
+      draftId ? hazardAlertsApi.getById(draftId) : hazardAlertsApi.startDraft(),
       areasApi.listDistricts(),
       areasApi.listRiverBasins(),
     ]).then(
       ([draft, districts, riverBasins]) => {
-        setAlert(draft.alert);
+        const opened = draft.alert;
+        if (opened.status !== 'DRAFT') {
+          setLoadError(`${opened.referenceNo} is no longer a draft: it is ${opened.status}.`);
+          return;
+        }
+        setAlert(opened);
         setAreas({ districts, riverBasins });
+        setHazardType(opened.hazardType);
+        setSeverity(opened.severity);
+        setAreaIds(opened.targets.map(({ id }) => id));
+        if (opened.message) {
+          resumedMessage.current = {
+            hazardType: opened.hazardType,
+            severity: opened.severity,
+            message: opened.message,
+          };
+        }
       },
       (error) => setLoadError(errorMessage(error, 'The warning could not be opened. Try again.')),
     );
-  }, [canIssue]);
+  }, [canIssue, draftId]);
 
   // Steps 6-7: preview whenever the choices are complete and have settled.
   useEffect(() => {
@@ -98,12 +128,31 @@ export default function IssueWarningScreen() {
         .then(
           (result) => {
             if (request !== previewRequest.current) return;
+            const resumed = resumedMessage.current;
+            resumedMessage.current = null;
             setPreview(result);
             setAlert(result.alert);
             setMessage(result.message);
             setSavedMessage(result.message);
             setMessageError(null);
             setPreviewError(null);
+            if (
+              resumed &&
+              resumed.hazardType === hazardType &&
+              resumed.severity === severity &&
+              resumed.message !== result.message
+            ) {
+              // The preview wrote the generated message; save the edit back.
+              setMessage(resumed.message);
+              hazardAlertsApi.saveDraftMessage(alertId, resumed.message).then(
+                (saved) => {
+                  setAlert(saved.alert);
+                  setSavedMessage(saved.alert.message);
+                },
+                // Shown as edited, so leaving the field saves it again.
+                () => {},
+              );
+            }
           },
           (error) => {
             if (request !== previewRequest.current) return;
@@ -156,6 +205,19 @@ export default function IssueWarningScreen() {
     }
   }
 
+  // A4: throw the draft away and go back to the list. Nothing was sent.
+  async function discard() {
+    setRemoving(true);
+    try {
+      await hazardAlertsApi.discardDraft(alertId);
+      navigate('/hazard-warnings');
+    } catch (error) {
+      setRemoving(false);
+      setDiscarding(false);
+      setBroadcastError(errorMessage(error, 'The draft could not be discarded. Try again.'));
+    }
+  }
+
   if (!canIssue) {
     return (
       <Screen>
@@ -172,6 +234,11 @@ export default function IssueWarningScreen() {
         <Notice variant="error" className="mt-4">
           {loadError}
         </Notice>
+        <div className="mt-6">
+          <Button variant="outline" fullWidth={false} onClick={() => navigate('/hazard-warnings')}>
+            Back to Hazard Warnings
+          </Button>
+        </div>
       </Screen>
     );
   }
@@ -284,7 +351,14 @@ export default function IssueWarningScreen() {
         <span className="text-[14px] text-muted">Status:</span>
         <StatusBadge tone="neutral">{alert.status}</StatusBadge>
         <div className="ml-auto flex gap-3">
-          <Button variant="outline" fullWidth={false} onClick={() => navigate('/hazard-warnings')}>
+          <Button
+            variant="outline"
+            fullWidth={false}
+            onClick={() => {
+              setBroadcastError(null);
+              setDiscarding(true);
+            }}
+          >
             Cancel
           </Button>
           <Button
@@ -311,6 +385,20 @@ export default function IssueWarningScreen() {
           onBack={() => setConfirming(false)}
         />
       ) : null}
+
+      <ConfirmDialog
+        open={discarding}
+        title="Discard draft"
+        confirmLabel="Discard draft"
+        backLabel="Keep editing"
+        destructive
+        loading={removing}
+        dismissable={!removing}
+        onConfirm={discard}
+        onBack={() => setDiscarding(false)}
+      >
+        <p>Discard this draft? Nothing has been sent.</p>
+      </ConfirmDialog>
     </Screen>
   );
 }
