@@ -1622,7 +1622,7 @@ For server code, not clients. A use case never writes an inbox item itself; it c
 
 ## 12. Hazard alerts endpoints
 
-UC01 Issue Hazard Warning. An officer composes a location-specific warning, previews how many citizens it will reach and what they will read, and then broadcasts it (DMS-121). This section covers **composing** (UC01 main flow steps 1–8: start a draft, preview it, save an edited message, read an alert back) and **broadcasting** (steps 9–14: broadcast, delivery summary). Composing never sends anything, and no delivery record exists while an alert is `DRAFT`.
+UC01 Issue Hazard Warning. An officer composes a location-specific warning, previews how many citizens it will reach and what they will read, and then broadcasts it (DMS-121). This section covers **composing** (UC01 main flow steps 1–8: start a draft, preview it, save an edited message, read an alert back) **broadcasting** (steps 9–14: broadcast, delivery summary) and **backing out** (A4: list the drafts, discard one). Composing never sends anything, and no delivery record exists while an alert is `DRAFT`.
 
 Every endpoint requires `Authorization: Bearer <accessToken>` and admits `dmc_officer` and `duty_officer` (a duty officer is a DMC officer). Every other role is `403 FORBIDDEN`. Drafts are shared work: any admitted officer can open, preview and edit any draft, not only its creator.
 
@@ -2035,7 +2035,7 @@ Checked by TC-11.
 | `401` | `TOKEN_INVALID` | Access token invalid, or its user no longer exists or has been deactivated. |
 | `403` | `FORBIDDEN` | The caller isn't a `dmc_officer` or `duty_officer`. |
 | `404` | `NOT_FOUND` | The alert doesn't exist, or the id isn't valid. |
-| `409` | `INVALID_ALERT_TRANSITION` | Preview, save-message or broadcast on an alert that is no longer `DRAFT`, or broadcast of a draft that was never previewed. |
+| `409` | `INVALID_ALERT_TRANSITION` | Preview, save-message, broadcast or discard on an alert that is no longer `DRAFT`, or broadcast of a draft that was never previewed. |
 | `409` | `NO_RECIPIENTS_IN_SCOPE` | Broadcast of a draft whose scope holds no registered citizens (UC01 E2). |
 | `500` | `INTERNAL_ERROR` | Unhandled server-side failure. |
 
@@ -2057,6 +2057,99 @@ One record per recipient, channel and alert version, created by a broadcast (12.
 | `failureReason` | string or `null` | Set when `FAILED`. |
 
 Unique on `{ alert, alertVersion, citizen, channel }`; also indexed by `{ alert, status }`.
+
+### 12.11 List alerts — `GET /api/hazard-alerts?status=draft`
+
+UC01 A4. A draft the officer walked away from (the browser's Back button, a closed tab) is kept, and the **Drafts** filter on the *Hazard Warnings* page lists it so it can be resumed. Resuming reopens the draft with 12.5 and carries on with 12.3, 12.4 and 12.6.
+
+**Query**
+
+| Parameter | Rule |
+|---|---|
+| `status` | **Required.** Only `draft` is accepted for now. (DMS-124 adds `active` for the active warnings list.) |
+
+**Success — `200 OK`**
+
+```json
+{
+  "success": true,
+  "data": {
+    "alerts": [
+      {
+        "id": "66fb2c3d4e5f6a7b8c9d0e01",
+        "referenceNo": "HA-1043",
+        "hazardType": "FLOOD",
+        "severity": "SEVERE",
+        "status": "DRAFT",
+        "...": "the rest of the alert object from 12.1"
+      }
+    ]
+  }
+}
+```
+
+- Every `DRAFT`, whoever started it (drafts are shared work), most recently changed (`updatedAt`) first, without pagination.
+- A draft that was never previewed is listed too, with `hazardType`, `severity` and `message` still `null` and `targets` `[]`.
+- No drafts is `200` with `[]`.
+
+**Failure — `400 Bad Request`** (`status` missing or not `draft`)
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "Request validation failed.",
+    "errors": [{ "field": "status", "message": "must be one of [draft]" }]
+  }
+}
+```
+
+**Failure — `403 Forbidden`** — see 12.8.
+
+Checked by the A4 list tests in DMS-125.4.
+
+### 12.12 Discard a draft — `DELETE /api/hazard-alerts/:id`
+
+UC01 A4. The officer selects **Cancel** on the *Issue Hazard Warning* screen and then **Discard draft** in the confirmation ("Discard this draft? Nothing has been sent."). The draft is removed, nothing is sent, and the web returns to `/hazard-warnings`. Backing out of the broadcast confirmation with **Back** (12.6) calls nothing: the draft and every input stay as they were.
+
+**Request:** no body.
+
+**Success — `200 OK`**
+
+```json
+{
+  "success": true,
+  "data": {
+    "alert": {
+      "id": "66fb2c3d4e5f6a7b8c9d0e01",
+      "referenceNo": "HA-1043",
+      "status": "DRAFT",
+      "...": "the rest of the alert object from 12.1, as it was before it was discarded"
+    }
+  }
+}
+```
+
+The alert is deleted, not marked: afterwards 12.5 on the same id is `404`, and it no longer appears in 12.11. A draft has no delivery records (12.9), so none are created or removed. Its `HA-` reference number is not reused.
+
+**Failure — `409 Conflict`** (the alert isn't a `DRAFT`: it was broadcast, possibly by a colleague, or later updated or cancelled)
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "INVALID_ALERT_TRANSITION",
+    "message": "Only a DRAFT alert can be discarded – current status: BROADCAST"
+  }
+}
+```
+
+Nothing changes: the alert and its delivery records stay.
+
+**Failure — `404 Not Found`** (unknown or malformed id, or already discarded) and **`403 Forbidden`** — see 12.8.
+
+Checked by TC-30, TC-31.
 
 ---
 

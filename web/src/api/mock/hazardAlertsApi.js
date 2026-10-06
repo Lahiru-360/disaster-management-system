@@ -2,7 +2,7 @@
 // same shapes the real client hands back and rejects with axios-shaped
 // errors, so swapping in the real client changes no calling code. It applies
 // the server's own rules - the 160-character message, unknown areas (E1),
-// DRAFT-only edits and broadcasts - so the screen meets the same errors,
+// DRAFT-only edits, broadcasts and discards (A4) - so the screen meets the same errors,
 // counts citizens per district from ./areaFixtures.js (each once, even through
 // a basin), and generates the server's messages. A broadcast delivers on every
 // channel, as the server does with its demo failure rates at 0.
@@ -287,6 +287,24 @@ async function getDeliverySummary(id) {
   return { alert: copy(alert), summary: summaryFor(alert) };
 }
 
+async function listDrafts() {
+  await delay();
+  takeFailure();
+  const drafts = [...alerts.values()]
+    .filter(({ status }) => status === 'DRAFT')
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  return { alerts: drafts.map(copy) };
+}
+
+async function discardDraft(id) {
+  await delay();
+  takeFailure();
+  const alert = findAlert(id);
+  requireDraft(alert, 'discarded');
+  alerts.delete(id);
+  return { alert: copy(alert) };
+}
+
 /**
  * Demo and test hooks, not part of the API: `failNext('network')` makes the
  * next call fail as if offline, `failNext('server')` as a 500, and
@@ -305,4 +323,6 @@ export default {
   getById,
   broadcast,
   getDeliverySummary,
+  listDrafts,
+  discardDraft,
 };

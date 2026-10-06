@@ -15,6 +15,12 @@ export class HazardAlertRoutes extends BaseRoutes {
   registerRoutes(router) {
     const officer = [authMiddleware.requireAuth, authMiddleware.requireRole(Role.DMC_OFFICER)];
 
+    router.get(
+      '/',
+      ...officer,
+      RequestValidator.query(HazardAlertValidator.listQuery),
+      hazardAlertController.list,
+    );
     router.post(
       '/',
       ...officer,
@@ -41,6 +47,7 @@ export class HazardAlertRoutes extends BaseRoutes {
     );
     router.get('/:id/delivery-summary', ...officer, hazardAlertController.deliverySummary);
     router.get('/:id', ...officer, hazardAlertController.getById);
+    router.delete('/:id', ...officer, hazardAlertController.discardDraft);
   }
 }
 
