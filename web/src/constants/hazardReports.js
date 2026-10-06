@@ -20,6 +20,20 @@ const HAZARD_TYPE_SHORT = Object.freeze({
 const LOCATION_SOURCE_LABELS = Object.freeze({ GPS: 'GPS', MANUAL: 'Manual' });
 
 export const locationSourceLabel = (value) => LOCATION_SOURCE_LABELS[value] ?? value;
+// The four reasons a duty officer can give for dismissing a report (UC02
+// A1.1), in the dropdown's order, with the words the reporter also sees.
+export const DISMISSAL_REASONS = Object.freeze([
+  { value: 'INACCURATE', label: 'Inaccurate' },
+  { value: 'DUPLICATE', label: 'Duplicate' },
+  { value: 'NOT_A_HAZARD', label: 'Not a hazard' },
+  { value: 'INSUFFICIENT_EVIDENCE', label: 'Insufficient evidence' },
+]);
+
+export const DISMISSAL_NOTE_MAX_LENGTH = 200;
+
+export const dismissalReasonLabel = (value) =>
+  DISMISSAL_REASONS.find((reason) => reason.value === value)?.label ?? value;
+
 export const hazardTypeLabel = (value) => HAZARD_TYPE_LABELS[value] ?? value;
 export const hazardTypeShort = (value) => HAZARD_TYPE_SHORT[value] ?? value;
 

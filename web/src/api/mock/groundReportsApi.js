@@ -199,6 +199,40 @@ async function confirm(id) {
   return copy(report);
 }
 
+const REASONS = ['INACCURATE', 'DUPLICATE', 'NOT_A_HAZARD', 'INSUFFICIENT_EVIDENCE'];
+
+async function dismiss(id, { reason, note } = {}) {
+  await delay();
+  takeFailure();
+  if (!REASONS.includes(reason)) {
+    const error = apiError(400, 'VALIDATION_ERROR', 'Request validation failed.');
+    error.response.data.error.errors = [
+      {
+        field: 'reason',
+        message: reason ? `must be one of [${REASONS.join(', ')}]` : 'is required',
+      },
+    ];
+    throw error;
+  }
+  const report = findReport(id);
+  if (report.status !== 'PENDING') {
+    throw apiError(
+      409,
+      'REPORT_ALREADY_REVIEWED',
+      `Already reviewed – current status: ${report.status}`,
+    );
+  }
+  Object.assign(report, {
+    status: 'DISMISSED',
+    isEscalatable: false,
+    dismissalReason: reason,
+    dismissalNote: note?.trim() || null,
+    reviewedBy: DEMO_OFFICER,
+    reviewedAt: new Date().toISOString(),
+  });
+  return copy(report);
+}
+
 /**
  * Demo hooks, not part of the API: `failNext('network')` makes the next call
  * fail as if offline; `failNext('alreadyReviewed')` makes the next confirm
@@ -214,4 +248,5 @@ export default {
   listPending,
   getReport,
   confirm,
+  dismiss,
 };

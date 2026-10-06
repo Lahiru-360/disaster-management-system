@@ -1,5 +1,6 @@
 import Joi from 'joi';
 import { isInsideSriLanka } from '../constants/geo.js';
+import { DismissalReason } from '../enums/DismissalReason.js';
 import { LocationSource } from '../enums/LocationSource.js';
 import { ReportHazardType } from '../enums/ReportHazardType.js';
 import { ReportStatus } from '../enums/ReportStatus.js';
@@ -85,6 +86,24 @@ export class HazardReportValidator {
     clientReportId: Joi.string().guid({ version: 'uuidv4' }).messages({
       'string.base': 'must be a UUID v4',
       'string.guid': 'must be a UUID v4',
+    }),
+  });
+
+  static NOTE_MAX_LENGTH = 200;
+
+  // POST /api/hazard-reports/:id/dismiss (§9.7, UC02 A1). A blank note is the
+  // same as none.
+  static dismissSchema = Joi.object({
+    reason: Joi.any()
+      .valid(...Object.values(DismissalReason))
+      .required()
+      .messages({
+        'any.required': 'is required',
+        ...HazardReportValidator.#oneOf(Object.values(DismissalReason)),
+      }),
+    note: Joi.string().trim().max(HazardReportValidator.NOTE_MAX_LENGTH).allow('', null).messages({
+      'string.base': 'must be text',
+      'string.max': 'must be at most {#limit} characters',
     }),
   });
 

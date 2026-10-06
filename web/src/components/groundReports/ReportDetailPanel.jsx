@@ -3,10 +3,12 @@ import { useId, useState } from 'react';
 import {
   formatCoordinates,
   formatTime,
+  dismissalReasonLabel,
   hazardTypeLabel,
   locationSourceLabel,
 } from '../../constants/hazardReports';
 import Button from '../ui/Button';
+import DismissForm from './DismissForm';
 import MapView from '../ui/MapView';
 import Modal from '../ui/Modal';
 import StatusBadge from '../ui/StatusBadge';
@@ -37,9 +39,12 @@ export default function ReportDetailPanel({
   currentUserId,
   confirming = false,
   onConfirm,
+  dismissing = false,
+  onDismiss,
   actions,
 }) {
   const [photoOpen, setPhotoOpen] = useState(false);
+  const [dismissOpen, setDismissOpen] = useState(false);
   const titleId = useId();
   const { latitude, longitude } = report.location;
   const isPending = report.status === 'PENDING';
@@ -99,11 +104,27 @@ export default function ReportDetailPanel({
       </dl>
 
       {isPending ? (
-        <div className="flex gap-3">
-          <Button fullWidth={false} loading={confirming} onClick={onConfirm}>
-            Confirm
-          </Button>
-        </div>
+        dismissOpen ? (
+          <DismissForm
+            submitting={dismissing}
+            onSubmit={onDismiss}
+            onCancel={() => setDismissOpen(false)}
+          />
+        ) : (
+          <div className="flex gap-3">
+            <Button fullWidth={false} loading={confirming} onClick={onConfirm}>
+              Confirm
+            </Button>
+            <Button
+              variant="outline"
+              fullWidth={false}
+              disabled={confirming}
+              onClick={() => setDismissOpen(true)}
+            >
+              Dismiss
+            </Button>
+          </div>
+        )
       ) : (
         <div className="flex flex-col gap-3 border-t border-line pt-4">
           <p className="text-[14px] text-ink">
@@ -111,6 +132,12 @@ export default function ReportDetailPanel({
             {report.reviewedBy?.id === currentUserId ? 'you' : report.reviewedBy?.name} at{' '}
             {formatTime(report.reviewedAt)}
           </p>
+          {report.status === 'DISMISSED' ? (
+            <p className="text-[14px] text-muted">
+              Reason: {dismissalReasonLabel(report.dismissalReason)}
+              {report.dismissalNote ? ` – ${report.dismissalNote}` : ''}
+            </p>
+          ) : null}
           {actions ? <div className="flex gap-3">{actions}</div> : null}
         </div>
       )}
