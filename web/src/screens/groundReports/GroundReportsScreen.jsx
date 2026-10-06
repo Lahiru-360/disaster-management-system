@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router';
 
 import { groundReportsApi } from '../../api';
 import ReportDetailPanel from '../../components/groundReports/ReportDetailPanel';
 import ReportQueue from '../../components/groundReports/ReportQueue';
+import Button from '../../components/ui/Button';
 import EmptyState from '../../components/ui/EmptyState';
 import Loader from '../../components/ui/Loader';
 import Notice from '../../components/ui/Notice';
@@ -26,9 +28,13 @@ function reviewFailure(error, fallback) {
 // UC02 steps 10-15 for the duty officer (§5.2): the pending queue for their
 // shift district on the left, the selected report on the right. Confirming
 // refreshes the queue and keeps the report open, now showing who confirmed it
-// and when, plus the actions slot UC01 fills in.
+// and when, plus the actions slot UC01 fills in. `?reportId=` opens that
+// report first, e.g. from UC01's "Pre-filled from confirmed report" banner.
 export default function GroundReportsScreen() {
   const { user } = useAuth();
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const requestedId = searchParams.get('reportId');
   const isDutyOfficer = user?.role === ROLES.DUTY_OFFICER;
 
   const [clusters, setClusters] = useState(null);
@@ -65,17 +71,17 @@ export default function GroundReportsScreen() {
     [],
   );
 
-  // Step 10: the queue, with its first report open.
+  // Step 10: the queue, with the requested report or else its first one open.
   useEffect(() => {
     if (!isDutyOfficer) return;
     loadQueue().then((loaded) => {
-      const first = loaded?.[0]?.reports[0];
-      if (first) {
-        setSelectedId(first.id);
-        loadDetail(first.id);
+      const openId = requestedId ?? loaded?.[0]?.reports[0]?.id;
+      if (openId) {
+        setSelectedId(openId);
+        loadDetail(openId);
       }
     });
-  }, [isDutyOfficer, loadQueue, loadDetail]);
+  }, [isDutyOfficer, requestedId, loadQueue, loadDetail]);
 
   // Step 11.
   function select(id) {
@@ -161,6 +167,17 @@ export default function GroundReportsScreen() {
                 onConfirm={confirmSelected}
                 dismissing={dismissing}
                 onDismiss={dismissSelected}
+                actions={
+                  // UC01 A1.1 (DMS-122): only a CONFIRMED report can be escalated.
+                  detail.report.isEscalatable ? (
+                    <Button
+                      fullWidth={false}
+                      onClick={() => navigate(`/hazard-warnings/new?reportId=${detail.report.id}`)}
+                    >
+                      Escalate to Warning
+                    </Button>
+                  ) : null
+                }
               />
             ) : (
               <Loader />
