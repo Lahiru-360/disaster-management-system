@@ -115,6 +115,7 @@ Every error response — regardless of cause — returns the same outer shape:
 | `STORAGE_UNAVAILABLE` | The storage backend (Supabase) failed or was unreachable. Always `502`. |
 | `EMAIL_UNAVAILABLE` | The transactional email provider failed or was unreachable while sending. Always `502`. |
 | `REPORT_ALREADY_REVIEWED` | Confirm or dismiss on a hazard report that is no longer `PENDING` (§9.6–9.7). Always `409`; the message names the current status. |
+| `REPORT_NOT_ESCALATABLE` | Escalating a hazard report to a warning (§12.10) when the report isn't `CONFIRMED`, i.e. it is still `PENDING` or was `DISMISSED`. Always `409`; the message names the current status. |
 | `INVALID_ALERT_TRANSITION` | An action a hazard alert's current status doesn't allow, e.g. previewing, editing or broadcasting an alert that is no longer `DRAFT` (§12.3–12.4, §12.6). Always `409`; the message names the current status. |
 | `NO_ACTIVE_INCIDENT` | A UC03 officer write while the district has no `ACTIVE` hazard event (§13.1). Always `409`. |
 | `SHELTER_NAME_TAKEN` | Registering a shelter whose name, ignoring case and surrounding spaces, is already used in the district (§13.4.3). Always `409`. |
@@ -1683,7 +1684,7 @@ Every endpoint below that returns an alert returns this shape. A new draft has n
 
 UC01 main flow steps 1–2. The web console calls this as soon as the officer opens *Issue Hazard Warning*, so the draft exists while they compose it.
 
-**Request:** an empty object `{}`. (DMS-122 adds an optional `sourceReportId` for escalating a confirmed report; it is documented there.)
+**Request:** an empty object `{}`. To escalate a confirmed hazard report instead, send `{ "sourceReportId": "<report id>" }`; that variant is documented in 12.10.
 
 **Success — `201 Created`**
 
@@ -2020,7 +2021,9 @@ Checked by TC-11.
 | `401` | `TOKEN_INVALID` | Access token invalid, or its user no longer exists or has been deactivated. |
 | `403` | `FORBIDDEN` | The caller isn't a `dmc_officer` or `duty_officer`. |
 | `404` | `NOT_FOUND` | The alert doesn't exist, or the id isn't valid. |
+| `404` | `NOT_FOUND` | A draft started with a `sourceReportId` that is unknown or isn't a valid id (12.10). The message is `Hazard report not found.` |
 | `409` | `INVALID_ALERT_TRANSITION` | Preview, save-message or broadcast on an alert that is no longer `DRAFT`, or broadcast of a draft that was never previewed. |
+| `409` | `REPORT_NOT_ESCALATABLE` | A draft started from a hazard report that isn't `CONFIRMED` (12.10). |
 | `500` | `INTERNAL_ERROR` | Unhandled server-side failure. |
 
 ### 12.9 The delivery record
@@ -2041,6 +2044,88 @@ One record per recipient, channel and alert version, created by a broadcast (12.
 | `failureReason` | string or `null` | Set when `FAILED`. |
 
 Unique on `{ alert, alertVersion, citizen, channel }`; also indexed by `{ alert, status }`.
+
+### 12.10 Escalate a confirmed report — `POST /api/hazard-alerts` with `sourceReportId`
+
+UC01 A1 (DMS-122), before step 3. A duty officer who has just confirmed a hazard report (§9.6) selects **Escalate to Warning** on the report. The web console opens `/hazard-warnings/new?reportId=<id>` and starts the draft with the report's id. Escalation is always started by an officer: confirming a report never creates an alert.
+
+**Roles:** as 12.2, `dmc_officer` and `duty_officer`. The report isn't district-scoped here, unlike §9.
+
+**Request**
+
+```json
+{ "sourceReportId": "66f9a0c1b2c3d4e5f6a7b801" }
+```
+
+| Field | Type | Rules |
+|---|---|---|
+| `sourceReportId` | string | Optional. The id of a hazard report (§9.1). Leave it out to start a plain draft (12.2). |
+
+The new `DRAFT` links back to the report through `sourceReport`. Its type, severity, scope and message stay empty, as in 12.2. The server sends back suggested values in `prefill`, and the officer confirms or changes them in the first preview (12.3). The flow then continues at step 4 (severity).
+
+**Success — `201 Created`**
+
+```json
+{
+  "success": true,
+  "data": {
+    "alert": {
+      "id": "66fb2c3d4e5f6a7b8c9d0e01",
+      "referenceNo": "HA-1043",
+      "hazardType": null,
+      "status": "DRAFT",
+      "targets": [],
+      "sourceReport": { "id": "66f9a0c1b2c3d4e5f6a7b801", "referenceNo": "GR-2481" },
+      "...": "the rest of the alert object from 12.1"
+    },
+    "prefill": {
+      "hazardType": "FLOOD",
+      "districtId": "66f7c1a2b3c4d5e6f7a8b901",
+      "reportRef": { "id": "66f9a0c1b2c3d4e5f6a7b801", "referenceNo": "GR-2481" }
+    }
+  }
+}
+```
+
+| Field | Type | Notes |
+|---|---|---|
+| `prefill.hazardType` | enum or `null` | The report's hazard type mapped to an alert hazard type: `RISING_RIVER_FLOOD` → `FLOOD`, `LANDSLIDE` → `LANDSLIDE`. `BLOCKED_ROAD` and `OTHER` are ground-impact reports, so the value is `null` and the web shows the hint "Ground-impact report – choose the hazard type". |
+| `prefill.districtId` | string | The district (§7) that contains the report's coordinates. If no district is within 50 km of the point, it is the district the report was filed under (§9.1). The web pre-selects it as the scope. |
+| `prefill.reportRef` | `{ id, referenceNo }` | The report, for the banner "(i) Pre-filled from confirmed report GR-2481", which links back to it. |
+
+A request without `sourceReportId` returns no `prefill` key (12.2).
+
+**Failure — `409 Conflict`** (the report is `PENDING` or `DISMISSED`)
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "REPORT_NOT_ESCALATABLE",
+    "message": "Only a confirmed report can be escalated – current status: PENDING"
+  }
+}
+```
+
+**Failure — `404 Not Found`** (the report id is unknown or isn't valid)
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "Hazard report not found."
+  }
+}
+```
+
+**Failure — `400 Bad Request`** — `sourceReportId` is present but isn't a non-empty string (`VALIDATION_ERROR`, field `sourceReportId`).
+
+**Failure — `403 Forbidden`** and **`401 Unauthorized`** — as in 12.2.
+
+No draft is created when the request fails.
+
+Checked by TC-16–TC-19.
 
 ---
 
