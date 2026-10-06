@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router';
 import { areasApi, hazardAlertsApi } from '../../api';
 import BroadcastPreview from '../../components/hazardWarnings/BroadcastPreview';
 import ChannelReadiness from '../../components/hazardWarnings/ChannelReadiness';
+import ConfirmBroadcastDialog from '../../components/hazardWarnings/ConfirmBroadcastDialog';
 import HazardTypePicker from '../../components/hazardWarnings/HazardTypePicker';
 import RecipientCount from '../../components/hazardWarnings/RecipientCount';
 import ScopeSelector from '../../components/hazardWarnings/ScopeSelector';
@@ -32,8 +33,9 @@ const SCOPE_FIELDS = ['areaIds'];
 // diagram. Opening it starts a DRAFT (step 2). Once a hazard type, a severity
 // and at least one area are chosen (steps 3-5), the server validates the
 // scope, counts the citizens and writes the message (steps 6-7), shown on the
-// right, where the officer can edit it (step 8). Nothing is sent from here
-// until Confirm & Broadcast (DMS-121).
+// right, where the officer can edit it (step 8). Confirm & Broadcast opens the
+// confirmation dialog (steps 9-10); Broadcast now sends it (steps 11-13) and
+// moves on to the delivery summary (step 14).
 export default function IssueWarningScreen() {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -54,6 +56,10 @@ export default function IssueWarningScreen() {
   const [message, setMessage] = useState('');
   const [savedMessage, setSavedMessage] = useState('');
   const [messageError, setMessageError] = useState(null);
+
+  const [confirming, setConfirming] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [broadcastError, setBroadcastError] = useState(null);
 
   // A remount in development must not open a second draft.
   const started = useRef(false);
@@ -142,6 +148,24 @@ export default function IssueWarningScreen() {
     }
   }
 
+  // Steps 11-14: send the message as the officer last saw it, then show the
+  // delivery summary. A failure closes the dialog; nothing was sent.
+  async function broadcast() {
+    setSending(true);
+    try {
+      const result = await hazardAlertsApi.broadcast(alertId, message.trim());
+      navigate(`/hazard-warnings/${alertId}`, { state: result });
+    } catch (error) {
+      setSending(false);
+      setConfirming(false);
+      const messageFieldError = mapFieldErrors(error, ['message']).byField.message;
+      if (messageFieldError) setMessageError(messageFieldError);
+      else {
+        setBroadcastError(apiErrorMessage(error, 'The warning could not be broadcast. Try again.'));
+      }
+    }
+  }
+
   if (!canIssue) {
     return (
       <Screen>
@@ -180,6 +204,16 @@ export default function IssueWarningScreen() {
   else if (previewError && !scopeError) {
     otherPreviewError = apiErrorMessage(previewError, 'The preview could not be made. Try again.');
   }
+  // Step 9: only a complete, previewed draft with citizens to reach and a
+  // message can be broadcast.
+  const canBroadcast = Boolean(
+    complete &&
+    preview &&
+    !previewing &&
+    preview.recipientCount > 0 &&
+    message.trim() &&
+    !messageError,
+  );
 
   return (
     <Screen>
@@ -188,6 +222,11 @@ export default function IssueWarningScreen() {
       {otherPreviewError ? (
         <Notice variant="error" className="mt-4">
           {otherPreviewError}
+        </Notice>
+      ) : null}
+      {broadcastError ? (
+        <Notice variant="error" className="mt-4">
+          {broadcastError}
         </Notice>
       ) : null}
 
@@ -268,12 +307,30 @@ export default function IssueWarningScreen() {
           <Button variant="outline" fullWidth={false} onClick={() => navigate('/hazard-warnings')}>
             Cancel
           </Button>
-          {/* The confirmation dialog and the broadcast arrive with DMS-121.7. */}
-          <Button fullWidth={false} disabled>
+          <Button
+            fullWidth={false}
+            disabled={!canBroadcast}
+            onClick={() => {
+              setBroadcastError(null);
+              setConfirming(true);
+            }}
+          >
             Confirm &amp; Broadcast
           </Button>
         </div>
       </Card>
+
+      {preview ? (
+        <ConfirmBroadcastDialog
+          open={confirming}
+          alert={alert}
+          recipientCount={preview.recipientCount}
+          channels={preview.channels}
+          sending={sending}
+          onConfirm={broadcast}
+          onBack={() => setConfirming(false)}
+        />
+      ) : null}
     </Screen>
   );
 }
