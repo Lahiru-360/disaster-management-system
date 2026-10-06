@@ -142,6 +142,7 @@ describe('BroadcastService', () => {
   });
 
   it("DMS-121: the officer's final message replaces the draft's", async () => {
+    await citizensIn(areas.colombo, 1);
     const id = await previewedDraft();
 
     const { alert } = await serviceWith().broadcast(id, officer, '  Move to higher ground now.  ');

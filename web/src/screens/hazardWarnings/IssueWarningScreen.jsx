@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
 
 import { areasApi, hazardAlertsApi } from '../../api';
@@ -39,6 +39,7 @@ const SCOPE_FIELDS = ['areaIds'];
 export default function IssueWarningScreen() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const recipientCountId = useId();
   const canIssue = [ROLES.DMC_OFFICER, ROLES.DUTY_OFFICER].includes(user?.role);
 
   const [alert, setAlert] = useState(null);
@@ -199,6 +200,9 @@ export default function IssueWarningScreen() {
   // every choice kept, so the officer corrects it and the preview runs again.
   const { byField, others } = mapFieldErrors(previewError, SCOPE_FIELDS);
   const scopeError = byField.areaIds ? `Check the target scope – ${byField.areaIds}` : null;
+  // E2: a scope with no registered citizens cannot be broadcast. The officer
+  // changes the scope (step 5) and the preview runs again.
+  const noRecipients = preview?.recipientCount === 0;
   let otherPreviewError = null;
   if (others.length > 0) otherPreviewError = others.join('; ');
   else if (previewError && !scopeError) {
@@ -293,7 +297,7 @@ export default function IssueWarningScreen() {
                 <ChannelReadiness channels={preview.channels} />
               </div>
               <div className="mt-2 border-t border-line pt-4">
-                <RecipientCount count={preview.recipientCount} />
+                <RecipientCount id={recipientCountId} count={preview.recipientCount} />
               </div>
             </>
           )}
@@ -307,9 +311,11 @@ export default function IssueWarningScreen() {
           <Button variant="outline" fullWidth={false} onClick={() => navigate('/hazard-warnings')}>
             Cancel
           </Button>
+          {/* With no recipients (E2) the disabled button points at the reason. */}
           <Button
             fullWidth={false}
             disabled={!canBroadcast}
+            aria-describedby={noRecipients ? recipientCountId : undefined}
             onClick={() => {
               setBroadcastError(null);
               setConfirming(true);
