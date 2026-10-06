@@ -1624,7 +1624,7 @@ For server code, not clients. A use case never writes an inbox item itself; it c
 
 ## 12. Hazard alerts endpoints
 
-UC01 Issue Hazard Warning. An officer composes a location-specific warning, previews how many citizens it will reach and what they will read, and then broadcasts it (DMS-121). This section covers **composing** (UC01 main flow steps 1–8: start a draft, preview it, save an edited message, read an alert back) **broadcasting** (steps 9–14: broadcast, delivery summary), **backing out** (A4: list the drafts, discard one) and **updating** an active warning (A2: preview the update, then update and send). Composing never sends anything, and no delivery record exists while an alert is `DRAFT`.
+UC01 Issue Hazard Warning. An officer composes a location-specific warning, previews how many citizens it will reach and what they will read, and then broadcasts it (DMS-121). This section covers **composing** (UC01 main flow steps 1–8: start a draft, preview it, save an edited message, read an alert back) **broadcasting** (steps 9–14: broadcast, delivery summary), **backing out** (A4: list the drafts, discard one), **updating** an active warning (A2: preview the update, then update and send) and **delivery failures** (E3: the SMS fallback and the citizens not reached). Composing never sends anything, and no delivery record exists while an alert is `DRAFT`.
 
 Every endpoint requires `Authorization: Bearer <accessToken>` and admits `dmc_officer` and `duty_officer` (a duty officer is a DMC officer). Every other role is `403 FORBIDDEN`. Drafts are shared work: any admitted officer can open, preview and edit any draft, not only its creator.
 
@@ -1926,7 +1926,7 @@ The server then:
 
 1. **Re-checks the draft** against the current data, in case the preview is stale: the scope is still registered, and the recipients are counted again.
 2. Sets the alert to **`BROADCAST`**, records `issuedBy` (the caller) and `issuedAt`, and adds a `statusHistory` entry.
-3. For **every recipient and every channel** (`PUSH`, `SMS`, `AUDIBLE`), creates one delivery record as `QUEUED`, sends it through that channel, and records the result: `SENT`, `DELIVERED` or `FAILED`. A channel that fails never stops the others, and never fails the request.
+3. For **every recipient and every channel** (`PUSH`, `SMS`, `AUDIBLE`), creates one delivery record as `QUEUED`, sends it through that channel, and records the result: `SENT`, `DELIVERED` or `FAILED`. A failed delivery is first resent through the SMS fallback (12.16). A channel that fails never stops the others, and never fails the request.
 4. Puts the warning in each recipient's in-app inbox (§11, type `HAZARD_ALERT`, with the severity). This is the visible stand-in for the mocked push, SMS and audible delivery.
 5. Returns the alert and its delivery summary.
 
@@ -2019,8 +2019,8 @@ UC01 main flow step 14: the **Delivery summary** screen ("Delivery summary – A
         { "channel": "AUDIBLE", "sent": 48200, "delivered": 48080, "failed": 120 }
       ],
       "totals": { "sent": 144600, "delivered": 140950, "failed": 3650 },
-      "fallback": { "channel": "SMS", "resent": 0 },
-      "unreachedCount": 0
+      "fallback": { "channel": "SMS", "resent": 3050 },
+      "unreachedCount": 240
     }
   }
 }
@@ -2031,8 +2031,8 @@ UC01 main flow step 14: the **Delivery summary** screen ("Delivery summary – A
 | `version` | The alert version the counts are for: its current version. Each update is sent as a new version (DMS-123). |
 | `perChannel` | One row per channel, always all three in this order, even when a count is `0`. `sent` counts every delivery that left the queue, so `sent = delivered + failed + ` those still only `SENT` (accepted by the channel but not yet confirmed). |
 | `totals` | The three columns summed over every channel. |
-| `fallback` | Failed alerts resent through the fallback channel (UC01 E3, DMS-128): "3,050 failed push alerts resent via SMS". `resent` is `0` until DMS-128. |
-| `unreachedCount` | Distinct citizens for whom no channel ended `DELIVERED` (UC01 E3, DMS-128): "240 citizens not reached". |
+| `fallback` | Failed deliveries resent through the fallback channel (UC01 E3, 12.16): "3,050 failed push alerts resent via SMS (fallback)". `resent` counts the delivery records with `fallbackChannel` set, on any channel, whether the resend then succeeded or not. |
+| `unreachedCount` | Distinct citizens for whom no channel ended `DELIVERED` (UC01 E3): "240 citizens not reached". The list is 12.16. |
 
 A `DRAFT` has sent nothing, so its summary is all zeros, not an error.
 
@@ -2044,7 +2044,7 @@ Checked by TC-11.
 
 | Status | Code | When |
 |---|---|---|
-| `400` | `VALIDATION_ERROR` | A body field failed its rule, or `areaIds` names an area that isn't registered. Carries `errors`, one entry per field. |
+| `400` | `VALIDATION_ERROR` | A body or query field failed its rule, or `areaIds` names an area that isn't registered. Carries `errors`, one entry per field. |
 | `401` | `AUTH_HEADER_MISSING` | No `Authorization` header. |
 | `401` | `AUTH_HEADER_MALFORMED` | Header present but not `Bearer <token>`. |
 | `401` | `TOKEN_EXPIRED` | Access token expired. |
@@ -2070,10 +2070,11 @@ One record per recipient, channel and alert version, created by a broadcast (12.
 | `citizen` | user id | The recipient: a `citizen` or `community_volunteer`. |
 | `channel` | enum | `PUSH`, `SMS` or `AUDIBLE`. |
 | `status` | enum | `QUEUED` → `SENT`, `DELIVERED` or `FAILED`. |
-| `attempts` | integer | Starts at 1. The SMS fallback (UC01 E3) retries up to 3 attempts in total. |
+| `attempts` | integer | Starts at 1. Each resend through the SMS fallback (UC01 E3, 12.16) adds one, up to 3 attempts in total. |
+| `fallbackChannel` | enum or `null` | `SMS` once the delivery has been resent through the fallback (12.16); `null` if the first attempt was enough. `channel` keeps the channel it was first sent on. |
 | `sentAt` | date or `null` | When it left the queue. |
 | `deliveredAt` | date or `null` | When the channel reported delivery. |
-| `failureReason` | string or `null` | Set when `FAILED`. |
+| `failureReason` | string or `null` | Set when `FAILED`: after a fallback, the last attempt's reason. |
 
 Unique on `{ alert, alertVersion, citizen, channel }`; also indexed by `{ alert, status }`.
 
@@ -2393,6 +2394,62 @@ An `UPDATED` alert can be updated again: each update is one more version (1 → 
 **Failure — `404 Not Found`** and **`403 Forbidden`** — see 12.8.
 
 Checked by TC-24, TC-25.
+
+### 12.16 Citizens not reached — `GET /api/hazard-alerts/:id/unreached`
+
+UC01 E3. Some deliveries fail, for example push notifications during a network outage (E3.1). The broadcast (12.6), an update (12.14) and the all-clear resend each failed delivery through the **SMS fallback** (E3.2); deliveries that still fail are `FAILED`, and the delivery summary shows the partial delivery (E3.3): "3,050 failed push alerts resent via SMS (fallback)" and "240 citizens not reached **[View list]**". *View list* opens this list in a modal.
+
+**The SMS fallback**, inside the recipient × channel loop of 12.6 step 3:
+
+1. A delivery on any channel (`PUSH`, `AUDIBLE`, or `SMS` itself) that fails, or whose channel throws, is resent through `SMS`. Each resend adds one to its `attempts` and sets `fallbackChannel: "SMS"`; `channel` keeps the channel it was first sent on.
+2. It stops at the first resend that isn't a failure, which sets the record's `status` (`DELIVERED` or `SENT`), or after **3 attempts in total**, the first send included.
+3. A delivery still failing after 3 attempts is `FAILED`, with the last attempt's `failureReason`.
+
+So one delivery record is kept per recipient, channel and version: a fallback adds attempts to it rather than a new record. On the fake transports, the share of sends that fail is set by `DEMO_FAIL_PUSH_RATE`, `DEMO_FAIL_SMS_RATE` and `DEMO_FAIL_AUDIBLE_RATE` (all `0` by default).
+
+**Query**
+
+| Parameter | Rule |
+|---|---|
+| `page` | Optional. An integer ≥ 1. Defaults to `1`. |
+| `limit` | Optional. An integer from 1 to 50. Defaults to `20`. |
+
+**Success — `200 OK`**
+
+```json
+{
+  "success": true,
+  "data": {
+    "version": 1,
+    "citizens": [
+      {
+        "id": "64f1a2b3c4d5e6f7a8b9c0e1",
+        "name": "Nimal Perera",
+        "district": { "id": "66f7c1a2b3c4d5e6f7a8b901", "name": "Colombo" },
+        "phone": "+94771234567"
+      }
+    ],
+    "page": 1,
+    "limit": 20,
+    "total": 240
+  }
+}
+```
+
+| Field | Notes |
+|---|---|
+| `version` | The alert version the list is for: its current version, as in the delivery summary (12.7). |
+| `citizens` | The distinct recipients of that version for whom **no** channel ended `DELIVERED`: a citizen reached by audible alert but not by push is reached, and not listed. Sorted by `name`, ties broken by `id`, so pages never overlap. A page past the end is `[]`. |
+| `district` | The citizen's home district. |
+| `phone` | `null` if the citizen has none. |
+| `page`, `limit` | The values actually used, after defaults. |
+| `total` | Every unreached citizen of that version; equal to the summary's `unreachedCount`. |
+
+A `DRAFT` has sent nothing, so it is `200` with `[]` and `total: 0`, not an error. So is a version that reached everyone.
+
+**Failure — `400 Bad Request`** (`page` or `limit` failed its rule, as in 11.2), **`404 Not Found`** and **`403 Forbidden`** — see 12.8.
+
+Checked by TC-39 – TC-44.
 
 ---
 
