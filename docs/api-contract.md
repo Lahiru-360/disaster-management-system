@@ -2831,9 +2831,63 @@ UC03 A3 (DMS-146). `ASSIGNED` → `DECLINED`: the team returns to `AVAILABLE`, a
 |---|---|
 | `reason` | Required. 1–200 characters after trimming, e.g. `"Vehicle unavailable"`. |
 
-**Success — `200 OK`**: `{ "dispatch": { ... } }`, with `declineReason` set.
+```json
+{ "reason": "Vehicle unavailable" }
+```
 
-**Failures:** `400 VALIDATION_ERROR` on `reason`, `403 FORBIDDEN`, and `409 INVALID_DISPATCH_TRANSITION` when the dispatch is no longer `ASSIGNED` (e.g. already acknowledged).
+**Behaviour** (UC03 sequence diagram (b), the `[declined A3]` branch)
+1. Only the lead of the dispatch's team may decline, and only while it is `ASSIGNED`; an overdue dispatch has already become `UNRESPONSIVE` (13.10), so it can't be declined.
+2. The dispatch becomes `DECLINED`, with `declineReason` set and a `statusHistory` entry by the lead.
+3. The team returns to `AVAILABLE` (it was never on its way), so it can be dispatched again later.
+4. The officer who created the dispatch is notified (13.12, `DISPATCH_DECLINED`). A failed notification never fails the decline.
+
+**Success — `200 OK`**
+
+```json
+{
+  "success": true,
+  "data": {
+    "dispatch": {
+      "id": "66fb0c1b2c3d4e5f6a7b8e01",
+      "status": "DECLINED",
+      "declineReason": "Vehicle unavailable",
+      "statusHistory": [
+        {
+          "status": "ASSIGNED",
+          "at": "2026-10-03T09:30:00.000Z",
+          "by": { "id": "66f1a2b3c4d5e6f7a8b9c0d6", "name": "Dilani Wickramasinghe" }
+        },
+        {
+          "status": "DECLINED",
+          "at": "2026-10-03T09:31:40.000Z",
+          "by": { "id": "66f1a2b3c4d5e6f7a8b9c0d3", "name": "Suresh Bandara" }
+        }
+      ],
+      "...": "the rest of the dispatch object"
+    }
+  }
+}
+```
+
+**Failure — `409 Conflict`** (the lead acknowledged first)
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "INVALID_DISPATCH_TRANSITION",
+    "message": "This dispatch is ACKNOWLEDGED and can't be declined."
+  }
+}
+```
+
+| Status | Code | When |
+|---|---|---|
+| `400` | `VALIDATION_ERROR` | `reason` missing, empty after trimming, or over 200 characters. Carries `errors` on `reason`. |
+| `401` | `AUTH_HEADER_MISSING`, `AUTH_HEADER_MALFORMED`, `TOKEN_EXPIRED`, `TOKEN_INVALID` | As in 13.13. |
+| `403` | `FORBIDDEN` | The caller isn't a `rescue_team_lead`, or leads another team. |
+| `404` | `NOT_FOUND` | No dispatch has this id, or the id isn't valid. |
+| `409` | `INVALID_DISPATCH_TRANSITION` | The dispatch isn't `ASSIGNED` any more: acknowledged, on site, completed, declined or timed out. |
 
 ### 13.9 Unassigned queue
 
