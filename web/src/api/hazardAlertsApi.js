@@ -4,9 +4,11 @@
 
 import client from './client';
 
-// Step 2: opens a new DRAFT; resolves with { alert }.
-async function startDraft() {
-  const response = await client.post('/hazard-alerts', {});
+// Step 2: opens a new DRAFT; resolves with { alert }. With a sourceReportId
+// it escalates that confirmed report instead (A1, §12.10) and resolves with
+// { alert, prefill }.
+async function startDraft({ sourceReportId } = {}) {
+  const response = await client.post('/hazard-alerts', sourceReportId ? { sourceReportId } : {});
   return response.data.data;
 }
 
@@ -32,9 +34,38 @@ async function getById(id) {
   return response.data.data;
 }
 
+// Steps 11-14: broadcasts the DRAFT with the message the officer confirmed;
+// resolves with { alert, summary }.
+async function broadcast(id, message) {
+  const response = await client.post(`/hazard-alerts/${id}/broadcast`, { message });
+  return response.data.data;
+}
+
+// A4: every DRAFT, most recently changed first; resolves with { alerts }.
+async function listDrafts() {
+  const response = await client.get('/hazard-alerts', { params: { status: 'draft' } });
+  return response.data.data;
+}
+
+// A4: throws a DRAFT away, nothing sent; resolves with { alert } as it was.
+async function discardDraft(id) {
+  const response = await client.delete(`/hazard-alerts/${id}`);
+  return response.data.data;
+}
+
+// Step 14: the per-channel counts; resolves with { alert, summary }.
+async function getDeliverySummary(id) {
+  const response = await client.get(`/hazard-alerts/${id}/delivery-summary`);
+  return response.data.data;
+}
+
 export default {
   startDraft,
   preview,
   saveDraftMessage,
   getById,
+  broadcast,
+  getDeliverySummary,
+  listDrafts,
+  discardDraft,
 };

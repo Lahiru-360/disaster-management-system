@@ -2,16 +2,21 @@
 // same shapes the real client hands back and rejects with axios-shaped
 // errors, so swapping in the real client changes no calling code. It applies
 // the server's own rules - the 160-character message, unknown areas (E1),
-// DRAFT-only edits - so the screen meets the same errors, counts citizens per
-// district from ./areaFixtures.js (each once, even through a basin), and
-// generates the server's messages. `mockControls.failNext` fakes the failures
-// that can't be typed in.
+// DRAFT-only edits, broadcasts and discards (A4) - so the screen meets the same errors,
+// counts citizens per district from ./areaFixtures.js (each once, even through
+// a basin), and generates the server's messages. A broadcast delivers on every
+// channel, as the server does with its demo failure rates at 0. Escalating a
+// report (A1) reads it from the ground reports mock, so a report confirmed
+// there can be escalated here, and anything else is refused as the server does.
+// `mockControls.failNext` fakes the failures that can't be typed in.
 //
-// Alerts live in this module's memory, so reloading the page forgets them.
+// Alerts and their deliveries live in this module's memory, so reloading the
+// page forgets them.
 
 import { DEMO_USERS } from '../../constants/demoUsers';
 import { ROLES } from '../../constants/roles';
 import { citizensIn, expandToDistrictIds, findArea } from './areaFixtures';
+import groundReportsApi from './groundReportsApi';
 
 const MIN_DELAY_MS = 300;
 const MAX_DELAY_MS = 800;
@@ -20,6 +25,14 @@ const MESSAGE_MAX_LENGTH = 160;
 const HAZARD_TYPES = ['FLOOD', 'LANDSLIDE', 'CYCLONE', 'DROUGHT'];
 const SEVERITIES = ['LOW', 'MEDIUM', 'HIGH', 'SEVERE'];
 const CHANNELS = ['PUSH', 'SMS', 'AUDIBLE'];
+
+// The server's ReportHazardTypeMapper: ground-impact reports suggest no type.
+const REPORT_TO_ALERT_TYPE = {
+  RISING_RIVER_FLOOD: 'FLOOD',
+  LANDSLIDE: 'LANDSLIDE',
+  BLOCKED_ROAD: null,
+  OTHER: null,
+};
 
 // The same wording as the server's MessageTemplate.
 const LABELS = { FLOOD: 'Flood', LANDSLIDE: 'Landslide', CYCLONE: 'Cyclone', DROUGHT: 'Drought' };
@@ -53,6 +66,8 @@ const OFFICER = {
 };
 
 const alerts = new Map();
+// Alert id -> how many citizens its broadcast went to.
+const recipients = new Map();
 let nextReference = 1043;
 let nextId = 1;
 let pendingFailure = null;
@@ -117,14 +132,68 @@ function requireDraft(alert, action) {
 
 const copy = (alert) => JSON.parse(JSON.stringify(alert));
 
+function validateMessage(message) {
+  const text = typeof message === 'string' ? message.trim() : '';
+  if (text.length === 0) throw validationError([{ field: 'message', message: 'is required' }]);
+  if (text.length > MESSAGE_MAX_LENGTH) {
+    throw validationError([
+      {
+        field: 'message',
+        message: `length must be less than or equal to ${MESSAGE_MAX_LENGTH} characters long`,
+      },
+    ]);
+  }
+  return text;
+}
+
+// The server's delivery summary: every delivery of a broadcast ends DELIVERED.
+function summaryFor(alert) {
+  const count = recipients.get(alert.id) ?? 0;
+  const perChannel = CHANNELS.map((channel) => ({
+    channel,
+    sent: count,
+    delivered: count,
+    failed: 0,
+  }));
+  return {
+    version: alert.version,
+    perChannel,
+    totals: { sent: count * CHANNELS.length, delivered: count * CHANNELS.length, failed: 0 },
+    fallback: { channel: 'SMS', resent: 0 },
+    unreachedCount: 0,
+  };
+}
+
 function generateMessage(hazardType, severity) {
   const urgent = severity === 'HIGH' || severity === 'SEVERE';
   return `${LABELS[hazardType]} Warning: ${severity}. ${ADVICE[hazardType][urgent ? 'urgent' : 'watch']}`;
 }
 
-async function startDraft() {
+// A1.2: what a confirmed report suggests. The mock reports are all filed
+// under the district their point is in, so that district is the suggestion.
+async function prefillFromReport(sourceReportId) {
+  if (typeof sourceReportId !== 'string' || sourceReportId.trim() === '') {
+    throw validationError([{ field: 'sourceReportId', message: 'must be a report id' }]);
+  }
+  const { report } = await groundReportsApi.getReport(sourceReportId);
+  if (!report.isEscalatable) {
+    throw apiError(
+      409,
+      'REPORT_NOT_ESCALATABLE',
+      `Only a confirmed report can be escalated – current status: ${report.status}`,
+    );
+  }
+  return {
+    hazardType: REPORT_TO_ALERT_TYPE[report.hazardType] ?? null,
+    districtId: report.district.id,
+    reportRef: { id: report.id, referenceNo: report.referenceNo },
+  };
+}
+
+async function startDraft({ sourceReportId } = {}) {
   await delay();
   takeFailure();
+  const prefill = sourceReportId === undefined ? null : await prefillFromReport(sourceReportId);
 
   const now = new Date().toISOString();
   const alert = {
@@ -137,7 +206,7 @@ async function startDraft() {
     version: 1,
     targets: [],
     event: null,
-    sourceReport: null,
+    sourceReport: prefill ? prefill.reportRef : null,
     createdBy: OFFICER,
     issuedBy: null,
     issuedAt: null,
@@ -146,7 +215,7 @@ async function startDraft() {
     updatedAt: now,
   };
   alerts.set(alert.id, alert);
-  return { alert: copy(alert) };
+  return prefill ? { alert: copy(alert), prefill } : { alert: copy(alert) };
 }
 
 async function preview(id, { hazardType, severity, areaIds } = {}) {
@@ -202,16 +271,7 @@ async function saveDraftMessage(id, message) {
   takeFailure();
   const alert = findAlert(id);
 
-  const text = typeof message === 'string' ? message.trim() : '';
-  if (text.length === 0) throw validationError([{ field: 'message', message: 'is required' }]);
-  if (text.length > MESSAGE_MAX_LENGTH) {
-    throw validationError([
-      {
-        field: 'message',
-        message: `length must be less than or equal to ${MESSAGE_MAX_LENGTH} characters long`,
-      },
-    ]);
-  }
+  const text = validateMessage(message);
   requireDraft(alert, 'edited');
 
   alert.message = text;
@@ -223,6 +283,59 @@ async function getById(id) {
   await delay();
   takeFailure();
   return { alert: copy(findAlert(id)) };
+}
+
+async function broadcast(id, message) {
+  await delay();
+  takeFailure();
+  const alert = findAlert(id);
+
+  const text = validateMessage(message);
+  requireDraft(alert, 'broadcast');
+  if (!alert.hazardType || !alert.severity || alert.targets.length === 0) {
+    throw apiError(409, 'INVALID_ALERT_TRANSITION', 'Preview the warning before broadcasting it');
+  }
+
+  // Counted again, as the server does, in case the preview is stale.
+  const areas = alert.targets.map(({ id: areaId }) => findArea(areaId));
+  recipients.set(alert.id, citizensIn(expandToDistrictIds(areas)));
+
+  const now = new Date().toISOString();
+  Object.assign(alert, {
+    message: text,
+    status: 'BROADCAST',
+    issuedBy: OFFICER,
+    issuedAt: now,
+    updatedAt: now,
+  });
+  alert.statusHistory.push({ status: 'BROADCAST', version: alert.version, at: now, by: OFFICER });
+
+  return { alert: copy(alert), summary: summaryFor(alert) };
+}
+
+async function getDeliverySummary(id) {
+  await delay();
+  takeFailure();
+  const alert = findAlert(id);
+  return { alert: copy(alert), summary: summaryFor(alert) };
+}
+
+async function listDrafts() {
+  await delay();
+  takeFailure();
+  const drafts = [...alerts.values()]
+    .filter(({ status }) => status === 'DRAFT')
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  return { alerts: drafts.map(copy) };
+}
+
+async function discardDraft(id) {
+  await delay();
+  takeFailure();
+  const alert = findAlert(id);
+  requireDraft(alert, 'discarded');
+  alerts.delete(id);
+  return { alert: copy(alert) };
 }
 
 /**
@@ -241,4 +354,8 @@ export default {
   preview,
   saveDraftMessage,
   getById,
+  broadcast,
+  getDeliverySummary,
+  listDrafts,
+  discardDraft,
 };

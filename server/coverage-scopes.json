@@ -11,7 +11,17 @@
     "src/services/WarningService.js",
     "src/validators/HazardAlertValidator.js",
     "src/controllers/HazardAlertController.js",
-    "src/routes/HazardAlertRoutes.js"
+    "src/routes/HazardAlertRoutes.js",
+    "src/enums/DeliveryStatus.js",
+    "src/enums/NotificationKind.js",
+    "src/models/Notification.js",
+    "src/services/notifications/AlertChannel.js",
+    "src/services/notifications/FakeTransport.js",
+    "src/services/notifications/PushChannel.js",
+    "src/services/notifications/SmsChannel.js",
+    "src/services/notifications/AudibleChannel.js",
+    "src/services/BroadcastService.js",
+    "src/services/DeliverySummary.js"
   ],
   "uc02": [
     "src/enums/ReportHazardType.js",

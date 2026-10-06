@@ -262,6 +262,75 @@ describe('WarningService', () => {
     });
   });
 
+  describe('discardDraft', () => {
+    it('DMS-125: TC-30 removes the draft and returns it as it was', async () => {
+      const { id } = await startDraft();
+      await previewOf(id);
+
+      const discarded = await service.discardDraft(id);
+
+      expect(discarded).toMatchObject({ id, status: 'DRAFT', hazardType: 'FLOOD' });
+      expect(await HazardAlert.countDocuments()).toBe(0);
+    });
+
+    it('DMS-125: TC-31 a colleague broadcasting between the read and the delete wins: 409, nothing removed', async () => {
+      const { id } = await startDraft();
+      // The delete runs just after the broadcast lands.
+      const racingModel = {
+        findById: (alertId) => HazardAlert.findById(alertId),
+        deleteOne: async (filter) => {
+          await HazardAlert.updateOne({ _id: id }, { status: 'BROADCAST' });
+          return HazardAlert.deleteOne(filter);
+        },
+      };
+      const racing = new WarningService({ alertModel: racingModel, clock });
+
+      await expect(racing.discardDraft(id)).rejects.toMatchObject({
+        status: 409,
+        code: 'INVALID_ALERT_TRANSITION',
+        message: 'Only a DRAFT alert can be discarded – current status: BROADCAST',
+      });
+      expect(await HazardAlert.exists({ _id: id })).not.toBeNull();
+    });
+
+    it('DMS-125: a draft deleted by a colleague between the read and the delete is 404', async () => {
+      const { id } = await startDraft();
+      const racingModel = {
+        findById: (alertId) => HazardAlert.findById(alertId),
+        deleteOne: async (filter) => {
+          await HazardAlert.deleteOne({ _id: id });
+          return HazardAlert.deleteOne(filter);
+        },
+      };
+      const racing = new WarningService({ alertModel: racingModel, clock });
+
+      await expect(racing.discardDraft(id)).rejects.toMatchObject({ status: 404 });
+    });
+  });
+
+  describe('listDrafts', () => {
+    it('DMS-125: only drafts, most recently changed first', async () => {
+      const first = await startDraft();
+      const second = await startDraft();
+      const sent = await startDraft();
+      await HazardAlert.updateOne({ _id: sent.id }, { status: 'BROADCAST' });
+      await HazardAlert.updateOne(
+        { _id: first.id },
+        { updatedAt: new Date('2026-10-02T07:00:00.000Z') },
+        { timestamps: false },
+      );
+      await HazardAlert.updateOne(
+        { _id: second.id },
+        { updatedAt: new Date('2026-10-02T06:00:00.000Z') },
+        { timestamps: false },
+      );
+
+      const drafts = await service.listDrafts();
+
+      expect(drafts.map(({ id }) => id)).toEqual([first.id, second.id]);
+    });
+  });
+
   describe('findById', () => {
     it('DMS-120: returns the alert object', async () => {
       const { id } = await startDraft();
