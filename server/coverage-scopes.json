@@ -35,6 +35,7 @@
     "src/services/CoordinationPresenter.js",
     "src/services/OperationalPictureService.js",
     "src/services/DistrictScope.js",
+    "src/services/ActiveIncident.js",
     "src/services/ShelterService.js",
     "src/services/RescueTeamService.js",
     "src/controllers/OperationalPictureController.js",
