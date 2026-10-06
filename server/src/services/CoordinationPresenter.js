@@ -5,6 +5,23 @@ import { Shelter } from '../domain/coordination/Shelter.js';
 // every coordination endpoint returns the same shapes. Expects documents with
 // their references populated; an unpopulated reference becomes { id } only.
 export class CoordinationPresenter {
+  // What each object needs populated, so every service loads the same fields.
+  static SHELTER_POPULATE = [{ path: 'district', select: 'name' }];
+
+  static TEAM_POPULATE = [
+    { path: 'organisation', select: 'name type' },
+    { path: 'district', select: 'name' },
+    { path: 'lead', select: 'name' },
+  ];
+
+  static DISTRIBUTION_POPULATE = [
+    { path: 'shelter', select: 'name' },
+    { path: 'stock', select: 'unit' },
+    { path: 'organisation', select: 'name type' },
+    { path: 'district', select: 'name' },
+    { path: 'loggedBy', select: 'name' },
+  ];
+
   /**
    * The contract's shelter object: district as { id, name }, plus the rate
    * and status from the Shelter domain class.

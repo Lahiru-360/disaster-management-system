@@ -11,6 +11,7 @@ import { Shelter as ShelterModel } from '../models/Shelter.js';
 import { SupplyDistribution as SupplyDistributionModel } from '../models/SupplyDistribution.js';
 import { ApiError } from '../utils/ApiError.js';
 import { CoordinationPresenter } from './CoordinationPresenter.js';
+import { districtScope as defaultDistrictScope } from './DistrictScope.js';
 
 // UC03 main flow steps 1-2 and 14: the combined operational picture of one
 // district - shelters, rescue teams, recent supply logs and totals by owning
@@ -20,20 +21,6 @@ import { CoordinationPresenter } from './CoordinationPresenter.js';
 export class OperationalPictureService {
   static RECENT_DISTRIBUTIONS = 10;
 
-  static #TEAM_POPULATE = [
-    { path: 'organisation', select: 'name type' },
-    { path: 'district', select: 'name' },
-    { path: 'lead', select: 'name' },
-  ];
-
-  static #DISTRIBUTION_POPULATE = [
-    { path: 'shelter', select: 'name' },
-    { path: 'stock', select: 'unit' },
-    { path: 'organisation', select: 'name type' },
-    { path: 'district', select: 'name' },
-    { path: 'loggedBy', select: 'name' },
-  ];
-
   #districtModel;
   #hazardEventModel;
   #organisationModel;
@@ -41,6 +28,7 @@ export class OperationalPictureService {
   #rescueTeamModel;
   #reliefStockModel;
   #distributionModel;
+  #districtScope;
 
   constructor({
     districtModel = DistrictModel,
@@ -50,6 +38,7 @@ export class OperationalPictureService {
     rescueTeamModel = RescueTeamModel,
     reliefStockModel = ReliefStockModel,
     distributionModel = SupplyDistributionModel,
+    districtScope = defaultDistrictScope,
   } = {}) {
     this.#districtModel = districtModel;
     this.#hazardEventModel = hazardEventModel;
@@ -58,6 +47,19 @@ export class OperationalPictureService {
     this.#rescueTeamModel = rescueTeamModel;
     this.#reliefStockModel = reliefStockModel;
     this.#distributionModel = distributionModel;
+    this.#districtScope = districtScope;
+  }
+
+  /**
+   * The picture of the district the caller may see (§13.1): a district
+   * officer's own, or the one a DMC officer names.
+   * @param {object} user The signed-in User.
+   * @param {{ districtId?: string, organisationId?: string }} [query]
+   * @returns {Promise<object>}
+   */
+  async getCombinedPictureFor(user, { districtId, organisationId } = {}) {
+    const readable = await this.#districtScope.readableDistrict(user, districtId);
+    return this.getCombinedPicture({ districtId: readable, organisationId });
   }
 
   /**
@@ -88,17 +90,17 @@ export class OperationalPictureService {
         this.#shelterModel
           .find({ district: district._id })
           .sort({ name: 1 })
-          .populate('district', 'name'),
+          .populate(CoordinationPresenter.SHELTER_POPULATE),
         this.#rescueTeamModel
           .find({ district: district._id, ...owned })
           .sort({ name: 1 })
-          .populate(OperationalPictureService.#TEAM_POPULATE),
+          .populate(CoordinationPresenter.TEAM_POPULATE),
         this.#reliefStockModel.find({ district: district._id, ...owned }),
         this.#distributionModel
           .find({ district: district._id, ...owned })
           .sort({ distributedAt: -1, _id: -1 })
           .limit(OperationalPictureService.RECENT_DISTRIBUTIONS)
-          .populate(OperationalPictureService.#DISTRIBUTION_POPULATE),
+          .populate(CoordinationPresenter.DISTRIBUTION_POPULATE),
         this.#distributionModel.aggregate([
           { $match: counted },
           { $group: { _id: '$organisation', quantity: { $sum: '$quantity' } } },
