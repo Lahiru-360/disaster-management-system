@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { fallbackPolicy as defaultFallbackPolicy } from '../domain/alerts/FallbackPolicy.js';
 import { Channel } from '../enums/Channel.js';
 import { DeliveryStatus } from '../enums/DeliveryStatus.js';
 import { Notification as NotificationModel } from '../models/Notification.js';
@@ -11,13 +12,12 @@ export class DeliverySummary {
   // Every channel the summary reports, in this order, even with no records.
   static CHANNELS = Object.values(Channel);
 
-  // The channel failed deliveries are resent through (E3).
-  static FALLBACK_CHANNEL = Channel.SMS;
-
   #notificationModel;
+  #fallback;
 
-  constructor({ notificationModel = NotificationModel } = {}) {
+  constructor({ notificationModel = NotificationModel, fallback = defaultFallbackPolicy } = {}) {
     this.#notificationModel = notificationModel;
+    this.#fallback = fallback;
   }
 
   /**
@@ -74,7 +74,7 @@ export class DeliverySummary {
       perChannel,
       totals: { sent: total('sent'), delivered: total('delivered'), failed: total('failed') },
       fallback: {
-        channel: DeliverySummary.FALLBACK_CHANNEL,
+        channel: this.#fallback.channel,
         resent: result.resent[0]?.count ?? 0,
       },
       unreachedCount: result.unreached[0]?.count ?? 0,
