@@ -31,7 +31,9 @@
     "src/models/RescueTeam.js",
     "src/models/ReliefStock.js",
     "src/models/SupplyDistribution.js",
-    "src/domain/coordination/**/*.js"
+    "src/domain/coordination/**/*.js",
+    "src/services/CoordinationPresenter.js",
+    "src/services/OperationalPictureService.js"
   ],
   "uc04": [
     "src/domain/events/**/*.js",
