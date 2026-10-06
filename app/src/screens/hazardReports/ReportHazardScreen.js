@@ -6,6 +6,7 @@ import DescriptionField from '../../components/hazardReports/DescriptionField';
 import HazardTypeChips from '../../components/hazardReports/HazardTypeChips';
 import LocationRow from '../../components/hazardReports/LocationRow';
 import ManualLocationSheet from '../../components/hazardReports/ManualLocationSheet';
+import OfflineBanner from '../../components/hazardReports/OfflineBanner';
 import PhotoCapture from '../../components/hazardReports/PhotoCapture';
 import SubmittedState from '../../components/hazardReports/SubmittedState';
 import Button from '../../components/ui/Button';
@@ -15,6 +16,7 @@ import ScreenHeader from '../../components/ui/ScreenHeader';
 import SectionLabel from '../../components/ui/SectionLabel';
 import { TABS } from '../../constants/roles';
 import useAuth from '../../hooks/useAuth';
+import useConnectivity from '../../hooks/useConnectivity';
 import useCurrentLocation from '../../hooks/useCurrentLocation';
 import { uuidv4 } from '../../utils/uuid';
 import { hazardReportErrorsFromServer, validateHazardReport } from '../../utils/validation';
@@ -32,6 +34,7 @@ export default function ReportHazardScreen() {
   const [form, setForm] = useState(emptyForm);
   // Step 3: the device's position (A2: 'unavailable' after the timeout).
   const gps = useCurrentLocation();
+  const { isOnline } = useConnectivity();
   // A2: a location set by hand ({ location, placeName }) wins over the GPS.
   const [manual, setManual] = useState(null);
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -130,6 +133,8 @@ export default function ReportHazardScreen() {
   return (
     <Screen edges={['top']} scroll keyboardShouldPersistTaps="handled" contentClassName="pb-10">
       <ScreenHeader title="Report a Hazard" className="px-0" />
+
+      {isOnline ? null : <OfflineBanner />}
 
       <SectionLabel className="mb-2 mt-2">Photo of the hazard</SectionLabel>
       <PhotoCapture
