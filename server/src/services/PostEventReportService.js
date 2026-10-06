@@ -34,7 +34,8 @@ export class PostEventReportService {
 
   /**
    * UC04 steps 4-11 (§14.3): compiles the requested sections for the event,
-   * range and districts, stores the report and returns it.
+   * range and districts, stores the report and returns it. A selection with
+   * no records in any requested section is 404 NO_DATA_FOR_SELECTION (E2).
    * @param {{ id: string }} officer the signed-in DMC or duty officer
    * @param {{ eventId: string, from: string, to: string, districtIds: string[], sections: string[] }} params
    * @returns {Promise<object>} the report object (§14.2)
@@ -53,10 +54,14 @@ export class PostEventReportService {
       districtIds: PostEventReportService.#inEventOrder(event, districtIds),
       clock: this.#clock,
     });
-    const { report, summary } = await this.#builder.build(ctx, {
+    const { report, summary, isEmpty } = await this.#builder.build(ctx, {
       sectionKeys: sections,
       generatedBy: officer.id,
     });
+    // E2: nothing at all to report on is not a report, so nothing is stored.
+    if (isEmpty) {
+      throw new ApiError(404, 'NO_DATA_FOR_SELECTION', 'No data is available for this selection.');
+    }
 
     const doc = await this.#reportModel.create({
       event: report.eventId,
