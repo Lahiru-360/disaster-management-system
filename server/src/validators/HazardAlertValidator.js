@@ -52,4 +52,8 @@ export class HazardAlertValidator {
 
   // PATCH /api/hazard-alerts/:id/draft (§12.4).
   static draftMessageSchema = Joi.object({ message: HazardAlertValidator.#message });
+
+  // POST /api/hazard-alerts/:id/broadcast (§12.6): the text as the officer last
+  // saw it in the confirmation dialog.
+  static broadcastSchema = Joi.object({ message: HazardAlertValidator.#message });
 }
