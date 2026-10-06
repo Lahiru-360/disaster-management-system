@@ -991,7 +991,7 @@ The server then:
 
 **Success — `200 OK`** (resend: the caller already submitted a report with this `clientReportId`)
 
-The existing report is returned, unchanged, in the same shape as `201`. Nothing new is stored and nobody is notified again — even if two copies arrive at the same moment, exactly one report exists afterwards.
+The existing report is returned, unchanged, in the same shape as `201`. Nothing new is stored and nobody is notified again — even if two copies arrive at the same moment, exactly one report exists afterwards. A resend only matches the caller's own reports: a `clientReportId` that another user's report already has is refused with `400 VALIDATION_ERROR` on `clientReportId` ("is already used - generate a new one"), which a v4 UUID makes practically impossible.
 
 **Failure — `400 Bad Request`** (one entry per invalid field)
 

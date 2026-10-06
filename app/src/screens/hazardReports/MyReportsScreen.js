@@ -1,5 +1,5 @@
 import { useFocusEffect } from '@react-navigation/native';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { FlatList, RefreshControl } from 'react-native';
 
 import { hazardReportsApi } from '../../api';
@@ -9,16 +9,41 @@ import Loader from '../../components/ui/Loader';
 import Notice from '../../components/ui/Notice';
 import Screen from '../../components/ui/Screen';
 import ScreenHeader from '../../components/ui/ScreenHeader';
+import offlineReportQueue from '../../store/offlineReportQueue';
 
 // The reporter's own reports, newest first, with where each review stands
 // (GET /api/hazard-reports/mine, contract §9.3). Reloads whenever the tab
 // comes into view - a report just sent from the Report tab shows straight
 // away - and on pull-to-refresh. Reports still waiting on the phone to be
-// sent (A3, DMS-134) join this list once the offline queue exists.
+// sent (A3) are listed first as "Waiting to send", kept up to date as the
+// offline queue changes.
+// A report still on the phone, in the shape MyReportRow shows: no reference
+// until the server gives it one.
+function toQueuedRow(item) {
+  return {
+    id: `queued-${item.clientReportId}`,
+    referenceNo: 'Not sent yet',
+    hazardType: item.hazardType,
+    submittedAt: item.createdAt,
+    status: 'QUEUED',
+  };
+}
+
 export default function MyReportsScreen() {
   const [reports, setReports] = useState(null);
   const [error, setError] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [queued, setQueued] = useState([]);
+
+  useEffect(() => {
+    let current = true;
+    offlineReportQueue.list().then((items) => current && setQueued(items));
+    const unsubscribe = offlineReportQueue.subscribe(setQueued);
+    return () => {
+      current = false;
+      unsubscribe();
+    };
+  }, []);
 
   const load = useCallback(
     () =>
@@ -55,11 +80,11 @@ export default function MyReportsScreen() {
           {error}
         </Notice>
       ) : null}
-      {reports === null && !error ? (
+      {reports === null && !error && queued.length === 0 ? (
         <Loader />
       ) : (
         <FlatList
-          data={reports ?? []}
+          data={[...queued.map(toQueuedRow), ...(reports ?? [])]}
           keyExtractor={(report) => report.id}
           renderItem={({ item }) => <MyReportRow report={item} />}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />}
