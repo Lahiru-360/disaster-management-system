@@ -80,7 +80,7 @@ describe('BroadcastService SMS fallback (UC01 E3)', () => {
         .map(() => strategy.channel),
     );
 
-  it('DMS-128: TC-39 push fails, SMS succeeds on attempt 2 and the retries stop', async () => {
+  it('E3: TC-39 push fails, SMS succeeds on attempt 2 and the retries stop', async () => {
     await citizensIn(areas.colombo, 1);
     const id = await previewedDraft();
     push.willReturn([FAILED('Push notification was not delivered')]);
@@ -98,7 +98,7 @@ describe('BroadcastService SMS fallback (UC01 E3)', () => {
     expect(attemptsOf('PUSH')).toEqual(['PUSH', 'SMS']);
   });
 
-  it('DMS-128: TC-40 fails 3 times: FAILED with attempts 3 and no 4th attempt', async () => {
+  it('E3: TC-40 fails 3 times: FAILED with attempts 3 and no 4th attempt', async () => {
     await citizensIn(areas.colombo, 1);
     const id = await previewedDraft();
     push.willReturn([FAILED('Push notification was not delivered')]);
@@ -121,7 +121,7 @@ describe('BroadcastService SMS fallback (UC01 E3)', () => {
     expect(attemptsOf('PUSH')).toEqual(['PUSH', 'SMS', 'SMS']);
   });
 
-  it('DMS-128: a failed SMS delivery is itself retried by SMS up to the same limit', async () => {
+  it('E3: a failed SMS delivery is itself retried by SMS up to the same limit', async () => {
     await citizensIn(areas.colombo, 1);
     const id = await previewedDraft();
     sms.willReturn([FAILED('a'), FAILED('b'), FAILED('c'), FAILED('never reached')]);
@@ -138,7 +138,7 @@ describe('BroadcastService SMS fallback (UC01 E3)', () => {
     expect(await record(id, 'PUSH')).toMatchObject({ status: 'DELIVERED', attempts: 1 });
   });
 
-  it('DMS-128: a failed audible alert is resent by SMS too', async () => {
+  it('E3: a failed audible alert is resent by SMS too', async () => {
     await citizensIn(areas.colombo, 1);
     const id = await previewedDraft();
     audible.willReturn([FAILED('siren offline')]);
@@ -152,7 +152,7 @@ describe('BroadcastService SMS fallback (UC01 E3)', () => {
     });
   });
 
-  it('DMS-128: TC-44 an SMS channel that throws during the fallback is a failed attempt, no crash', async () => {
+  it('E3: TC-44 an SMS channel that throws during the fallback is a failed attempt, no crash', async () => {
     await citizensIn(areas.colombo, 1);
     const id = await previewedDraft();
     push.willReturn([new Error('push gateway timeout')]);
@@ -172,7 +172,7 @@ describe('BroadcastService SMS fallback (UC01 E3)', () => {
     expect(summary.totals.failed).toBe(1);
   });
 
-  it('DMS-128: a resend the channel only accepts (SENT) also stops the retries', async () => {
+  it('E3: a resend the channel only accepts (SENT) also stops the retries', async () => {
     await citizensIn(areas.colombo, 1);
     const id = await previewedDraft();
     push.willReturn([FAILED('offline')]);
@@ -184,7 +184,7 @@ describe('BroadcastService SMS fallback (UC01 E3)', () => {
     expect(sms.calls).toHaveLength(2);
   });
 
-  it('DMS-128: a delivery that succeeds first time is never resent', async () => {
+  it('E3: a delivery that succeeds first time is never resent', async () => {
     await citizensIn(areas.colombo, 2);
     const id = await previewedDraft();
 
@@ -195,7 +195,7 @@ describe('BroadcastService SMS fallback (UC01 E3)', () => {
     expect(sms.calls).toHaveLength(2);
   });
 
-  it('DMS-128: follows the injected policy for the limit', async () => {
+  it('E3: follows the injected policy for the limit', async () => {
     await citizensIn(areas.colombo, 1);
     const id = await previewedDraft();
     push.willReturn([FAILED('offline')]);
@@ -210,7 +210,7 @@ describe('BroadcastService SMS fallback (UC01 E3)', () => {
     expect(await record(id, 'PUSH')).toMatchObject({ status: 'FAILED', attempts: 2 });
   });
 
-  it('DMS-128: without the fallback channel among the channels, nothing is resent', async () => {
+  it('E3: without the fallback channel among the channels, nothing is resent', async () => {
     await citizensIn(areas.colombo, 1);
     const id = await previewedDraft();
     push.willReturn([FAILED('offline')]);
@@ -224,7 +224,7 @@ describe('BroadcastService SMS fallback (UC01 E3)', () => {
     });
   });
 
-  it('DMS-128: TC-43 the summary counts the resent alerts and the citizens still unreached', async () => {
+  it('E3: TC-43 the summary counts the resent alerts and the citizens still unreached', async () => {
     await citizensIn(areas.colombo, 3);
     const id = await previewedDraft();
 
@@ -243,7 +243,7 @@ describe('BroadcastService SMS fallback (UC01 E3)', () => {
     });
   });
 
-  it('DMS-128: TC-43 every channel down: every delivery resent, FAILED, every citizen unreached', async () => {
+  it('E3: TC-43 every channel down: every delivery resent, FAILED, every citizen unreached', async () => {
     await citizensIn(areas.colombo, 2);
     const id = await previewedDraft();
 
@@ -260,7 +260,7 @@ describe('BroadcastService SMS fallback (UC01 E3)', () => {
     expect(records.every((r) => r.attempts === 3 && r.status === 'FAILED')).toBe(true);
   });
 
-  it('DMS-128: an update is resent through the fallback the same way', async () => {
+  it('E3: an update is resent through the fallback the same way', async () => {
     await citizensIn(areas.colombo, 1);
     const id = await previewedDraft();
     const service = serviceWith();

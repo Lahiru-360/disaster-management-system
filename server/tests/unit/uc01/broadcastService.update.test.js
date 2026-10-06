@@ -18,14 +18,14 @@ const UPDATE_MESSAGE =
   'UPDATE: Flood Warning now SEVERE. Move to higher ground and follow official guidance.';
 
 describe('MessageTemplate.update', () => {
-  it('DMS-123: names the type and the new severity, with the advice for it', () => {
+  it('A2: names the type and the new severity, with the advice for it', () => {
     expect(MessageTemplate.update('FLOOD', 'SEVERE')).toBe(UPDATE_MESSAGE);
     expect(MessageTemplate.update('LANDSLIDE', 'LOW')).toBe(
       'UPDATE: Landslide Warning now LOW. Watch slopes for cracks or falling rocks, and be ready to leave.',
     );
   });
 
-  it('DMS-123: fits in one SMS for every type and severity', () => {
+  it('A2: fits in one SMS for every type and severity', () => {
     for (const type of Object.values(AlertHazardType)) {
       for (const severity of Object.values(SeverityLevel)) {
         expect(MessageTemplate.update(type, severity).length).toBeLessThanOrEqual(160);
@@ -33,7 +33,7 @@ describe('MessageTemplate.update', () => {
     }
   });
 
-  it('DMS-123: refuses an unknown type or severity', () => {
+  it('A2: refuses an unknown type or severity', () => {
     expect(() => MessageTemplate.update('TSUNAMI', 'LOW')).toThrow('unknown hazard type');
     expect(() => MessageTemplate.update('FLOOD', 'EXTREME')).toThrow('unknown severity');
   });
@@ -82,7 +82,7 @@ describe('Updating an active warning (UC01 A2)', () => {
   const cancel = (id) => HazardAlert.updateOne({ _id: id }, { status: 'CANCELLED' });
 
   describe('WarningService.previewUpdate', () => {
-    it('DMS-123: recalculates the recipients for the new scope and writes the update message', async () => {
+    it('A2: recalculates the recipients for the new scope and writes the update message', async () => {
       await citizensIn(areas.colombo, 2);
       await citizensIn(areas.gampaha, 3);
       const id = await activeWarning();
@@ -107,7 +107,7 @@ describe('Updating an active warning (UC01 A2)', () => {
       expect(String(preview.alert.id)).toBe(id);
     });
 
-    it('DMS-123: changes nothing on the alert', async () => {
+    it('A2: changes nothing on the alert', async () => {
       await citizensIn(areas.colombo, 1);
       const id = await activeWarning();
       const before = await HazardAlert.findById(id).lean();
@@ -117,7 +117,7 @@ describe('Updating an active warning (UC01 A2)', () => {
       expect(await HazardAlert.findById(id).lean()).toEqual(before);
     });
 
-    it('DMS-123: keeps the current scope and severity when they are left out', async () => {
+    it('A2: keeps the current scope and severity when they are left out', async () => {
       await citizensIn(areas.colombo, 2);
       await citizensIn(areas.gampaha, 1);
       const id = await activeWarning();
@@ -130,7 +130,7 @@ describe('Updating an active warning (UC01 A2)', () => {
       expect(sameScope.recipientCount).toBe(2);
     });
 
-    it('DMS-123: returns another active warning the new scope would duplicate, never itself', async () => {
+    it('A2: returns another active warning the new scope would duplicate, never itself', async () => {
       await citizensIn(areas.colombo, 1);
       await citizensIn(areas.gampaha, 1);
       const id = await activeWarning();
@@ -143,7 +143,7 @@ describe('Updating an active warning (UC01 A2)', () => {
       expect(widened.activeWarning).toMatchObject({ id: other, hazardType: 'FLOOD' });
     });
 
-    it('DMS-123: no recipients in the new scope is a preview of 0, not an error', async () => {
+    it('A2: no recipients in the new scope is a preview of 0, not an error', async () => {
       await citizensIn(areas.colombo, 1);
       const id = await activeWarning();
 
@@ -152,7 +152,7 @@ describe('Updating an active warning (UC01 A2)', () => {
       ).resolves.toMatchObject({ recipientCount: 0 });
     });
 
-    it('DMS-123: a DRAFT or CANCELLED alert is 409', async () => {
+    it('A2: a DRAFT or CANCELLED alert is 409', async () => {
       await citizensIn(areas.colombo, 1);
       const draft = await previewedDraft();
       const cancelled = await activeWarning();
@@ -168,7 +168,7 @@ describe('Updating an active warning (UC01 A2)', () => {
       );
     });
 
-    it('DMS-123: an unknown area id is 400 on areaIds (E1), an unknown alert 404', async () => {
+    it('A2: an unknown area id is 400 on areaIds (E1), an unknown alert 404', async () => {
       await citizensIn(areas.colombo, 1);
       const id = await activeWarning();
       const unknown = new mongoose.Types.ObjectId().toString();
@@ -184,7 +184,7 @@ describe('Updating an active warning (UC01 A2)', () => {
   });
 
   describe('BroadcastService.update', () => {
-    it('DMS-123: sets UPDATED, version 2, the new severity, scope and message, and a history entry', async () => {
+    it('A2: sets UPDATED, version 2, the new severity, scope and message, and a history entry', async () => {
       await citizensIn(areas.colombo, 1);
       await citizensIn(areas.gampaha, 1);
       const id = await activeWarning();
@@ -214,7 +214,7 @@ describe('Updating an active warning (UC01 A2)', () => {
       });
     });
 
-    it('DMS-123: sends kind UPDATE for the new version to the recalculated recipients only', async () => {
+    it('A2: sends kind UPDATE for the new version to the recalculated recipients only', async () => {
       const [stays] = await citizensIn(areas.colombo, 1);
       const [joins] = await citizensIn(areas.gampaha, 1);
       const id = await activeWarning();
@@ -235,7 +235,7 @@ describe('Updating an active warning (UC01 A2)', () => {
       ).toBe(3);
     });
 
-    it("DMS-123: puts the update in each recipient's inbox with the new severity", async () => {
+    it("A2: puts the update in each recipient's inbox with the new severity", async () => {
       const [citizen] = await citizensIn(areas.colombo, 1);
       const id = await activeWarning();
 
@@ -250,7 +250,7 @@ describe('Updating an active warning (UC01 A2)', () => {
       });
     });
 
-    it('DMS-123: returns the delivery summary of the new version', async () => {
+    it('A2: returns the delivery summary of the new version', async () => {
       await citizensIn(areas.colombo, 2);
       await citizensIn(areas.gampaha, 1);
       const id = await activeWarning();
@@ -263,7 +263,7 @@ describe('Updating an active warning (UC01 A2)', () => {
       expect(summary).toMatchObject({ version: 2, totals: { sent: 9, delivered: 9, failed: 0 } });
     });
 
-    it('DMS-123: an UPDATED warning can be updated again, to version 3', async () => {
+    it('A2: an UPDATED warning can be updated again, to version 3', async () => {
       await citizensIn(areas.colombo, 1);
       const id = await activeWarning();
       await broadcasts.update(id, officer, { severity: 'SEVERE', message: UPDATE_MESSAGE });
@@ -276,7 +276,7 @@ describe('Updating an active warning (UC01 A2)', () => {
       expect(alert).toMatchObject({ status: 'UPDATED', version: 3, severity: 'MEDIUM' });
     });
 
-    it('DMS-123: discards the new draft it replaces once the update is sent', async () => {
+    it('A2: discards the new draft it replaces once the update is sent', async () => {
       await citizensIn(areas.colombo, 1);
       const id = await activeWarning();
       const newDraft = await previewedDraft();
@@ -290,7 +290,7 @@ describe('Updating an active warning (UC01 A2)', () => {
       expect(await HazardAlert.findById(newDraft)).toBeNull();
     });
 
-    it('DMS-123: a replaced draft that is gone or no longer a DRAFT is left alone', async () => {
+    it('A2: a replaced draft that is gone or no longer a DRAFT is left alone', async () => {
       await citizensIn(areas.colombo, 1);
       await citizensIn(areas.kalutara, 1);
       const id = await activeWarning();
@@ -311,7 +311,7 @@ describe('Updating an active warning (UC01 A2)', () => {
       expect(await HazardAlert.findById(other).lean()).toMatchObject({ status: 'BROADCAST' });
     });
 
-    it('DMS-123: an update that changes nothing is 400 and sends nothing', async () => {
+    it('A2: an update that changes nothing is 400 and sends nothing', async () => {
       await citizensIn(areas.colombo, 1);
       const id = await activeWarning();
 
@@ -328,7 +328,7 @@ describe('Updating an active warning (UC01 A2)', () => {
       expect(await Notification.countDocuments({ alert: id, alertVersion: 2 })).toBe(0);
     });
 
-    it('DMS-123: a DRAFT or CANCELLED alert is 409 and nothing is sent', async () => {
+    it('A2: a DRAFT or CANCELLED alert is 409 and nothing is sent', async () => {
       await citizensIn(areas.colombo, 1);
       const draft = await previewedDraft();
       const cancelled = await activeWarning();
@@ -342,7 +342,7 @@ describe('Updating an active warning (UC01 A2)', () => {
       expect(await Notification.countDocuments({ kind: 'UPDATE' })).toBe(0);
     });
 
-    it('DMS-123: a new scope with no citizens is 409 NO_RECIPIENTS_IN_SCOPE and changes nothing (E2)', async () => {
+    it('A2: a new scope with no citizens is 409 NO_RECIPIENTS_IN_SCOPE and changes nothing (E2)', async () => {
       await citizensIn(areas.colombo, 1);
       const id = await activeWarning();
       const newDraft = await previewedDraft();
@@ -361,7 +361,7 @@ describe('Updating an active warning (UC01 A2)', () => {
       expect(await HazardAlert.findById(newDraft)).not.toBeNull();
     });
 
-    it('DMS-123: a new scope another active warning covers is 409 ACTIVE_WARNING_EXISTS', async () => {
+    it('A2: a new scope another active warning covers is 409 ACTIVE_WARNING_EXISTS', async () => {
       await citizensIn(areas.colombo, 1);
       await citizensIn(areas.gampaha, 1);
       const id = await activeWarning();
@@ -378,7 +378,7 @@ describe('Updating an active warning (UC01 A2)', () => {
       expect(await HazardAlert.findById(id).lean()).toMatchObject({ version: 1 });
     });
 
-    it('DMS-123: two officers updating the same version at once: one wins, one 409', async () => {
+    it('A2: two officers updating the same version at once: one wins, one 409', async () => {
       await citizensIn(areas.colombo, 1);
       const id = await activeWarning();
 
@@ -399,7 +399,7 @@ describe('Updating an active warning (UC01 A2)', () => {
   });
 
   describe('BroadcastService.broadcast with an active warning (A2)', () => {
-    it('DMS-123: a new draft that duplicates an active warning is 409 and stays DRAFT', async () => {
+    it('A2: a new draft that duplicates an active warning is 409 and stays DRAFT', async () => {
       await citizensIn(areas.colombo, 1);
       const active = await activeWarning({ scope: [areas.kelani] });
       const { referenceNo } = await warnings.findById(active);
@@ -416,7 +416,7 @@ describe('Updating an active warning (UC01 A2)', () => {
       expect(await Notification.countDocuments({ alert: duplicate })).toBe(0);
     });
 
-    it('DMS-123: a different hazard type on the same district still broadcasts', async () => {
+    it('A2: a different hazard type on the same district still broadcasts', async () => {
       await citizensIn(areas.colombo, 1);
       await activeWarning();
       const cyclone = await previewedDraft({ hazardType: 'CYCLONE' });

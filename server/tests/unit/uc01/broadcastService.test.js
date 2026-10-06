@@ -62,7 +62,7 @@ describe('BroadcastService', () => {
     return citizens;
   };
 
-  it('DMS-121: TC-09 sets BROADCAST with the issuing officer, the time and a history entry', async () => {
+  it('Main 12: TC-09 sets BROADCAST with the issuing officer, the time and a history entry', async () => {
     await citizensIn(areas.colombo, 1);
     const id = await previewedDraft();
 
@@ -78,7 +78,7 @@ describe('BroadcastService', () => {
     expect(alert.statusHistory.map((entry) => entry.status)).toEqual(['DRAFT', 'BROADCAST']);
   });
 
-  it('DMS-121: TC-10 creates one delivery per recipient and channel, all DELIVERED', async () => {
+  it('Main 13: TC-10 creates one delivery per recipient and channel, all DELIVERED', async () => {
     const citizens = [
       ...(await citizensIn(areas.colombo, 2)),
       ...(await citizensIn(areas.gampaha, 1)),
@@ -109,7 +109,7 @@ describe('BroadcastService', () => {
     });
   });
 
-  it('DMS-121: returns the delivery summary of what it just sent', async () => {
+  it('Main 14: returns the delivery summary of what it just sent', async () => {
     await citizensIn(areas.colombo, 2);
     const id = await previewedDraft();
 
@@ -132,7 +132,7 @@ describe('BroadcastService', () => {
     });
   });
 
-  it("DMS-121: deliverySummary reads the alert and its current version's counts", async () => {
+  it("Main 14: deliverySummary reads the alert and its current version's counts", async () => {
     await citizensIn(areas.colombo, 1);
     const id = await previewedDraft();
     const draftSummary = await serviceWith().deliverySummary(id);
@@ -147,7 +147,7 @@ describe('BroadcastService', () => {
     await expect(serviceWith().deliverySummary('nope')).rejects.toMatchObject({ status: 404 });
   });
 
-  it("DMS-121: the officer's final message replaces the draft's", async () => {
+  it("Main 12: the officer's final message replaces the draft's", async () => {
     await citizensIn(areas.colombo, 1);
     const id = await previewedDraft();
 
@@ -156,7 +156,7 @@ describe('BroadcastService', () => {
     expect(alert.message).toBe('Move to higher ground now.');
   });
 
-  it('DMS-121: TC-13 a channel that throws is FAILED and the others still deliver', async () => {
+  it('Main 13: TC-13 a channel that throws is FAILED and the others still deliver', async () => {
     class BrokenAudible extends AlertChannel {
       static channel = 'AUDIBLE';
 
@@ -181,7 +181,7 @@ describe('BroadcastService', () => {
     expect((await byChannel('SMS')).every((r) => r.status === 'DELIVERED')).toBe(true);
   });
 
-  it('DMS-121: a channel that reports FAILED or SENT is recorded as such', async () => {
+  it('Main 13: a channel that reports FAILED or SENT is recorded as such', async () => {
     await citizensIn(areas.colombo, 1);
     const id = await previewedDraft();
     class AcceptedSms extends AlertChannel {
@@ -209,7 +209,7 @@ describe('BroadcastService', () => {
     expect(await status('AUDIBLE')).toEqual(['DELIVERED', null]);
   });
 
-  it('DMS-121: TC-14 a fourth channel is added by injection alone (Open/Closed)', async () => {
+  it('Main 13: TC-14 a fourth channel is added by injection alone (Open/Closed)', async () => {
     await citizensIn(areas.colombo, 2);
     const id = await previewedDraft();
     class PagerChannel extends AlertChannel {
@@ -237,7 +237,7 @@ describe('BroadcastService', () => {
     ]);
   });
 
-  it('DMS-121: writes the deliveries in batches', async () => {
+  it('Main 13: writes the deliveries in batches', async () => {
     await citizensIn(areas.colombo, 3);
     const id = await previewedDraft();
     const batches = [];
@@ -256,7 +256,7 @@ describe('BroadcastService', () => {
     expect(batches).toEqual([4, 4, 1]);
   });
 
-  it("DMS-121: puts a HAZARD_ALERT with the severity in every recipient's inbox", async () => {
+  it("Main 13: puts a HAZARD_ALERT with the severity in every recipient's inbox", async () => {
     const citizens = await citizensIn(areas.colombo, 2);
     const id = await previewedDraft();
 
@@ -274,7 +274,7 @@ describe('BroadcastService', () => {
     });
   });
 
-  it('DMS-121: an inbox that fails never fails the broadcast', async () => {
+  it('Main 13: an inbox that fails never fails the broadcast', async () => {
     await citizensIn(areas.colombo, 1);
     const id = await previewedDraft();
     const notifications = new NotificationService({
@@ -290,7 +290,7 @@ describe('BroadcastService', () => {
     errorSpy.mockRestore();
   });
 
-  it('DMS-121: TC-12 broadcasting a BROADCAST alert is 409 and sends nothing more', async () => {
+  it('Main 12: TC-12 broadcasting a BROADCAST alert is 409 and sends nothing more', async () => {
     await citizensIn(areas.colombo, 1);
     const id = await previewedDraft();
     await serviceWith().broadcast(id, officer, MESSAGE);
@@ -303,7 +303,7 @@ describe('BroadcastService', () => {
     expect(await Notification.countDocuments({ alert: id })).toBe(3);
   });
 
-  it('DMS-121: two officers broadcasting the same draft at once: one wins, one 409', async () => {
+  it('Main 12: two officers broadcasting the same draft at once: one wins, one 409', async () => {
     await citizensIn(areas.colombo, 1);
     const id = await previewedDraft();
     const colleague = await createUser({ role: Role.DMC_OFFICER });
@@ -318,7 +318,7 @@ describe('BroadcastService', () => {
     expect(await Notification.countDocuments({ alert: id })).toBe(3);
   });
 
-  it('DMS-121: a draft that was never previewed is 409 and sends nothing', async () => {
+  it('Main 12: a draft that was never previewed is 409 and sends nothing', async () => {
     const { id } = await warnings.startDraft(officer);
 
     await expect(serviceWith().broadcast(id, officer, MESSAGE)).rejects.toMatchObject({
@@ -329,7 +329,7 @@ describe('BroadcastService', () => {
     expect(await Notification.countDocuments()).toBe(0);
   });
 
-  it('DMS-121: a scope area that has gone since the preview is 400, and nothing is sent', async () => {
+  it('Main 12: a scope area that has gone since the preview is 400, and nothing is sent', async () => {
     await citizensIn(areas.gampaha, 1);
     const id = await previewedDraft([areas.gampaha]);
     await District.deleteOne({ _id: areas.gampaha._id });
@@ -345,14 +345,14 @@ describe('BroadcastService', () => {
   it.each([
     ['an unknown id', () => new mongoose.Types.ObjectId().toString()],
     ['a malformed id', () => 'nope'],
-  ])('DMS-121: %s is 404 NOT_FOUND', async (_case, idFor) => {
+  ])('Main 12: %s is 404 NOT_FOUND', async (_case, idFor) => {
     await expect(serviceWith().broadcast(idFor(), officer, MESSAGE)).rejects.toMatchObject({
       status: 404,
       message: 'Hazard alert not found.',
     });
   });
 
-  it('DMS-121: the shared default instance broadcasts on the three configured channels', async () => {
+  it('Main 13: the shared default instance broadcasts on the three configured channels', async () => {
     await citizensIn(areas.colombo, 1);
     const id = await previewedDraft();
     const { broadcastService } = await import('../../../src/services/BroadcastService.js');

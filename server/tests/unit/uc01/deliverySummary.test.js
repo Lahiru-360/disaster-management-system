@@ -22,7 +22,7 @@ describe('DeliverySummary', () => {
     ...fields,
   });
 
-  it('DMS-121: TC-11 counts sent, delivered and failed per channel from the stored records', async () => {
+  it('Main 14: TC-11 counts sent, delivered and failed per channel from the stored records', async () => {
     await Notification.insertMany([
       record(ann, 'PUSH', 'DELIVERED'),
       record(ben, 'PUSH', 'FAILED', { failureReason: 'offline' }),
@@ -48,7 +48,7 @@ describe('DeliverySummary', () => {
     });
   });
 
-  it('DMS-121: a citizen reached on any channel is not unreached', async () => {
+  it('Main 14: a citizen reached on any channel is not unreached', async () => {
     await Notification.insertMany([
       record(ann, 'PUSH', 'FAILED'),
       record(ann, 'SMS', 'DELIVERED'),
@@ -61,7 +61,7 @@ describe('DeliverySummary', () => {
     });
   });
 
-  it('DMS-121: counts only the requested alert and version', async () => {
+  it('Main 14: counts only the requested alert and version', async () => {
     await Notification.insertMany([
       record(ann, 'PUSH', 'DELIVERED'),
       record(ann, 'PUSH', 'DELIVERED', { alertVersion: 2, kind: 'UPDATE' }),
@@ -76,7 +76,7 @@ describe('DeliverySummary', () => {
     expect(second).toMatchObject({ version: 2, totals: { sent: 2, delivered: 2, failed: 0 } });
   });
 
-  it('DMS-121: counts a record retried through the fallback as resent', async () => {
+  it('E3: counts a record retried through the fallback as resent', async () => {
     await Notification.insertMany([
       record(ann, 'PUSH', 'DELIVERED', { attempts: 2, fallbackChannel: 'SMS' }),
       record(ben, 'PUSH', 'FAILED', { attempts: 3, fallbackChannel: 'SMS' }),
@@ -88,7 +88,7 @@ describe('DeliverySummary', () => {
     });
   });
 
-  it('DMS-121: nothing sent is every channel at zero, in order', async () => {
+  it('Main 14: nothing sent is every channel at zero, in order', async () => {
     const summary = await new DeliverySummary().forAlert(id(), 1);
 
     expect(summary).toEqual({
@@ -105,7 +105,7 @@ describe('DeliverySummary', () => {
     });
   });
 
-  it("DMS-128: reports the injected policy's fallback channel", async () => {
+  it("E3: reports the injected policy's fallback channel", async () => {
     const summary = await new DeliverySummary({
       fallback: new FallbackPolicy({ channel: 'PUSH' }),
     }).forAlert(id(), 1);
@@ -136,7 +136,7 @@ describe('DeliverySummary', () => {
       };
     });
 
-    it('DMS-128: TC-42 lists the distinct citizens with no DELIVERED record, by name, with district and phone', async () => {
+    it('E3: TC-42 lists the distinct citizens with no DELIVERED record, by name, with district and phone', async () => {
       const { zara, asha, malan } = people;
       await Notification.insertMany([
         record(zara._id, 'PUSH', 'FAILED'),
@@ -168,7 +168,7 @@ describe('DeliverySummary', () => {
       });
     });
 
-    it('DMS-128: TC-41 a citizen delivered by audible while push failed is not unreached', async () => {
+    it('E3: TC-41 a citizen delivered by audible while push failed is not unreached', async () => {
       const { zara } = people;
       await Notification.insertMany([
         record(zara._id, 'PUSH', 'FAILED', { attempts: 3, fallbackChannel: 'SMS' }),
@@ -185,7 +185,7 @@ describe('DeliverySummary', () => {
       });
     });
 
-    it('DMS-128: pages by name then id without overlap; the total matches unreachedCount', async () => {
+    it('E3: pages by name then id without overlap; the total matches unreachedCount', async () => {
       await Notification.insertMany(
         Object.values(people).map((person) => record(person._id, 'PUSH', 'FAILED')),
       );
@@ -201,7 +201,7 @@ describe('DeliverySummary', () => {
       expect((await deliverySummary.forAlert(alert, 1)).unreachedCount).toBe(3);
     });
 
-    it('DMS-128: counts only the requested alert and version', async () => {
+    it('E3: counts only the requested alert and version', async () => {
       const { zara, asha } = people;
       await Notification.insertMany([
         record(zara._id, 'PUSH', 'FAILED', { alertVersion: 2 }),
