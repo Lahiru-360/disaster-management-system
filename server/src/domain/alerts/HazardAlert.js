@@ -172,6 +172,15 @@ export class HazardAlert {
   }
 
   /**
+   * Checks that the draft may be thrown away (A4): only a DRAFT, which has
+   * sent nothing, can be. Removing it is the service's job.
+   * @throws {InvalidAlertTransitionError} If it is no longer DRAFT.
+   */
+  discard() {
+    this.#requireDraft('discarded');
+  }
+
+  /**
    * Changes an active warning's severity and/or scope (A2): it becomes UPDATED
    * with the next version.
    * @param {string|null} severity The new severity, or null to keep it.

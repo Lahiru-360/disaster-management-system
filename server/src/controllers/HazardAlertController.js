@@ -28,6 +28,13 @@ export class HazardAlertController extends BaseController {
     ApiResponse.success(res, data, 201);
   }
 
+  // GET /api/hazard-alerts?status=draft - UC01 A4 (§12.11).
+  async list(req, res) {
+    const alerts = await this.#warningService.listDrafts();
+
+    ApiResponse.success(res, { alerts }, 200);
+  }
+
   // POST /api/hazard-alerts/:id/preview - UC01 steps 3-7 (§12.3).
   async preview(req, res) {
     const preview = await this.#warningService.preview(req.params.id, req.body);
@@ -45,6 +52,13 @@ export class HazardAlertController extends BaseController {
   // GET /api/hazard-alerts/:id (§12.5).
   async getById(req, res) {
     const alert = await this.#warningService.findById(req.params.id);
+
+    ApiResponse.success(res, { alert }, 200);
+  }
+
+  // DELETE /api/hazard-alerts/:id - UC01 A4 (§12.12).
+  async discardDraft(req, res) {
+    const alert = await this.#warningService.discardDraft(req.params.id);
 
     ApiResponse.success(res, { alert }, 200);
   }
