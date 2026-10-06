@@ -5,6 +5,7 @@ import { EventStatus } from '../../../src/enums/EventStatus.js';
 import { HazardAlert } from '../../../src/models/HazardAlert.js';
 import { Notification } from '../../../src/models/Notification.js';
 import { Organisation } from '../../../src/models/Organisation.js';
+import { SupplyDistribution } from '../../../src/models/SupplyDistribution.js';
 import { ReportNames } from '../../../src/services/reports/ReportNames.js';
 import { DeliveryRecordRepository } from '../../../src/services/reports/repositories/DeliveryRecordRepository.js';
 import { OccupancyRecordRepository } from '../../../src/services/reports/repositories/OccupancyRecordRepository.js';
@@ -323,10 +324,10 @@ describe('OccupancyRecordRepository (fallback: reads the occupancyrecords collec
   });
 });
 
-describe('SupplyDistributionRepository (fallback: reads the supplydistributions collection)', () => {
+describe('SupplyDistributionRepository', () => {
   it('DMS-153.3: returns the districts’ distributions logged inside the range', async () => {
     const organisation = new ObjectId();
-    await mongoose.connection.collection(SupplyDistributionRepository.COLLECTION).insertMany(
+    await SupplyDistribution.create(
       [
         [areas.gampaha, 500, at(10)],
         [areas.gampaha, 70, at(21)],
@@ -416,7 +417,10 @@ describe('the four sections with their default repositories', () => {
       { shelter, district: areas.colombo._id, occupants: 120, recordedAt: at(7) },
       { shelter, district: areas.colombo._id, occupants: 180, recordedAt: at(9) },
     ]);
-    await mongoose.connection.collection(SupplyDistributionRepository.COLLECTION).insertOne({
+    await SupplyDistribution.create({
+      shelter: new ObjectId(),
+      stock: new ObjectId(),
+      loggedBy: officer,
       district: areas.colombo._id,
       supplyType: 'FOOD',
       organisation: organisation._id,

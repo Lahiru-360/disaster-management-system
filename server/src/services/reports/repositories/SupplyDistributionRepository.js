@@ -1,18 +1,12 @@
-import mongoose from 'mongoose';
+import { SupplyDistribution as SupplyDistributionModel } from '../../../models/SupplyDistribution.js';
 
 // UC03's relief distribution records (§13.11.2), read for resource
 // distribution. Read-only.
-//
-// FALLBACK (X-3): the SupplyDistribution model (DMS-143.2) is not on develop
-// yet, so this reads its collection directly, using only the frozen §13.11.2
-// fields. When it merges, query the model instead (Check #275).
 export class SupplyDistributionRepository {
-  static COLLECTION = 'supplydistributions';
+  #distributionModel;
 
-  #connection;
-
-  constructor({ connection = mongoose.connection } = {}) {
-    this.#connection = connection;
+  constructor({ distributionModel = SupplyDistributionModel } = {}) {
+    this.#distributionModel = distributionModel;
   }
 
   /**
@@ -21,24 +15,12 @@ export class SupplyDistributionRepository {
    * @returns {Promise<Array<{ district: string, supplyType: string, organisation: string, quantity: number, distributedAt: Date }>>}
    */
   async findInRange({ districtIds, start, end }) {
-    const records = await this.#connection
-      .collection(SupplyDistributionRepository.COLLECTION)
+    const records = await this.#distributionModel
       .find(
-        {
-          district: { $in: districtIds.map((id) => new mongoose.Types.ObjectId(String(id))) },
-          distributedAt: { $gte: start, $lt: end },
-        },
-        {
-          projection: {
-            district: 1,
-            supplyType: 1,
-            organisation: 1,
-            quantity: 1,
-            distributedAt: 1,
-          },
-        },
+        { district: { $in: districtIds }, distributedAt: { $gte: start, $lt: end } },
+        'district supplyType organisation quantity distributedAt',
       )
-      .toArray();
+      .lean();
 
     return records.map((record) => ({
       district: String(record.district),

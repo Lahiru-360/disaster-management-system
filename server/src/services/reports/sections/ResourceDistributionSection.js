@@ -1,4 +1,5 @@
 import { ReportSectionKey } from '../../../enums/ReportSectionKey.js';
+import { SupplyType } from '../../../enums/SupplyType.js';
 import { ReportNames } from '../ReportNames.js';
 import { SupplyDistributionRepository } from '../repositories/SupplyDistributionRepository.js';
 import { ReportSection } from '../ReportSection.js';
@@ -7,9 +8,7 @@ import { ReportSection } from '../ReportSection.js';
 // district x supply type x owning organisation. Quantities are summed in each
 // stock row's own unit, since the distribution record doesn't carry it.
 export class ResourceDistributionSection extends ReportSection {
-  // FALLBACK (X-3): UC03's SupplyType enum (DMS-143) is not on develop yet, so
-  // its frozen §13.2 order is copied here. Import the enum once it merges.
-  static #SUPPLY_TYPE_ORDER = ['FOOD', 'WATER', 'MEDICINE', 'BLANKETS', 'HYGIENE_KITS'];
+  static #SUPPLY_TYPE_ORDER = Object.values(SupplyType);
 
   #distributions;
   #names;
