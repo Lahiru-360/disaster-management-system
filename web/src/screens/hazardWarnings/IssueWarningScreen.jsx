@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
 
 import { areasApi, hazardAlertsApi } from '../../api';
@@ -37,6 +37,7 @@ const fieldError = (error, field) =>
 export default function IssueWarningScreen() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const recipientCountId = useId();
   const canIssue = [ROLES.DMC_OFFICER, ROLES.DUTY_OFFICER].includes(user?.role);
 
   const [alert, setAlert] = useState(null);
@@ -164,6 +165,9 @@ export default function IssueWarningScreen() {
   }
 
   const scopeError = fieldError(previewError, 'areaIds');
+  // E2: a scope with no registered citizens cannot be broadcast. The officer
+  // changes the scope (step 5) and the preview runs again.
+  const noRecipients = preview?.recipientCount === 0;
   const otherPreviewError =
     previewError && !scopeError
       ? errorMessage(previewError, 'The preview could not be made. Try again.')
@@ -236,7 +240,7 @@ export default function IssueWarningScreen() {
                 <ChannelReadiness channels={preview.channels} />
               </div>
               <div className="mt-2 border-t border-line pt-4">
-                <RecipientCount count={preview.recipientCount} />
+                <RecipientCount id={recipientCountId} count={preview.recipientCount} />
               </div>
             </>
           )}
@@ -250,8 +254,14 @@ export default function IssueWarningScreen() {
           <Button variant="outline" fullWidth={false} onClick={() => navigate('/hazard-warnings')}>
             Cancel
           </Button>
-          {/* The confirmation dialog and the broadcast arrive with DMS-121.7. */}
-          <Button fullWidth={false} disabled>
+          {/* The confirmation dialog and the broadcast arrive with DMS-121.7, and
+              until then the button stays disabled. With no recipients (E2) it
+              points at the reason. */}
+          <Button
+            fullWidth={false}
+            disabled
+            aria-describedby={noRecipients ? recipientCountId : undefined}
+          >
             Confirm &amp; Broadcast
           </Button>
         </div>
