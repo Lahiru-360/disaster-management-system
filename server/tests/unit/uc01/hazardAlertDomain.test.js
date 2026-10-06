@@ -238,6 +238,41 @@ describe('HazardAlert (domain)', () => {
     expect(alert.status).toBe(status);
   });
 
+  it('DMS-125: discard allows a DRAFT, previewed or not, and changes nothing', () => {
+    for (const alert of [draft(), composed()]) {
+      const before = alert.toFields();
+
+      expect(() => alert.discard()).not.toThrow();
+      expect(alert.toFields()).toEqual(before);
+    }
+  });
+
+  it.each([
+    ['BROADCAST', () => broadcast()],
+    [
+      'UPDATED',
+      () => {
+        const alert = broadcast();
+        alert.update('HIGH', null, OFFICER, T2);
+        return alert;
+      },
+    ],
+    [
+      'CANCELLED',
+      () => {
+        const alert = broadcast();
+        alert.cancel(OFFICER, T2);
+        return alert;
+      },
+    ],
+  ])('DMS-125: TC-31 discard refuses a %s alert', (status, make) => {
+    const error = expectTransitionError(
+      () => make().discard(),
+      `Only a DRAFT alert can be discarded – current status: ${status}`,
+    );
+    expect(error.currentStatus).toBe(status);
+  });
+
   it('DMS-120: a status change needs the officer and a valid time', () => {
     expect(() => composed().broadcast(null, T1)).toThrow('needs the officer');
     expect(() => composed().broadcast(OFFICER, new Date('nope'))).toThrow('needs the time');
