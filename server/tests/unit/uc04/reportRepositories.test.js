@@ -3,6 +3,7 @@ import { ReportContext } from '../../../src/domain/analysis/ReportContext.js';
 import { HazardEvent } from '../../../src/domain/events/HazardEvent.js';
 import { EventStatus } from '../../../src/enums/EventStatus.js';
 import { HazardAlert } from '../../../src/models/HazardAlert.js';
+import { Notification } from '../../../src/models/Notification.js';
 import { Organisation } from '../../../src/models/Organisation.js';
 import { ReportNames } from '../../../src/services/reports/ReportNames.js';
 import { DeliveryRecordRepository } from '../../../src/services/reports/repositories/DeliveryRecordRepository.js';
@@ -201,11 +202,11 @@ describe('ReportAlertRepository.findForReport', () => {
   });
 });
 
-describe('DeliveryRecordRepository.findSent (fallback: reads the notifications collection)', () => {
+describe('DeliveryRecordRepository.findSent', () => {
   const alertA = new ObjectId();
   const alertB = new ObjectId();
   const insert = (records) =>
-    mongoose.connection.collection(DeliveryRecordRepository.COLLECTION).insertMany(
+    Notification.create(
       records.map(([alertId, status, sentAt, channel = 'SMS']) => ({
         alert: alertId,
         alertVersion: 1,
@@ -213,10 +214,7 @@ describe('DeliveryRecordRepository.findSent (fallback: reads the notifications c
         citizen: new ObjectId(),
         channel,
         status,
-        attempts: 1,
         sentAt,
-        deliveredAt: null,
-        failureReason: null,
       })),
     );
 
@@ -405,8 +403,10 @@ describe('the four sections with their default repositories', () => {
     const saved = await alert();
     const organisation = await Organisation.create({ name: 'UNICEF Sri Lanka', type: 'DONOR' });
     const shelter = new ObjectId();
-    await mongoose.connection.collection(DeliveryRecordRepository.COLLECTION).insertOne({
+    await Notification.create({
       alert: saved._id,
+      alertVersion: 1,
+      kind: 'WARNING',
       citizen: new ObjectId(),
       channel: 'SMS',
       status: 'DELIVERED',

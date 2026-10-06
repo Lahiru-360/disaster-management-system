@@ -1,4 +1,5 @@
 import { Channel } from '../../../enums/Channel.js';
+import { DeliveryStatus } from '../../../enums/DeliveryStatus.js';
 import { ReportSectionKey } from '../../../enums/ReportSectionKey.js';
 import { DeliveryRecordRepository } from '../repositories/DeliveryRecordRepository.js';
 import { ReportAlertRepository } from '../repositories/ReportAlertRepository.js';
@@ -8,10 +9,6 @@ import { ReportSection } from '../ReportSection.js';
 // channel delivered. A citizen counts once however many channels or alerts
 // reached them, and only with at least one DELIVERED record.
 export class CitizensReachedSection extends ReportSection {
-  static #DELIVERED = 'DELIVERED';
-
-  static #FAILED = 'FAILED';
-
   #alerts;
   #deliveries;
 
@@ -54,7 +51,7 @@ export class CitizensReachedSection extends ReportSection {
       const day = ctx.dayOf(record.sentAt);
       const counts = perDay.get(day) ?? { attempted: 0, delivered: 0 };
       counts.attempted += 1;
-      counts.delivered += record.status === CitizensReachedSection.#DELIVERED ? 1 : 0;
+      counts.delivered += record.status === DeliveryStatus.DELIVERED ? 1 : 0;
       perDay.set(day, counts);
     });
 
@@ -88,7 +85,7 @@ export class CitizensReachedSection extends ReportSection {
     const targeted = new Set(records.map((record) => record.citizen));
     const reached = new Set(
       records
-        .filter((record) => record.status === CitizensReachedSection.#DELIVERED)
+        .filter((record) => record.status === DeliveryStatus.DELIVERED)
         .map((record) => record.citizen),
     );
     return { targeted: targeted.size, reached: reached.size };
@@ -99,9 +96,7 @@ export class CitizensReachedSection extends ReportSection {
     return Object.values(Channel).map((channel) => {
       const ofChannel = records.filter((record) => record.channel === channel);
       const attempted = ofChannel.length;
-      const delivered = ofChannel.filter(
-        (r) => r.status === CitizensReachedSection.#DELIVERED,
-      ).length;
+      const delivered = ofChannel.filter((r) => r.status === DeliveryStatus.DELIVERED).length;
       if (!withRates) {
         return { channel, attempted, delivered };
       }
@@ -109,7 +104,7 @@ export class CitizensReachedSection extends ReportSection {
         channel,
         attempted,
         delivered,
-        failed: ofChannel.filter((r) => r.status === CitizensReachedSection.#FAILED).length,
+        failed: ofChannel.filter((r) => r.status === DeliveryStatus.FAILED).length,
         deliveryRate: attempted === 0 ? null : delivered / attempted,
       };
     });
