@@ -1,11 +1,12 @@
-import { useNavigation } from '@react-navigation/native';
-import { useState } from 'react';
+import { useNavigation, useRoute } from '@react-navigation/native';
+import { useEffect, useState } from 'react';
 
 import { hazardReportsApi, uploadApi } from '../../api';
 import DescriptionField from '../../components/hazardReports/DescriptionField';
 import HazardTypeChips from '../../components/hazardReports/HazardTypeChips';
 import LocationRow from '../../components/hazardReports/LocationRow';
 import ManualLocationSheet from '../../components/hazardReports/ManualLocationSheet';
+import OfflineBanner from '../../components/hazardReports/OfflineBanner';
 import PhotoCapture from '../../components/hazardReports/PhotoCapture';
 import SubmittedState from '../../components/hazardReports/SubmittedState';
 import Button from '../../components/ui/Button';
@@ -14,7 +15,10 @@ import Screen from '../../components/ui/Screen';
 import ScreenHeader from '../../components/ui/ScreenHeader';
 import SectionLabel from '../../components/ui/SectionLabel';
 import { TABS } from '../../constants/roles';
+import { OfflineQueueFullError } from '../../store/OfflineQueue';
+import offlineReportQueue from '../../store/offlineReportQueue';
 import useAuth from '../../hooks/useAuth';
+import useConnectivity from '../../hooks/useConnectivity';
 import useCurrentLocation from '../../hooks/useCurrentLocation';
 import { uuidv4 } from '../../utils/uuid';
 import { hazardReportErrorsFromServer, validateHazardReport } from '../../utils/validation';
@@ -29,9 +33,14 @@ function emptyForm() {
 // until the reporter starts another.
 export default function ReportHazardScreen() {
   const navigation = useNavigation();
+  const route = useRoute();
   const [form, setForm] = useState(emptyForm);
+  // E2/E1: a saved report the server refused, opened from My reports to be
+  // corrected; its clientReportId is kept so it is still sent only once.
+  const [correcting, setCorrecting] = useState(null);
   // Step 3: the device's position (A2: 'unavailable' after the timeout).
   const gps = useCurrentLocation();
+  const { isOnline } = useConnectivity();
   // A2: a location set by hand ({ location, placeName }) wins over the GPS.
   const [manual, setManual] = useState(null);
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -40,12 +49,41 @@ export default function ReportHazardScreen() {
   const [autoSheetShown, setAutoSheetShown] = useState(false);
   const { user } = useAuth();
   const location = manual ? manual.location : gps.location;
-  const locationSource = manual ? 'MANUAL' : 'GPS';
+  const locationSource = manual ? (manual.source ?? 'MANUAL') : 'GPS';
   const showSheet = sheetOpen || (gps.status === 'unavailable' && !manual && !autoSheetShown);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState(null);
   const [fieldErrors, setFieldErrors] = useState({});
   const [submitted, setSubmitted] = useState(null);
+
+  // Opened with a report to correct: fill the form with it and outline the
+  // fields the server refused.
+  const correctId = route.params?.correctClientReportId;
+  useEffect(() => {
+    if (!correctId) return undefined;
+    let current = true;
+    offlineReportQueue.list().then((items) => {
+      const item = items.find((candidate) => candidate.clientReportId === correctId);
+      if (!current || !item) return;
+      setSubmitted(null);
+      setCorrecting(item);
+      setForm({
+        photo: item.localPhotoUri ? { uri: item.localPhotoUri } : null,
+        description: item.description,
+        hazardType: item.hazardType,
+        clientReportId: item.clientReportId,
+      });
+      setManual({ location: item.location, source: item.locationSource });
+      setFieldErrors(hazardReportErrorsFromServer(item.fieldErrors));
+      setSubmitError(
+        `${item.lastError ?? 'The server refused this report'}. Correct the highlighted fields and send it again.`,
+      );
+      navigation.setParams({ correctClientReportId: undefined });
+    });
+    return () => {
+      current = false;
+    };
+  }, [correctId, navigation]);
 
   function clearFieldError(field) {
     setFieldErrors((current) => {
@@ -76,6 +114,10 @@ export default function ReportHazardScreen() {
 
     setSubmitting(true);
     setSubmitError(null);
+    if (!isOnline) {
+      await saveOffline();
+      return;
+    }
     try {
       const photoUrl = form.photo
         ? await uploadApi.uploadImage(form.photo, 'hazard-reports')
@@ -88,6 +130,10 @@ export default function ReportHazardScreen() {
         photoUrl,
         clientReportId: form.clientReportId,
       });
+      if (correcting) {
+        await offlineReportQueue.remove(correcting.clientReportId);
+        setCorrecting(null);
+      }
       setSubmitted(report);
     } catch (error) {
       const body = error?.response?.data?.error;
@@ -95,6 +141,10 @@ export default function ReportHazardScreen() {
         // E1.2: the server's field errors outline the same fields.
         setFieldErrors(hazardReportErrorsFromServer(body.errors));
         setSubmitError('Check the highlighted fields.');
+      } else if (!error?.response) {
+        // A3: the connection dropped on the way - keep the report on the phone.
+        await saveOffline();
+        return;
       } else {
         setSubmitError(
           body?.message ?? 'Your report could not be sent. Check your connection and try again.',
@@ -105,8 +155,46 @@ export default function ReportHazardScreen() {
     }
   }
 
+  // A3.1: keep the report on the phone; SyncService sends it when the
+  // connection is back. The photo stays a local file until then.
+  async function saveOffline() {
+    const fields = {
+      clientReportId: form.clientReportId,
+      description: form.description,
+      hazardType: form.hazardType,
+      location,
+      locationSource,
+      localPhotoUri: form.photo?.uri ?? null,
+    };
+    try {
+      if (correcting) {
+        // The corrected report replaces the refused one, ready to send again.
+        await offlineReportQueue.update(correcting.clientReportId, {
+          ...fields,
+          state: 'QUEUED',
+          nextAttemptAt: null,
+          fieldErrors: [],
+          lastError: null,
+        });
+        setCorrecting(null);
+      } else {
+        await offlineReportQueue.enqueue(fields);
+      }
+      setSubmitted({ savedOffline: true });
+    } catch (error) {
+      setSubmitError(
+        error instanceof OfflineQueueFullError
+          ? error.message
+          : 'Your report could not be saved on this phone. Try again.',
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   function reportAnother() {
     setSubmitted(null);
+    setCorrecting(null);
     setFieldErrors({});
     setForm(emptyForm());
     setManual(null);
@@ -120,6 +208,7 @@ export default function ReportHazardScreen() {
         <ScreenHeader title="Report a Hazard" />
         <SubmittedState
           referenceNo={submitted.referenceNo}
+          savedOffline={Boolean(submitted.savedOffline)}
           onViewReports={() => navigation.navigate(TABS.MY_REPORTS)}
           onReportAnother={reportAnother}
         />
@@ -130,6 +219,8 @@ export default function ReportHazardScreen() {
   return (
     <Screen edges={['top']} scroll keyboardShouldPersistTaps="handled" contentClassName="pb-10">
       <ScreenHeader title="Report a Hazard" className="px-0" />
+
+      {isOnline ? null : <OfflineBanner />}
 
       <SectionLabel className="mb-2 mt-2">Photo of the hazard</SectionLabel>
       <PhotoCapture
@@ -142,7 +233,7 @@ export default function ReportHazardScreen() {
       <SectionLabel className="mb-2">Location</SectionLabel>
       <LocationRow
         location={location}
-        status={gps.status}
+        status={manual ? 'ready' : gps.status}
         source={locationSource}
         placeName={manual?.placeName}
         onRetry={() => {

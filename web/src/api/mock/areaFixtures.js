@@ -1,7 +1,9 @@
 // Mock geography for the web mocks: the 25 districts and the river basins
 // DistrictSeeder seeds, with made-up ids and a made-up count of registered
 // citizens per district (Colombo + Gampaha = 48,200, as in the UC01
-// wireframe). Shared by every mock that needs to know what an area id is.
+// wireframe). Mullaitivu has none, so choosing only it shows E2 (no
+// recipients in scope). Shared by every mock that needs to know what an area
+// id is.
 
 const district = (n, name, province, citizens) => ({
   id: `66f7c1a2b3c4d5e6f7a8b9${String(n).padStart(2, '0')}`,
@@ -24,7 +26,7 @@ export const DISTRICTS = [
   district(11, 'Kilinochchi', 'Northern', 1100),
   district(12, 'Mannar', 'Northern', 900),
   district(13, 'Vavuniya', 'Northern', 1500),
-  district(14, 'Mullaitivu', 'Northern', 800),
+  district(14, 'Mullaitivu', 'Northern', 0),
   district(15, 'Batticaloa', 'Eastern', 4400),
   district(16, 'Ampara', 'Eastern', 5200),
   district(17, 'Trincomalee', 'Eastern', 3200),
