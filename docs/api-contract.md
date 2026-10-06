@@ -2415,7 +2415,7 @@ The server then:
 1. Checks that the alert is **active** (`BROADCAST` or `UPDATED`).
 2. Finds the **original recipients**: the distinct citizens who have **any** delivery record for this alert (12.9), of any kind and any version. This is **not** a recalculated scope: a citizen who has since moved district still gets the all-clear, and one who has since moved in does not.
 3. Sets the alert to **`CANCELLED`**, adds one to `version`, stores the all-clear message, and adds a `statusHistory` entry `{ status: "CANCELLED", version, at, by }`. `issuedBy` and `issuedAt` keep the first broadcast.
-4. Sends the all-clear to the original recipients. Delivery works as in 12.6 steps 3–4, with delivery records of `kind: ALL_CLEAR` and `alertVersion` set to the new version, and an inbox item of type `HAZARD_ALERT` titled `<Type> Warning: ALL CLEAR` with `severity: null`.
+4. Sends the all-clear to the original recipients. Delivery works as in 12.6 steps 3–4, with delivery records of `kind: ALL_CLEAR` and `alertVersion` set to the new version, and an inbox item of type `HAZARD_ALERT` titled `<Type> Warning: ALL CLEAR` with `severity: "LOW"` (an inbox alert always has a severity, §11.1; `LOW` shows the calm tint).
 5. Returns the alert and the delivery summary for the **new version** (12.7), which is the all-clear's (UC01 A3.3: resume at step 14).
 
 A `CANCELLED` alert is final. It is no longer active, so it never conflicts with a new warning (12.13) and can't be updated or cancelled again.
