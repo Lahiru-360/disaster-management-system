@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
 
 import { areasApi, hazardAlertsApi } from '../../api';
 import BroadcastPreview from '../../components/hazardWarnings/BroadcastPreview';
 import ChannelReadiness from '../../components/hazardWarnings/ChannelReadiness';
+import ConfirmBroadcastDialog from '../../components/hazardWarnings/ConfirmBroadcastDialog';
 import HazardTypePicker from '../../components/hazardWarnings/HazardTypePicker';
 import RecipientCount from '../../components/hazardWarnings/RecipientCount';
 import ScopeSelector from '../../components/hazardWarnings/ScopeSelector';
@@ -18,25 +19,27 @@ import SectionLabel from '../../components/ui/SectionLabel';
 import StatusBadge from '../../components/ui/StatusBadge';
 import { ROLES } from '../../constants/roles';
 import useAuth from '../../hooks/useAuth';
+import { apiErrorMessage, mapFieldErrors } from '../../utils/apiErrors';
 
 // How long the choices must stay still before the preview is asked for, so
 // ticking several areas in a row makes one request.
 const PREVIEW_DELAY_MS = 400;
 
-const errorMessage = (error, fallback) => error?.response?.data?.error?.message ?? fallback;
-
-const fieldError = (error, field) =>
-  error?.response?.data?.error?.errors?.find((entry) => entry.field === field)?.message ?? null;
+// The preview field this form highlights (the Target scope card); an error
+// on any other field goes in a Notice above the form.
+const SCOPE_FIELDS = ['areaIds'];
 
 // UC01 main flow steps 1-8 (§5.1), the IssueWarningScreen of the sequence
 // diagram. Opening it starts a DRAFT (step 2). Once a hazard type, a severity
 // and at least one area are chosen (steps 3-5), the server validates the
 // scope, counts the citizens and writes the message (steps 6-7), shown on the
-// right, where the officer can edit it (step 8). Nothing is sent from here
-// until Confirm & Broadcast (DMS-121).
+// right, where the officer can edit it (step 8). Confirm & Broadcast opens the
+// confirmation dialog (steps 9-10); Broadcast now sends it (steps 11-13) and
+// moves on to the delivery summary (step 14).
 export default function IssueWarningScreen() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const recipientCountId = useId();
   const canIssue = [ROLES.DMC_OFFICER, ROLES.DUTY_OFFICER].includes(user?.role);
 
   const [alert, setAlert] = useState(null);
@@ -54,6 +57,10 @@ export default function IssueWarningScreen() {
   const [message, setMessage] = useState('');
   const [savedMessage, setSavedMessage] = useState('');
   const [messageError, setMessageError] = useState(null);
+
+  const [confirming, setConfirming] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [broadcastError, setBroadcastError] = useState(null);
 
   // A remount in development must not open a second draft.
   const started = useRef(false);
@@ -76,7 +83,8 @@ export default function IssueWarningScreen() {
         setAlert(draft.alert);
         setAreas({ districts, riverBasins });
       },
-      (error) => setLoadError(errorMessage(error, 'The warning could not be opened. Try again.')),
+      (error) =>
+        setLoadError(apiErrorMessage(error, 'The warning could not be opened. Try again.')),
     );
   }, [canIssue]);
 
@@ -112,6 +120,13 @@ export default function IssueWarningScreen() {
     return () => clearTimeout(timer);
   }, [alertId, complete, hazardType, severity, areaIds]);
 
+  // E1.2: back at step 5, the refused scope's message clears as soon as the
+  // officer changes the scope.
+  function changeScope(ids) {
+    setAreaIds(ids);
+    setPreviewError(null);
+  }
+
   // Step 8: save an edited message to the draft when the officer leaves it.
   async function saveMessage() {
     const text = message.trim();
@@ -128,9 +143,27 @@ export default function IssueWarningScreen() {
       setMessageError(null);
     } catch (error) {
       setMessageError(
-        fieldError(error, 'message') ??
-          errorMessage(error, 'The message could not be saved. Try again.'),
+        mapFieldErrors(error, ['message']).byField.message ??
+          apiErrorMessage(error, 'The message could not be saved. Try again.'),
       );
+    }
+  }
+
+  // Steps 11-14: send the message as the officer last saw it, then show the
+  // delivery summary. A failure closes the dialog; nothing was sent.
+  async function broadcast() {
+    setSending(true);
+    try {
+      const result = await hazardAlertsApi.broadcast(alertId, message.trim());
+      navigate(`/hazard-warnings/${alertId}`, { state: result });
+    } catch (error) {
+      setSending(false);
+      setConfirming(false);
+      const messageFieldError = mapFieldErrors(error, ['message']).byField.message;
+      if (messageFieldError) setMessageError(messageFieldError);
+      else {
+        setBroadcastError(apiErrorMessage(error, 'The warning could not be broadcast. Try again.'));
+      }
     }
   }
 
@@ -163,11 +196,28 @@ export default function IssueWarningScreen() {
     );
   }
 
-  const scopeError = fieldError(previewError, 'areaIds');
-  const otherPreviewError =
-    previewError && !scopeError
-      ? errorMessage(previewError, 'The preview could not be made. Try again.')
-      : null;
+  // E1: a scope the server refused is shown on the Target scope card, with
+  // every choice kept, so the officer corrects it and the preview runs again.
+  const { byField, others } = mapFieldErrors(previewError, SCOPE_FIELDS);
+  const scopeError = byField.areaIds ? `Check the target scope – ${byField.areaIds}` : null;
+  // E2: a scope with no registered citizens cannot be broadcast. The officer
+  // changes the scope (step 5) and the preview runs again.
+  const noRecipients = preview?.recipientCount === 0;
+  let otherPreviewError = null;
+  if (others.length > 0) otherPreviewError = others.join('; ');
+  else if (previewError && !scopeError) {
+    otherPreviewError = apiErrorMessage(previewError, 'The preview could not be made. Try again.');
+  }
+  // Step 9: only a complete, previewed draft with citizens to reach and a
+  // message can be broadcast.
+  const canBroadcast = Boolean(
+    complete &&
+    preview &&
+    !previewing &&
+    preview.recipientCount > 0 &&
+    message.trim() &&
+    !messageError,
+  );
 
   return (
     <Screen>
@@ -176,6 +226,11 @@ export default function IssueWarningScreen() {
       {otherPreviewError ? (
         <Notice variant="error" className="mt-4">
           {otherPreviewError}
+        </Notice>
+      ) : null}
+      {broadcastError ? (
+        <Notice variant="error" className="mt-4">
+          {broadcastError}
         </Notice>
       ) : null}
 
@@ -196,7 +251,7 @@ export default function IssueWarningScreen() {
               districts={areas.districts}
               riverBasins={areas.riverBasins}
               value={areaIds}
-              onChange={setAreaIds}
+              onChange={changeScope}
               error={scopeError}
             />
           </div>
@@ -221,7 +276,13 @@ export default function IssueWarningScreen() {
           ) : !preview ? (
             previewing ? (
               <Loader className="mt-6" />
-            ) : null
+            ) : (
+              <p className="mt-3 text-[14px] text-muted">
+                {scopeError
+                  ? 'Correct the target scope to preview the warning.'
+                  : 'The preview will appear here once it can be made.'}
+              </p>
+            )
           ) : (
             <>
               <div className="mt-3">
@@ -236,7 +297,7 @@ export default function IssueWarningScreen() {
                 <ChannelReadiness channels={preview.channels} />
               </div>
               <div className="mt-2 border-t border-line pt-4">
-                <RecipientCount count={preview.recipientCount} />
+                <RecipientCount id={recipientCountId} count={preview.recipientCount} />
               </div>
             </>
           )}
@@ -250,12 +311,32 @@ export default function IssueWarningScreen() {
           <Button variant="outline" fullWidth={false} onClick={() => navigate('/hazard-warnings')}>
             Cancel
           </Button>
-          {/* The confirmation dialog and the broadcast arrive with DMS-121.7. */}
-          <Button fullWidth={false} disabled>
+          {/* With no recipients (E2) the disabled button points at the reason. */}
+          <Button
+            fullWidth={false}
+            disabled={!canBroadcast}
+            aria-describedby={noRecipients ? recipientCountId : undefined}
+            onClick={() => {
+              setBroadcastError(null);
+              setConfirming(true);
+            }}
+          >
             Confirm &amp; Broadcast
           </Button>
         </div>
       </Card>
+
+      {preview ? (
+        <ConfirmBroadcastDialog
+          open={confirming}
+          alert={alert}
+          recipientCount={preview.recipientCount}
+          channels={preview.channels}
+          sending={sending}
+          onConfirm={broadcast}
+          onBack={() => setConfirming(false)}
+        />
+      ) : null}
     </Screen>
   );
 }
