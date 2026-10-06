@@ -2,6 +2,8 @@ import { Navigate, Route, Routes, useLocation } from 'react-router';
 
 import ConsoleLayout from './ConsoleLayout';
 import GroundReportsScreen from '../screens/groundReports/GroundReportsScreen';
+import HazardWarningsScreen from '../screens/hazardWarnings/HazardWarningsScreen';
+import IssueWarningScreen from '../screens/hazardWarnings/IssueWarningScreen';
 import PlaceholderScreen from '../screens/shared/PlaceholderScreen';
 
 // Where a fresh sign-in lands: the page the officer asked for before being
@@ -23,7 +25,8 @@ export default function ConsoleRoutes() {
     <Routes>
       <Route element={<ConsoleLayout />}>
         <Route index element={<PlaceholderScreen title="Dashboard" />} />
-        <Route path="hazard-warnings" element={<PlaceholderScreen title="Hazard Warnings" />} />
+        <Route path="hazard-warnings" element={<HazardWarningsScreen />} />
+        <Route path="hazard-warnings/new" element={<IssueWarningScreen />} />
         <Route path="ground-reports" element={<GroundReportsScreen />} />
         <Route
           path="shelter-resources"
