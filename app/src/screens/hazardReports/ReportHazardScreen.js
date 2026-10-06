@@ -5,6 +5,7 @@ import { hazardReportsApi, uploadApi } from '../../api';
 import DescriptionField from '../../components/hazardReports/DescriptionField';
 import HazardTypeChips from '../../components/hazardReports/HazardTypeChips';
 import LocationRow from '../../components/hazardReports/LocationRow';
+import ManualLocationSheet from '../../components/hazardReports/ManualLocationSheet';
 import PhotoCapture from '../../components/hazardReports/PhotoCapture';
 import SubmittedState from '../../components/hazardReports/SubmittedState';
 import Button from '../../components/ui/Button';
@@ -13,6 +14,7 @@ import Screen from '../../components/ui/Screen';
 import ScreenHeader from '../../components/ui/ScreenHeader';
 import SectionLabel from '../../components/ui/SectionLabel';
 import { TABS } from '../../constants/roles';
+import useAuth from '../../hooks/useAuth';
 import useCurrentLocation from '../../hooks/useCurrentLocation';
 import { uuidv4 } from '../../utils/uuid';
 import { hazardReportErrorsFromServer, validateHazardReport } from '../../utils/validation';
@@ -30,21 +32,33 @@ export default function ReportHazardScreen() {
   const [form, setForm] = useState(emptyForm);
   // Step 3: the device's position (A2: 'unavailable' after the timeout).
   const gps = useCurrentLocation();
-  const location = gps.location;
-  const locationStatus = gps.status;
+  // A2: a location set by hand ({ location, placeName }) wins over the GPS.
+  const [manual, setManual] = useState(null);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  // A2.2 opens the picker by itself when there is no fix - once, so closing it
+  // leaves the reporter on the form.
+  const [autoSheetShown, setAutoSheetShown] = useState(false);
+  const { user } = useAuth();
+  const location = manual ? manual.location : gps.location;
+  const locationSource = manual ? 'MANUAL' : 'GPS';
+  const showSheet = sheetOpen || (gps.status === 'unavailable' && !manual && !autoSheetShown);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState(null);
   const [fieldErrors, setFieldErrors] = useState({});
   const [submitted, setSubmitted] = useState(null);
 
-  // Editing a field clears its error; every other input is kept as typed.
-  const update = (field) => (value) => {
-    setForm((current) => ({ ...current, [field]: value }));
+  function clearFieldError(field) {
     setFieldErrors((current) => {
       const next = { ...current };
       delete next[field];
       return next;
     });
+  }
+
+  // Editing a field clears its error; every other input is kept as typed.
+  const update = (field) => (value) => {
+    setForm((current) => ({ ...current, [field]: value }));
+    clearFieldError(field);
   };
 
   // Step 5: upload the photo (§6, folder hazard-reports), then send the
@@ -70,7 +84,7 @@ export default function ReportHazardScreen() {
         description: form.description,
         hazardType: form.hazardType,
         location,
-        locationSource: 'GPS',
+        locationSource,
         photoUrl,
         clientReportId: form.clientReportId,
       });
@@ -95,6 +109,8 @@ export default function ReportHazardScreen() {
     setSubmitted(null);
     setFieldErrors({});
     setForm(emptyForm());
+    setManual(null);
+    setAutoSheetShown(false);
     gps.retry();
   }
 
@@ -126,9 +142,29 @@ export default function ReportHazardScreen() {
       <SectionLabel className="mb-2">Location</SectionLabel>
       <LocationRow
         location={location}
-        status={locationStatus}
-        onRetry={gps.retry}
+        status={gps.status}
+        source={locationSource}
+        placeName={manual?.placeName}
+        onRetry={() => {
+          setManual(null);
+          gps.retry();
+        }}
+        onSetManually={() => setSheetOpen(true)}
         error={fieldErrors.location}
+      />
+      <ManualLocationSheet
+        visible={showSheet}
+        homeDistrictId={user?.homeDistrict}
+        onChoose={(chosen, placeName) => {
+          setManual({ location: chosen, placeName });
+          setSheetOpen(false);
+          setAutoSheetShown(true);
+          clearFieldError('location');
+        }}
+        onClose={() => {
+          setSheetOpen(false);
+          setAutoSheetShown(true);
+        }}
       />
 
       <SectionLabel className="mb-2">Description</SectionLabel>
