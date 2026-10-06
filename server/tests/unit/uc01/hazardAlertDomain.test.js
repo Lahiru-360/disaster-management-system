@@ -291,20 +291,60 @@ describe('HazardAlert (domain)', () => {
     );
   });
 
-  it('DMS-120: cancel ends an active alert with CANCELLED', () => {
+  it('DMS-124: TC-26 cancel ends an active alert with CANCELLED as the next version', () => {
     const alert = broadcast();
     alert.update('HIGH', null, OFFICER, T2);
 
     alert.cancel(COLLEAGUE, T2);
 
     expect(alert.status).toBe('CANCELLED');
+    expect(alert.version).toBe(3);
     expect(alert.isActive()).toBe(false);
     expect(alert.statusHistory.at(-1)).toEqual({
       status: 'CANCELLED',
-      version: 2,
+      version: 3,
       at: T2,
       byId: COLLEAGUE,
     });
+    expect(alert.message).toBe(MESSAGE);
+    expect(alert).toMatchObject({ issuedById: OFFICER, issuedAt: T1 });
+  });
+
+  it('DMS-124: cancel of a BROADCAST alert stores the all-clear message', () => {
+    const alert = broadcast();
+    const allClear =
+      'ALL CLEAR: The Flood warning has ended. It is now safe, but follow official guidance.';
+
+    alert.cancel(OFFICER, T2, allClear);
+
+    expect(alert).toMatchObject({ status: 'CANCELLED', version: 2, message: allClear });
+    expect(alert.statusHistory.map(({ status, version }) => [status, version])).toEqual([
+      ['DRAFT', 1],
+      ['BROADCAST', 1],
+      ['CANCELLED', 2],
+    ]);
+  });
+
+  it('DMS-124: cancel refuses a message over 160 characters, and changes nothing', () => {
+    const alert = broadcast();
+
+    expect(() => alert.cancel(OFFICER, T2, 'x'.repeat(161))).toThrow(
+      'the message must be 1-160 characters',
+    );
+    expect(alert).toMatchObject({ status: 'BROADCAST', version: 1, message: MESSAGE });
+    expect(alert.statusHistory).toHaveLength(2);
+  });
+
+  it('DMS-124: TC-28 a refused cancel leaves the version and history unchanged', () => {
+    const alert = broadcast();
+    alert.cancel(OFFICER, T2);
+
+    expectTransitionError(
+      () => alert.cancel(COLLEAGUE, T2, 'ALL CLEAR again'),
+      'Only an active alert can be cancelled – current status: CANCELLED',
+    );
+    expect(alert).toMatchObject({ status: 'CANCELLED', version: 2 });
+    expect(alert.statusHistory).toHaveLength(3);
   });
 
   it.each([
