@@ -14,6 +14,11 @@ export class CoordinationPresenter {
     { path: 'lead', select: 'name' },
   ];
 
+  static STOCK_POPULATE = [
+    { path: 'organisation', select: 'name type' },
+    { path: 'district', select: 'name' },
+  ];
+
   static DISTRIBUTION_POPULATE = [
     { path: 'shelter', select: 'name' },
     { path: 'stock', select: 'unit' },
@@ -67,6 +72,24 @@ export class CoordinationPresenter {
       status: json.status,
       currentTask,
       createdAt: json.createdAt,
+      updatedAt: json.updatedAt,
+    };
+  }
+
+  /**
+   * The contract's relief stock object, with its owning organisation.
+   * @param {object} doc A ReliefStock document, populated with STOCK_POPULATE.
+   * @returns {object}
+   */
+  static stock(doc) {
+    const json = doc.toJSON();
+    return {
+      id: String(json.id),
+      organisation: CoordinationPresenter.organisation(json.organisation),
+      district: CoordinationPresenter.reference(json.district, ['name']),
+      supplyType: json.supplyType,
+      unit: json.unit,
+      quantityAvailable: json.quantityAvailable,
       updatedAt: json.updatedAt,
     };
   }
