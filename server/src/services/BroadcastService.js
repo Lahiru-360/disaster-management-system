@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { fallbackPolicy as defaultFallbackPolicy } from '../domain/alerts/FallbackPolicy.js';
 import { HazardAlert } from '../domain/alerts/HazardAlert.js';
 import { InvalidAlertTransitionError } from '../domain/alerts/InvalidAlertTransitionError.js';
 import { MessageTemplate } from '../domain/alerts/MessageTemplate.js';
@@ -26,8 +27,10 @@ import { SmsChannel } from './notifications/SmsChannel.js';
 // UPDATED with the next version, then, for every recipient and every channel,
 // creates a delivery record as QUEUED, sends it through that channel's
 // strategy and records the result. The channels are an injected list
-// (Strategy), so adding one changes nothing here (Open/Closed). A channel that
-// fails or throws is recorded as FAILED and never stops the others.
+// (Strategy), so adding one changes nothing here (Open/Closed). A send that
+// fails or throws is resent through the fallback channel as the injected
+// FallbackPolicy allows (E3), is recorded as FAILED if it still fails, and
+// never stops the others.
 export class BroadcastService {
   // Delivery records are written in batches of this many (~500 citizens × 3
   // channels broadcast in one or two round trips).
@@ -41,6 +44,7 @@ export class BroadcastService {
   #warnings;
   #summary;
   #channels;
+  #fallback;
   #clock;
 
   constructor({
@@ -52,6 +56,7 @@ export class BroadcastService {
     warnings = defaultWarningService,
     summary = defaultDeliverySummary,
     channels = [new PushChannel(), new SmsChannel(), new AudibleChannel()],
+    fallback = defaultFallbackPolicy,
     clock = systemClock,
   } = {}) {
     this.#alertModel = alertModel;
@@ -62,6 +67,7 @@ export class BroadcastService {
     this.#warnings = warnings;
     this.#summary = summary;
     this.#channels = channels;
+    this.#fallback = fallback;
     this.#clock = clock;
   }
 
@@ -221,18 +227,33 @@ export class BroadcastService {
     }
   }
 
-  // One send: the channel's result on the delivery, a throw recorded as FAILED.
+  // One delivery, per the sequence diagram's opt [failed E3] fragment: the
+  // first send, then resends through the fallback channel while it fails and
+  // the policy allows another attempt. Only the last result is recorded.
   async #send({ strategy, notification }) {
-    let result;
-    try {
-      result = await strategy.send(notification);
-    } catch (error) {
-      result = { status: 'FAILED', reason: error.message };
+    let result = await BroadcastService.#attempt(strategy, notification);
+    const fallback = this.#channels.find((channel) => channel.channel === this.#fallback.channel);
+    while (
+      result.status === 'FAILED' &&
+      fallback &&
+      this.#fallback.allowsResend(notification.attempts)
+    ) {
+      notification.resendVia(fallback.channel);
+      result = await BroadcastService.#attempt(fallback, notification);
     }
     const at = this.#clock.now();
     if (result.status === 'DELIVERED') notification.markDelivered(at);
     else if (result.status === 'SENT') notification.markSent(at);
     else notification.markFailed(result.reason, at);
+  }
+
+  // One attempt through one channel; a throw counts as a failed attempt.
+  static async #attempt(strategy, notification) {
+    try {
+      return await strategy.send(notification);
+    } catch (error) {
+      return { status: 'FAILED', reason: error.message };
+    }
   }
 
   // The citizen-side stand-in for the mocked push, SMS and audible alert: an

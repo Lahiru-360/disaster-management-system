@@ -45,6 +45,13 @@ const notificationSchema = new mongoose.Schema(
       default: 1,
       min: 1,
     },
+    // SMS once a failed delivery has been resent through the fallback (E3);
+    // channel keeps the channel it was first sent on.
+    fallbackChannel: {
+      type: String,
+      enum: [...Object.values(Channel), null],
+      default: null,
+    },
     sentAt: {
       type: Date,
       default: null,

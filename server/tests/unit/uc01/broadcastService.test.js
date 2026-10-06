@@ -4,6 +4,7 @@ import { District } from '../../../src/models/District.js';
 import { HazardAlert } from '../../../src/models/HazardAlert.js';
 import { Notification } from '../../../src/models/Notification.js';
 import { UserNotification } from '../../../src/models/UserNotification.js';
+import { FallbackPolicy } from '../../../src/domain/alerts/FallbackPolicy.js';
 import { BroadcastService } from '../../../src/services/BroadcastService.js';
 import { NotificationService } from '../../../src/services/NotificationService.js';
 import { WarningService } from '../../../src/services/WarningService.js';
@@ -18,6 +19,10 @@ import { createUser } from '../../helpers/userFactory.js';
 
 const NOW = '2026-10-02T06:31:00.000Z';
 const MESSAGE = 'Flood Warning: SEVERE. Move to higher ground and follow official guidance.';
+
+// One attempt per delivery: the DMS-121 tests below look at a channel's own
+// result, before the SMS fallback (E3, DMS-128) resends a failure.
+const noFallback = new FallbackPolicy({ maxAttempts: 1 });
 
 const channels = (overrides = {}) => [
   overrides.push ?? new PushChannel(),
@@ -112,6 +117,7 @@ describe('BroadcastService', () => {
       channels: channels({
         push: new PushChannel({ transport: new FakeTransport({ failRate: 1 }) }),
       }),
+      fallback: noFallback,
     }).broadcast(id, officer, MESSAGE);
 
     expect(summary).toMatchObject({
@@ -161,11 +167,10 @@ describe('BroadcastService', () => {
     await citizensIn(areas.colombo, 2);
     const id = await previewedDraft();
 
-    await serviceWith({ channels: channels({ audible: new BrokenAudible() }) }).broadcast(
-      id,
-      officer,
-      MESSAGE,
-    );
+    await serviceWith({
+      channels: channels({ audible: new BrokenAudible() }),
+      fallback: noFallback,
+    }).broadcast(id, officer, MESSAGE);
 
     const byChannel = async (channel) => Notification.find({ alert: id, channel }).lean();
     expect((await byChannel('AUDIBLE')).map((r) => [r.status, r.failureReason])).toEqual([
@@ -192,6 +197,7 @@ describe('BroadcastService', () => {
         push: new PushChannel({ transport: new FakeTransport({ failRate: 1 }) }),
         sms: new AcceptedSms(),
       }),
+      fallback: noFallback,
     }).broadcast(id, officer, MESSAGE);
 
     const status = async (channel) =>

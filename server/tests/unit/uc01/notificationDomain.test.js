@@ -32,6 +32,7 @@ describe('Notification (domain)', () => {
     expect(notification.deliveryChanges()).toEqual({
       status: 'DELIVERED',
       attempts: 1,
+      fallbackChannel: null,
       sentAt: SENT_AT,
       deliveredAt: SENT_AT,
       failureReason: null,
