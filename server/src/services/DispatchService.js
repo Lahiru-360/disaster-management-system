@@ -199,8 +199,9 @@ export class DispatchService {
    * @returns {Promise<object>} The dispatch object (§13.2).
    * @throws {ApiError} 404 NOT_FOUND, 403 FORBIDDEN or 409 INVALID_DISPATCH_TRANSITION.
    */
-  acknowledge(user, dispatchId) {
-    return this.#leadMoves(user, dispatchId, 'acknowledge');
+  async acknowledge(user, dispatchId) {
+    const { updated } = await this.#leadMoves(user, dispatchId, 'acknowledge');
+    return this.#present(updated);
   }
 
   /**
@@ -210,8 +211,9 @@ export class DispatchService {
    * @param {string} dispatchId
    * @returns {Promise<object>} The dispatch object (§13.2).
    */
-  markOnSite(user, dispatchId) {
-    return this.#leadMoves(user, dispatchId, 'markOnSite');
+  async markOnSite(user, dispatchId) {
+    const { updated } = await this.#leadMoves(user, dispatchId, 'markOnSite');
+    return this.#present(updated);
   }
 
   /**
@@ -220,14 +222,36 @@ export class DispatchService {
    * @param {string} dispatchId
    * @returns {Promise<object>} The dispatch object (§13.2).
    */
-  complete(user, dispatchId) {
-    return this.#leadMoves(user, dispatchId, 'complete');
+  async complete(user, dispatchId) {
+    const { updated } = await this.#leadMoves(user, dispatchId, 'complete');
+    return this.#present(updated);
+  }
+
+  /**
+   * UC03 A3 (contract §13.8): the team's lead declines an ASSIGNED dispatch
+   * with a reason. The team is AVAILABLE again, and the officer who created
+   * the dispatch is told to choose another team; a failed notification never
+   * fails the decline.
+   * @param {object} user The signed-in rescue team lead.
+   * @param {string} dispatchId
+   * @param {{ reason: string }} input Validated by the route.
+   * @returns {Promise<object>} The dispatch object (§13.2).
+   * @throws {ApiError} 404 NOT_FOUND, 403 FORBIDDEN or 409 INVALID_DISPATCH_TRANSITION.
+   */
+  async decline(user, dispatchId, { reason }) {
+    const { updated, team } = await this.#leadMoves(user, dispatchId, 'decline', reason);
+    await this.#notifyCreator(updated, {
+      type: NotificationType.DISPATCH_DECLINED,
+      title: `${team.name} declined`,
+      body: `${team.name} declined (${updated.declineReason}) – choose another team`,
+    });
+    return this.#present(updated);
   }
 
   // A field-app move: only the lead of the dispatch's team may make it. The
   // domain class checks the move; the update only applies if the status is
   // still the one the move started from, so two taps can't both win.
-  async #leadMoves(user, dispatchId, action) {
+  async #leadMoves(user, dispatchId, action, ...args) {
     const doc = await this.#findDispatch(dispatchId);
     const team = await this.#rescueTeamModel.findById(doc.team);
     if (!team || String(team.lead) !== String(user._id)) {
@@ -236,12 +260,15 @@ export class DispatchService {
 
     const dispatch = Dispatch.fromDocument(doc);
     const from = dispatch.status;
-    const { teamStatus } = dispatch[action](user._id, this.#clock.now());
+    const { teamStatus } = dispatch[action](...args, user._id, this.#clock.now());
     const [entry] = dispatch.statusHistory.slice(-1);
 
     const updated = await this.#dispatchModel.findOneAndUpdate(
       { _id: doc._id, status: from },
-      { $set: { status: dispatch.status }, $push: { statusHistory: entry } },
+      {
+        $set: { status: dispatch.status, declineReason: dispatch.declineReason },
+        $push: { statusHistory: entry },
+      },
       { returnDocument: 'after' },
     );
     if (!updated) {
@@ -259,7 +286,7 @@ export class DispatchService {
       if (teamStatus === TeamStatus.ON_SITE) teamUpdate.currentLocation = doc.incidentLocation;
       await this.#rescueTeamModel.updateOne({ _id: team._id }, { $set: teamUpdate });
     }
-    return this.#present(updated);
+    return { updated, team };
   }
 
   async #findTeam(teamId) {
@@ -292,6 +319,21 @@ export class DispatchService {
       });
     } catch (error) {
       console.error(`Could not notify the lead of ${team.name}:`, error.message);
+    }
+  }
+
+  // A3 and E4 tell the officer who created the dispatch to reassign it; the
+  // link reopens the coordination dashboard on that dispatch.
+  async #notifyCreator(doc, { type, title, body }) {
+    try {
+      await this.#notifications.notifyUser(String(doc.createdBy), {
+        type,
+        title,
+        body,
+        link: `/shelter-resources?dispatch=${doc.id}`,
+      });
+    } catch (error) {
+      console.error(`Could not notify the officer about dispatch ${doc.id}:`, error.message);
     }
   }
 

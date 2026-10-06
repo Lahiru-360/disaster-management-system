@@ -36,6 +36,12 @@ export class DispatchController extends BaseController {
     ApiResponse.success(res, { dispatch }, 200);
   }
 
+  async decline(req, res) {
+    const dispatch = await this.#dispatchService.decline(req.user, req.params.id, req.body);
+
+    ApiResponse.success(res, { dispatch }, 200);
+  }
+
   async markOnSite(req, res) {
     const dispatch = await this.#dispatchService.markOnSite(req.user, req.params.id);
 

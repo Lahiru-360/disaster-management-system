@@ -31,6 +31,15 @@ export class DispatchRoutes extends BaseRoutes {
       dispatchController.listMine,
     );
 
+    // Field app: the lead turns the assignment down, with a reason (A3).
+    router.post(
+      '/:id/decline',
+      authMiddleware.requireAuth,
+      authMiddleware.requireRole(Role.RESCUE_TEAM_LEAD),
+      RequestValidator.body(CoordinationValidator.declineBody),
+      dispatchController.decline,
+    );
+
     // Field app: the lead answers the assignment (steps 10-11).
     for (const [path, action] of [
       ['acknowledge', 'acknowledge'],

@@ -39,6 +39,11 @@ export class CoordinationValidator {
       .required(),
   });
 
+  // UC03 A3.1 (§13.8): why the lead turns the assignment down.
+  static declineBody = Joi.object({
+    reason: Joi.string().trim().min(1).max(200).required(),
+  });
+
   static pictureQuery = Joi.object({
     districtId: objectId,
     organisationId: objectId,
