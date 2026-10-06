@@ -34,8 +34,19 @@ async function confirm(id) {
   return response.data.data.report;
 }
 
+/**
+ * `POST /api/hazard-reports/:id/dismiss` (§9.7, A1) with `{ reason, note? }` -
+ * the updated report: DISMISSED, `dismissalReason`, `dismissalNote`,
+ * `isEscalatable: false`.
+ */
+async function dismiss(id, { reason, note }) {
+  const response = await client.post(`/hazard-reports/${id}/dismiss`, { reason, note });
+  return response.data.data.report;
+}
+
 export default {
   listPending,
   getReport,
   confirm,
+  dismiss,
 };

@@ -27,6 +27,7 @@ export default function GroundReportsScreen() {
   const [detail, setDetail] = useState(null);
   const [detailError, setDetailError] = useState(null);
   const [confirming, setConfirming] = useState(false);
+  const [dismissing, setDismissing] = useState(false);
   const [actionError, setActionError] = useState(null);
 
   const loadQueue = useCallback(
@@ -87,6 +88,20 @@ export default function GroundReportsScreen() {
     await Promise.all([loadQueue(), loadDetail(selectedId)]);
   }
 
+  // A1: dismiss with a reason and an optional note, then refresh both panels.
+  async function dismissSelected({ reason, note }) {
+    setDismissing(true);
+    setActionError(null);
+    try {
+      await groundReportsApi.dismiss(selectedId, { reason, note });
+    } catch (error) {
+      setActionError(errorMessage(error, 'The report could not be dismissed. Try again.'));
+    } finally {
+      setDismissing(false);
+    }
+    await Promise.all([loadQueue(), loadDetail(selectedId)]);
+  }
+
   if (!isDutyOfficer) {
     return (
       <Screen>
@@ -128,11 +143,14 @@ export default function GroundReportsScreen() {
               <Notice variant="error">{detailError}</Notice>
             ) : detail ? (
               <ReportDetailPanel
+                key={detail.report.id}
                 report={detail.report}
                 cluster={detail.cluster}
                 currentUserId={user.id}
                 confirming={confirming}
                 onConfirm={confirmSelected}
+                dismissing={dismissing}
+                onDismiss={dismissSelected}
               />
             ) : (
               <Loader />
