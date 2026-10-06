@@ -25,6 +25,18 @@ export class HazardAlertValidator {
   // POST /api/hazard-alerts (§12.2): no fields yet; anything sent is ignored.
   static startSchema = Joi.object({});
 
+  // GET /api/hazard-alerts (§12.11): only the drafts for now (A4); DMS-124
+  // adds the active warnings.
+  static listQuery = Joi.object({
+    status: Joi.string()
+      .valid('draft')
+      .required()
+      .messages({
+        'any.required': 'is required',
+        ...HazardAlertValidator.#oneOf(['draft']),
+      }),
+  });
+
   // POST /api/hazard-alerts/:id/preview (§12.3). Whether each area id is a
   // registered district or basin is the service's check (E1), so a malformed
   // id is reported with the unknown ones, on areaIds.

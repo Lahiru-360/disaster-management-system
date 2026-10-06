@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import { HazardAlert } from '../domain/alerts/HazardAlert.js';
 import { MessageTemplate } from '../domain/alerts/MessageTemplate.js';
+import { AlertStatus } from '../enums/AlertStatus.js';
 import { Channel } from '../enums/Channel.js';
 import { EventStatus } from '../enums/EventStatus.js';
 import { HazardAlert as HazardAlertModel } from '../models/HazardAlert.js';
@@ -12,8 +13,9 @@ import { citizenRegistry as defaultCitizenRegistry } from './CitizenRegistry.js'
 import { HazardAlertPresenter } from './HazardAlertPresenter.js';
 import { ReferenceNumberGenerator } from './ReferenceNumberGenerator.js';
 
-// UC01 Issue Hazard Warning, composing (main flow steps 1-8): the
-// WarningController's work in the sequence diagram up to the confirmation.
+// UC01 Issue Hazard Warning, composing (main flow steps 1-8) and backing out
+// (A4): the WarningController's work in the sequence diagram up to the
+// confirmation.
 // The controller hands it validated input; it asks the HazardAlert domain
 // class for every change, AreaRegistry for the scope, CitizenRegistry for the
 // reach and MessageTemplate for the text. Nothing here sends anything. Every
@@ -126,6 +128,42 @@ export class WarningService {
    */
   async findById(alertId) {
     return HazardAlertPresenter.present(await this.#findDoc(alertId));
+  }
+
+  /**
+   * A4: every DRAFT, whoever started it, most recently changed first, so an
+   * officer can resume one they walked away from (contract §12.11).
+   * @returns {Promise<object[]>} Alert objects.
+   */
+  async listDrafts() {
+    const docs = await this.#alertModel
+      .find({ status: AlertStatus.DRAFT })
+      .sort({ updatedAt: -1, _id: -1 });
+    return Promise.all(docs.map((doc) => HazardAlertPresenter.present(doc)));
+  }
+
+  /**
+   * A4: throws a draft away (contract §12.12). Nothing was sent, so nothing
+   * else changes. The delete only matches a DRAFT, so a colleague's broadcast
+   * that lands first is never lost.
+   * @param {string} alertId
+   * @returns {Promise<object>} The alert object as it was before it was removed.
+   * @throws {ApiError} 404 for an unknown alert, 409 if it is no longer a DRAFT.
+   */
+  async discardDraft(alertId) {
+    const doc = await this.#findDoc(alertId);
+    HazardAlert.fromDocument(doc).discard();
+    const discarded = await HazardAlertPresenter.present(doc);
+
+    const { deletedCount } = await this.#alertModel.deleteOne({
+      _id: doc._id,
+      status: AlertStatus.DRAFT,
+    });
+    if (deletedCount === 0) {
+      // It changed since it was read: report what it is now.
+      HazardAlert.fromDocument(await this.#findDoc(alertId)).discard();
+    }
+    return discarded;
   }
 
   async #findDoc(alertId) {
