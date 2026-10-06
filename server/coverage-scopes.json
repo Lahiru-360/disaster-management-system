@@ -14,7 +14,12 @@
     "src/services/DuplicateReportFinder.js",
     "src/services/HazardReportService.js",
     "src/controllers/HazardReportController.js",
-    "src/routes/HazardReportRoutes.js"
+    "src/routes/HazardReportRoutes.js",
+    "src/models/Place.js",
+    "src/services/PlaceService.js",
+    "src/validators/PlaceValidator.js",
+    "src/controllers/PlaceController.js",
+    "src/routes/PlaceRoutes.js"
   ],
   "uc03": [],
   "uc04": [
