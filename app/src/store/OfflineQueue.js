@@ -3,16 +3,23 @@
 // survives an app restart and is sent in the order it was made.
 //
 // Each item: { clientReportId, description, hazardType, location,
-// locationSource, localPhotoUri, createdAt, state, attempts, lastError? }.
-// `state` is QUEUED (waiting), SENDING (being sent now) or FAILED (the last
-// try failed; it is tried again - E2).
+// locationSource, localPhotoUri, createdAt, state, attempts, nextAttemptAt?,
+// lastError?, fieldErrors? }. The states (UC02 E2):
+//   QUEUED          saved, not tried yet (or "Retry now")
+//   SENDING         being sent now
+//   WAITING         a try failed for a reason that may pass; tried again
+//                   at nextAttemptAt ("Waiting to send")
+//   NEEDS_ATTENTION the server refused it (400); fieldErrors say why, and
+//                   it is not retried until the reporter corrects it
+// A sent report is removed from the queue.
 //
 // The storage is passed in (AsyncStorage in the app), so the queue's rules
 // can be checked without a phone.
 export const QUEUE_ITEM_STATE = Object.freeze({
   QUEUED: 'QUEUED',
   SENDING: 'SENDING',
-  FAILED: 'FAILED',
+  WAITING: 'WAITING',
+  NEEDS_ATTENTION: 'NEEDS_ATTENTION',
 });
 
 export class OfflineQueueFullError extends Error {
@@ -95,7 +102,13 @@ export class OfflineQueue {
     if (this.#items === null) {
       try {
         const stored = await this.#storage.getItem(OfflineQueue.#KEY);
-        this.#items = stored ? JSON.parse(stored) : [];
+        // An app killed mid-send leaves an item SENDING: it was not sent, so
+        // it goes back to the queue.
+        this.#items = (stored ? JSON.parse(stored) : []).map((item) =>
+          item.state === QUEUE_ITEM_STATE.SENDING
+            ? { ...item, state: QUEUE_ITEM_STATE.QUEUED }
+            : item,
+        );
       } catch {
         this.#items = [];
       }

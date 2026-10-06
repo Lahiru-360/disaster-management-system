@@ -36,12 +36,24 @@ export default function OfflineSync() {
       },
     });
 
+    // E2: after each run, wake up when the next WAITING report is due.
+    let wakeTimer;
+    let online = false;
+    const runAndSchedule = async () => {
+      await sync.syncAll();
+      const due = await sync.nextDueAt();
+      clearTimeout(wakeTimer);
+      if (due && online) {
+        wakeTimer = setTimeout(runAndSchedule, Math.max(0, new Date(due).getTime() - Date.now()));
+      }
+    };
+
     let wasOnline = null;
     const unsubscribe = NetInfo.addEventListener((state) => {
-      const online = isOnlineState(state);
+      online = isOnlineState(state);
       // First answer (app start) or back from offline: send what is waiting.
       if (online && wasOnline !== true) {
-        sync.syncAll();
+        runAndSchedule();
       }
       wasOnline = online;
     });
@@ -49,6 +61,7 @@ export default function OfflineSync() {
     return () => {
       unsubscribe();
       clearTimeout(timer);
+      clearTimeout(wakeTimer);
     };
   }, [signedIn]);
 
