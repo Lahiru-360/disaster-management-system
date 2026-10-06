@@ -7,6 +7,8 @@ import areasApiMock from './mock/areasApi';
 import areasApiReal from './areasApi';
 import authApiMock from './mock/authApi';
 import authApiReal from './authApi';
+import coordinationApiMock from './mock/coordinationApi';
+import coordinationApiReal from './coordinationApi';
 import groundReportsApiMock from './mock/groundReportsApi';
 import groundReportsApiReal from './groundReportsApi';
 import hazardAlertsApiMock from './mock/hazardAlertsApi';
@@ -16,6 +18,7 @@ import notificationsApiReal from './notificationsApi';
 
 export const areasApi = USE_MOCK ? areasApiMock : areasApiReal;
 export const authApi = USE_MOCK ? authApiMock : authApiReal;
+export const coordinationApi = USE_MOCK ? coordinationApiMock : coordinationApiReal;
 export const groundReportsApi = USE_MOCK ? groundReportsApiMock : groundReportsApiReal;
 export const hazardAlertsApi = USE_MOCK ? hazardAlertsApiMock : hazardAlertsApiReal;
 export const notificationsApi = USE_MOCK ? notificationsApiMock : notificationsApiReal;

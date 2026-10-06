@@ -6,6 +6,7 @@ import HazardWarningsScreen from '../screens/hazardWarnings/HazardWarningsScreen
 import DeliverySummaryScreen from '../screens/hazardWarnings/DeliverySummaryScreen';
 import IssueWarningScreen from '../screens/hazardWarnings/IssueWarningScreen';
 import PlaceholderScreen from '../screens/shared/PlaceholderScreen';
+import ShelterResourcesScreen from '../screens/shelterResources/ShelterResourcesScreen';
 
 // Where a fresh sign-in lands: the page the officer asked for before being
 // sent to /login (see AuthRoutes), or the dashboard.
@@ -34,10 +35,7 @@ export default function ConsoleRoutes() {
           element={<PlaceholderScreen title="Update Hazard Warning" />}
         />
         <Route path="ground-reports" element={<GroundReportsScreen />} />
-        <Route
-          path="shelter-resources"
-          element={<PlaceholderScreen title="Shelter & Resources" />}
-        />
+        <Route path="shelter-resources" element={<ShelterResourcesScreen />} />
         <Route path="rescue-teams" element={<PlaceholderScreen title="Rescue Teams" />} />
         <Route path="relief-supplies" element={<PlaceholderScreen title="Relief Supplies" />} />
         <Route path="map" element={<PlaceholderScreen title="Map" />} />
