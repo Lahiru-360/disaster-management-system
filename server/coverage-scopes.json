@@ -50,6 +50,7 @@
     "src/utils/SriLankaCalendar.js",
     "src/enums/ReportSectionKey.js",
     "src/models/PostEventReport.js",
-    "src/domain/analysis/**/*.js"
+    "src/domain/analysis/**/*.js",
+    "src/services/reports/**/*.js"
   ]
 }
