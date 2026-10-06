@@ -16,6 +16,8 @@ function statusBadge(report) {
           ? `Dismissed · ${dismissalReasonLabel(report.dismissalReason)}`
           : 'Dismissed',
       };
+    case 'QUEUED':
+      return { variant: 'strong', label: 'Waiting to send' };
     default:
       return { variant: 'warning', label: 'Pending verification' };
   }

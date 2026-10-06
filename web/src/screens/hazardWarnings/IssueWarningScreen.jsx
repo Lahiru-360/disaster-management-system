@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router';
+import { Link, useNavigate, useSearchParams } from 'react-router';
 
 import { areasApi, hazardAlertsApi } from '../../api';
 import BroadcastPreview from '../../components/hazardWarnings/BroadcastPreview';
@@ -36,7 +36,10 @@ const SCOPE_FIELDS = ['areaIds'];
 // scope, counts the citizens and writes the message (steps 6-7), shown on the
 // right, where the officer can edit it (step 8). Confirm & Broadcast opens the
 // confirmation dialog (steps 9-10); Broadcast now sends it (steps 11-13) and
-// moves on to the delivery summary (step 14).
+// moves on to the delivery summary (step 14). Opened with `?reportId=` (A1,
+// DMS-122), it escalates that confirmed report: the draft is linked to it, the
+// suggested hazard type and district are pre-selected, and the officer goes on
+// from step 4 (severity).
 //
 // A4: Back in the dialog only closes it, so every input stays. Cancel offers
 // to discard the draft; leaving any other way keeps it, and the Drafts list
@@ -46,10 +49,12 @@ export default function IssueWarningScreen() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const draftId = searchParams.get('draftId');
+  const sourceReportId = searchParams.get('reportId');
   const recipientCountId = useId();
   const canIssue = [ROLES.DMC_OFFICER, ROLES.DUTY_OFFICER].includes(user?.role);
 
   const [alert, setAlert] = useState(null);
+  const [prefill, setPrefill] = useState(null);
   const [areas, setAreas] = useState(null);
   const [loadError, setLoadError] = useState(null);
 
@@ -85,12 +90,15 @@ export default function IssueWarningScreen() {
   const complete = Boolean(hazardType && severity && areaIds.length > 0);
 
   // Steps 1-2: open a DRAFT, or reopen the one being resumed (A4), and load
-  // the areas to choose from.
+  // the areas to choose from. A1.2: an escalated report's suggestions are
+  // pre-selected.
   useEffect(() => {
     if (!canIssue || started.current) return;
     started.current = true;
     Promise.all([
-      draftId ? hazardAlertsApi.getById(draftId) : hazardAlertsApi.startDraft(),
+      draftId
+        ? hazardAlertsApi.getById(draftId)
+        : hazardAlertsApi.startDraft(sourceReportId ? { sourceReportId } : undefined),
       areasApi.listDistricts(),
       areasApi.listRiverBasins(),
     ]).then(
@@ -112,11 +120,16 @@ export default function IssueWarningScreen() {
             message: opened.message,
           };
         }
+        if (draft.prefill) {
+          setPrefill(draft.prefill);
+          setHazardType(draft.prefill.hazardType);
+          setAreaIds([draft.prefill.districtId]);
+        }
       },
       (error) =>
         setLoadError(apiErrorMessage(error, 'The warning could not be opened. Try again.')),
     );
-  }, [canIssue, draftId]);
+  }, [canIssue, draftId, sourceReportId]);
 
   // Steps 6-7: preview whenever the choices are complete and have settled.
   useEffect(() => {
@@ -290,6 +303,18 @@ export default function IssueWarningScreen() {
     <Screen>
       <ScreenHeader title="Issue Hazard Warning" />
 
+      {prefill ? (
+        <Notice icon="i" className="mt-4">
+          Pre-filled from confirmed report{' '}
+          <Link
+            to={`/ground-reports?reportId=${prefill.reportRef.id}`}
+            className="font-bold underline"
+          >
+            {prefill.reportRef.referenceNo}
+          </Link>
+        </Notice>
+      ) : null}
+
       {otherPreviewError ? (
         <Notice variant="error" className="mt-4">
           {otherPreviewError}
@@ -307,6 +332,11 @@ export default function IssueWarningScreen() {
           <div className="mt-2.5">
             <HazardTypePicker value={hazardType} onChange={setHazardType} />
           </div>
+          {prefill && !prefill.hazardType && !hazardType ? (
+            <p className="mt-2 text-[13px] text-muted">
+              Ground-impact report – choose the hazard type
+            </p>
+          ) : null}
           <SectionLabel className="mt-5">Severity</SectionLabel>
           <div className="mt-2.5">
             <SeverityPicker value={severity} onChange={setSeverity} />

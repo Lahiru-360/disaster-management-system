@@ -22,8 +22,16 @@ export class HazardAlertValidator {
       'string.max': 'length must be less than or equal to {#limit} characters long',
     });
 
-  // POST /api/hazard-alerts (§12.2): no fields yet; anything sent is ignored.
-  static startSchema = Joi.object({});
+  // POST /api/hazard-alerts (§12.2, §12.10): an optional confirmed report to
+  // escalate (UC01 A1). Whether it exists and is CONFIRMED is the service's
+  // check, so a malformed id is a 404 like an unknown one. Anything else sent
+  // is ignored.
+  static startSchema = Joi.object({
+    sourceReportId: Joi.string().trim().messages({
+      'string.base': 'must be a report id',
+      'string.empty': 'must be a report id',
+    }),
+  });
 
   // GET /api/hazard-alerts (§12.11): only the drafts for now (A4); DMS-124
   // adds the active warnings.
