@@ -298,3 +298,44 @@ describe('GET /api/post-event-reports?eventId=', () => {
     expect(fieldsOf(res)).toEqual(['eventId']);
   });
 });
+
+describe('UC04 main flow: closed events and the read-only guarantee', () => {
+  it('TC-02 Main 2: the event list offers only CLOSED events to report on', async () => {
+    await HazardEvent.create({
+      name: 'Flood – Gampaha District',
+      hazardType: 'FLOOD',
+      status: 'ACTIVE',
+      startDate: new Date('2026-09-25'),
+      districts: [areas.gampaha._id],
+    });
+
+    const res = await get('/api/hazard-events?status=CLOSED');
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.hazardEvents.map((e) => [e.name, e.status])).toEqual([
+      ['Kelani basin floods', 'CLOSED'],
+    ]);
+  });
+
+  it('TC-17 Main: generating a report changes none of the data it reads', async () => {
+    const occupancy = mongoose.connection.collection(OccupancyRecordRepository.COLLECTION);
+    const snapshot = async () => ({
+      alerts: await HazardAlert.find().sort({ _id: 1 }).lean(),
+      deliveries: await Notification.find().sort({ _id: 1 }).lean(),
+      occupancy: await occupancy.find().sort({ _id: 1 }).toArray(),
+      distributions: await SupplyDistribution.find().sort({ _id: 1 }).lean(),
+      events: await HazardEvent.find().sort({ _id: 1 }).lean(),
+    });
+    const before = await snapshot();
+
+    const res = await generate(kelaniBody());
+
+    expect(res.status).toBe(201);
+    const after = await snapshot();
+    expect(after).toEqual(before);
+    expect(after.alerts.map((alert) => alert.updatedAt)).toEqual(
+      before.alerts.map((alert) => alert.updatedAt),
+    );
+    expect(await PostEventReport.countDocuments()).toBe(1);
+  });
+});
