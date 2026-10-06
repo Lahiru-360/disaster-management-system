@@ -74,6 +74,20 @@ export class HazardAlertController extends BaseController {
     ApiResponse.success(res, result, 200);
   }
 
+  // POST /api/hazard-alerts/:id/update-preview - UC01 A2.1-A2.2, step 7 (§12.13).
+  async previewUpdate(req, res) {
+    const preview = await this.#warningService.previewUpdate(req.params.id, req.body);
+
+    ApiResponse.success(res, preview, 200);
+  }
+
+  // PATCH /api/hazard-alerts/:id - UC01 A2.3, steps 9-14 (§12.14).
+  async update(req, res) {
+    const result = await this.#broadcastService.update(req.params.id, req.user, req.body);
+
+    ApiResponse.success(res, result, 200);
+  }
+
   // GET /api/hazard-alerts/:id/delivery-summary - UC01 step 14 (§12.7).
   async deliverySummary(req, res) {
     const result = await this.#broadcastService.deliverySummary(req.params.id);

@@ -175,9 +175,9 @@ describe('HazardAlert (domain)', () => {
     const alert = broadcast();
 
     alert.update('HIGH', [colombo, gampaha], COLLEAGUE, T2);
-    alert.update(null, null, OFFICER, T2);
+    alert.update('SEVERE', null, OFFICER, T2);
 
-    expect(alert).toMatchObject({ status: 'UPDATED', version: 3, severity: 'HIGH' });
+    expect(alert).toMatchObject({ status: 'UPDATED', version: 3, severity: 'SEVERE' });
     expect(alert.targets.map((target) => target.areaId)).toEqual(['d-colombo', 'd-gampaha']);
     expect(alert.statusHistory.map(({ status, version }) => [status, version])).toEqual([
       ['DRAFT', 1],
@@ -194,6 +194,101 @@ describe('HazardAlert (domain)', () => {
     expect(() => alert.update('EXTREME', null, OFFICER, T2)).toThrow('unknown severity');
     expect(() => alert.update(null, [], OFFICER, T2)).toThrow('at least one area');
     expect(alert).toMatchObject({ status: 'BROADCAST', version: 1 });
+  });
+
+  it('DMS-123: TC-24 update records UPDATED at the new version, by whom and when', () => {
+    const alert = broadcast();
+
+    alert.update(null, [kelani], COLLEAGUE, T2);
+
+    expect(alert).toMatchObject({ status: 'UPDATED', version: 2, severity: 'SEVERE' });
+    expect(alert.targets).toEqual([{ kind: 'RiverBasin', areaId: 'b-kelani' }]);
+    expect(alert.statusHistory.at(-1)).toEqual({
+      status: 'UPDATED',
+      version: 2,
+      at: T2,
+      byId: COLLEAGUE,
+    });
+    expect(alert.issuedById).toBe(OFFICER);
+    expect(alert.issuedAt).toBe(T1);
+  });
+
+  it('DMS-123: update replaces the message with the update message, trimmed', () => {
+    const alert = broadcast();
+    const update =
+      'UPDATE: Flood Warning now HIGH. Move to higher ground and follow official guidance.';
+
+    alert.update('HIGH', null, OFFICER, T2, `  ${update} `);
+
+    expect(alert.message).toBe(update);
+    expect(alert.toFields()).toMatchObject({ message: update, version: 2, status: 'UPDATED' });
+  });
+
+  it('DMS-123: update without a message keeps the current one', () => {
+    const alert = broadcast();
+
+    alert.update('HIGH', null, OFFICER, T2);
+
+    expect(alert.message).toBe(MESSAGE);
+  });
+
+  it.each([
+    ['no severity and no scope', null, null],
+    ['the same severity', 'SEVERE', null],
+    ['the same scope', null, [colombo]],
+    ['the same severity and scope', 'SEVERE', [colombo]],
+  ])('DMS-123: update refuses %s, and changes nothing', (label, severity, areas) => {
+    const alert = broadcast();
+
+    expect(() => alert.update(severity, areas, OFFICER, T2)).toThrow(
+      'an update must change the severity or the scope',
+    );
+    expect(alert).toMatchObject({ status: 'BROADCAST', version: 1, severity: 'SEVERE' });
+    expect(alert.statusHistory).toHaveLength(2);
+  });
+
+  it('DMS-123: update refuses a message over 160 characters, and changes nothing', () => {
+    const alert = broadcast();
+
+    expect(() => alert.update('HIGH', [gampaha], OFFICER, T2, 'x'.repeat(161))).toThrow(
+      'the message must be 1-160 characters',
+    );
+    expect(alert).toMatchObject({
+      status: 'BROADCAST',
+      version: 1,
+      severity: 'SEVERE',
+      message: MESSAGE,
+    });
+    expect(alert.targets).toEqual([{ kind: 'District', areaId: 'd-colombo' }]);
+  });
+
+  it('DMS-123: changesWith compares the set of areas, not their order or repeats', () => {
+    const alert = broadcast();
+    alert.update(null, [colombo, gampaha], OFFICER, T2);
+
+    expect(alert.changesWith(null, [gampaha, colombo])).toBe(false);
+    expect(alert.changesWith(null, [gampaha, colombo, gampaha])).toBe(false);
+    expect(alert.changesWith(null, [colombo])).toBe(true);
+    expect(alert.changesWith(null, [kelani])).toBe(true);
+    expect(alert.changesWith('HIGH', [gampaha, colombo])).toBe(true);
+    expect(alert.changesWith('SEVERE', null)).toBe(false);
+  });
+
+  it('DMS-123: changesWith refuses an unknown severity or an empty scope', () => {
+    const alert = broadcast();
+
+    expect(() => alert.changesWith('EXTREME', null)).toThrow('unknown severity');
+    expect(() => alert.changesWith(null, [])).toThrow('at least one area');
+  });
+
+  it('DMS-123: an update of a CANCELLED alert is refused before its changes are checked', () => {
+    const alert = broadcast();
+    alert.cancel(OFFICER, T2);
+
+    expectTransitionError(
+      () => alert.update(null, null, OFFICER, T2),
+      'Only an active alert can be updated – current status: CANCELLED',
+    );
   });
 
   it('DMS-120: cancel ends an active alert with CANCELLED', () => {

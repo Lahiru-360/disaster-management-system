@@ -39,7 +39,8 @@ const targetOf = (target) => {
 // tests can fix it.
 export class HazardAlert {
   static #MESSAGE_MAX_LENGTH = 160;
-  static #ACTIVE = [AlertStatus.BROADCAST, AlertStatus.UPDATED];
+  /** The statuses in which a warning is in force: BROADCAST and UPDATED. */
+  static ACTIVE_STATUSES = Object.freeze([AlertStatus.BROADCAST, AlertStatus.UPDATED]);
 
   #id;
   #referenceNo;
@@ -181,22 +182,49 @@ export class HazardAlert {
   }
 
   /**
-   * Changes an active warning's severity and/or scope (A2): it becomes UPDATED
-   * with the next version.
+   * Changes an active warning's severity and/or scope (A2.2-A2.3): it becomes
+   * UPDATED with the next version and a history entry for it. Everything is
+   * checked before anything changes, so a refused update leaves it as it was.
    * @param {string|null} severity The new severity, or null to keep it.
    * @param {object[]|null} areas The new scope, or null to keep it.
    * @param {object|string} officer
    * @param {Date} at
+   * @param {string|null} [message] The update message citizens will read,
+   *   which replaces the current one; null keeps it.
    * @throws {InvalidAlertTransitionError} If it isn't active.
+   * @throws {Error} If neither the severity nor the scope would change.
    */
-  update(severity, areas, officer, at) {
+  update(severity, areas, officer, at, message = null) {
     this.#requireActive('updated');
-    if (severity !== null && severity !== undefined) HazardAlert.#requireSeverity(severity);
-    const scope = areas === null || areas === undefined ? null : HazardAlert.#scopeOf(areas);
-    if (severity) this.#severity = severity;
+    if (!this.changesWith(severity, areas)) {
+      throw new Error('HazardAlert: an update must change the severity or the scope');
+    }
+    const scope = HazardAlert.#isGiven(areas) ? HazardAlert.#scopeOf(areas) : null;
+    const text = message === null ? null : HazardAlert.#validMessage(message);
+    if (HazardAlert.#isGiven(severity)) this.#severity = severity;
     if (scope) this.#targets = scope;
+    if (text) this.#message = text;
     this.#version += 1;
     this.#record(AlertStatus.UPDATED, officer, at);
+  }
+
+  /**
+   * Whether an update to this severity and/or scope would change anything: a
+   * different severity, or a different set of areas (the order they were
+   * chosen in doesn't matter). Null keeps the current value.
+   * @param {string|null} severity
+   * @param {object[]|null} areas
+   * @returns {boolean}
+   * @throws {Error} For an unknown severity or an empty scope.
+   */
+  changesWith(severity, areas) {
+    if (HazardAlert.#isGiven(severity)) HazardAlert.#requireSeverity(severity);
+    const scope = HazardAlert.#isGiven(areas) ? HazardAlert.#scopeOf(areas) : null;
+    const key = (targets) =>
+      [...new Set(targets.map(({ areaId }) => String(areaId)))].sort().join(',');
+    const severityChanges = HazardAlert.#isGiven(severity) && severity !== this.#severity;
+    const scopeChanges = scope !== null && key(scope) !== key(this.#targets);
+    return severityChanges || scopeChanges;
   }
 
   /**
@@ -212,7 +240,7 @@ export class HazardAlert {
 
   /** True while the warning is in force: BROADCAST or UPDATED. */
   isActive() {
-    return HazardAlert.#ACTIVE.includes(this.#status);
+    return HazardAlert.ACTIVE_STATUSES.includes(this.#status);
   }
 
   #requireDraft(action) {
@@ -244,6 +272,10 @@ export class HazardAlert {
     }
     this.#status = status;
     this.#statusHistory.push({ status, version: this.#version, at, byId });
+  }
+
+  static #isGiven(value) {
+    return value !== null && value !== undefined;
   }
 
   static #requireHazardType(hazardType) {
