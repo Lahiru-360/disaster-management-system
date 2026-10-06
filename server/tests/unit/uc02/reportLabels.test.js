@@ -13,4 +13,17 @@ describe('ReportLabels', () => {
   it('Main 9: falls back to the raw value for an unknown type', () => {
     expect(ReportLabels.hazardType('TSUNAMI')).toBe('TSUNAMI');
   });
+
+  it.each([
+    ['INACCURATE', 'Inaccurate'],
+    ['DUPLICATE', 'Duplicate'],
+    ['NOT_A_HAZARD', 'Not a hazard'],
+    ['INSUFFICIENT_EVIDENCE', 'Insufficient evidence'],
+  ])('A1.3: labels dismissal reason %s as "%s"', (reason, label) => {
+    expect(ReportLabels.dismissalReason(reason)).toBe(label);
+  });
+
+  it('A1.3: falls back to the raw value for an unknown reason', () => {
+    expect(ReportLabels.dismissalReason('SPAM')).toBe('SPAM');
+  });
 });

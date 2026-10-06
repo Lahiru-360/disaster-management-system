@@ -52,6 +52,14 @@ export class HazardReportRoutes extends BaseRoutes {
       authMiddleware.requireRole(Role.DUTY_OFFICER),
       hazardReportController.confirm,
     );
+
+    router.post(
+      '/:id/dismiss',
+      authMiddleware.requireAuth,
+      authMiddleware.requireRole(Role.DUTY_OFFICER),
+      RequestValidator.body(HazardReportValidator.dismissSchema),
+      hazardReportController.dismiss,
+    );
   }
 }
 

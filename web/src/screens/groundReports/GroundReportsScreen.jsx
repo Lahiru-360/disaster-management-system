@@ -13,6 +13,16 @@ import useAuth from '../../hooks/useAuth';
 
 const errorMessage = (error, fallback) => error?.response?.data?.error?.message ?? fallback;
 
+// What to show after a confirm or dismiss fails. A colleague reviewing the
+// report first (UC02 E3, 409 REPORT_ALREADY_REVIEWED) isn't an error on this
+// officer's part: it is shown as information - "Already reviewed – current
+// status: CONFIRMED" - above the reloaded report, which then says who
+// reviewed it and when.
+function reviewFailure(error, fallback) {
+  const alreadyReviewed = error?.response?.data?.error?.code === 'REPORT_ALREADY_REVIEWED';
+  return { message: errorMessage(error, fallback), variant: alreadyReviewed ? 'info' : 'error' };
+}
+
 // UC02 steps 10-15 for the duty officer (§5.2): the pending queue for their
 // shift district on the left, the selected report on the right. Confirming
 // refreshes the queue and keeps the report open, now showing who confirmed it
@@ -27,6 +37,7 @@ export default function GroundReportsScreen() {
   const [detail, setDetail] = useState(null);
   const [detailError, setDetailError] = useState(null);
   const [confirming, setConfirming] = useState(false);
+  const [dismissing, setDismissing] = useState(false);
   const [actionError, setActionError] = useState(null);
 
   const loadQueue = useCallback(
@@ -80,9 +91,23 @@ export default function GroundReportsScreen() {
     try {
       await groundReportsApi.confirm(selectedId);
     } catch (error) {
-      setActionError(errorMessage(error, 'The report could not be confirmed. Try again.'));
+      setActionError(reviewFailure(error, 'The report could not be confirmed. Try again.'));
     } finally {
       setConfirming(false);
+    }
+    await Promise.all([loadQueue(), loadDetail(selectedId)]);
+  }
+
+  // A1: dismiss with a reason and an optional note, then refresh both panels.
+  async function dismissSelected({ reason, note }) {
+    setDismissing(true);
+    setActionError(null);
+    try {
+      await groundReportsApi.dismiss(selectedId, { reason, note });
+    } catch (error) {
+      setActionError(reviewFailure(error, 'The report could not be dismissed. Try again.'));
+    } finally {
+      setDismissing(false);
     }
     await Promise.all([loadQueue(), loadDetail(selectedId)]);
   }
@@ -120,19 +145,22 @@ export default function GroundReportsScreen() {
           <ReportQueue clusters={clusters ?? []} selectedId={selectedId} onSelect={select} />
           <section className="rounded-xl border border-line bg-paper p-5">
             {actionError ? (
-              <Notice variant="error" className="mb-4">
-                {actionError}
+              <Notice variant={actionError.variant} className="mb-4">
+                {actionError.message}
               </Notice>
             ) : null}
             {detailError ? (
               <Notice variant="error">{detailError}</Notice>
             ) : detail ? (
               <ReportDetailPanel
+                key={detail.report.id}
                 report={detail.report}
                 cluster={detail.cluster}
                 currentUserId={user.id}
                 confirming={confirming}
                 onConfirm={confirmSelected}
+                dismissing={dismissing}
+                onDismiss={dismissSelected}
               />
             ) : (
               <Loader />

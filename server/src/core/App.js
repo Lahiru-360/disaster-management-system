@@ -5,11 +5,13 @@ import morgan from 'morgan';
 import { ErrorHandler } from '../middleware/ErrorHandler.js';
 import { areaRoutes } from '../routes/AreaRoutes.js';
 import { authRoutes } from '../routes/AuthRoutes.js';
+import { hazardAlertRoutes } from '../routes/HazardAlertRoutes.js';
 import { hazardEventRoutes } from '../routes/HazardEventRoutes.js';
 import { hazardReportRoutes } from '../routes/HazardReportRoutes.js';
 import { healthRoutes } from '../routes/HealthRoutes.js';
 import { notificationRoutes } from '../routes/NotificationRoutes.js';
 import { organisationRoutes } from '../routes/OrganisationRoutes.js';
+import { placeRoutes } from '../routes/PlaceRoutes.js';
 import { uploadRoutes } from '../routes/UploadRoutes.js';
 
 // Builds the Express application: global middleware first, then every route
@@ -28,6 +30,8 @@ export class App {
       organisationRoutes,
       notificationRoutes,
       hazardReportRoutes,
+      placeRoutes,
+      hazardAlertRoutes,
     ],
   ) {
     this.#registerMiddleware();
