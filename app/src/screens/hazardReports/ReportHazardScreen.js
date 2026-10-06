@@ -1,6 +1,5 @@
 import { useNavigation } from '@react-navigation/native';
-import * as Location from 'expo-location';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 
 import { hazardReportsApi, uploadApi } from '../../api';
 import DescriptionField from '../../components/hazardReports/DescriptionField';
@@ -14,32 +13,9 @@ import Screen from '../../components/ui/Screen';
 import ScreenHeader from '../../components/ui/ScreenHeader';
 import SectionLabel from '../../components/ui/SectionLabel';
 import { TABS } from '../../constants/roles';
+import useCurrentLocation from '../../hooks/useCurrentLocation';
 import { uuidv4 } from '../../utils/uuid';
 import { hazardReportErrorsFromServer, validateHazardReport } from '../../utils/validation';
-
-// How long to wait for a GPS fix before giving up (A2 then lets the reporter
-// set it by hand - DMS-133).
-const LOCATION_TIMEOUT_MS = 15000;
-
-// The current position as { latitude, longitude }, or null when permission is
-// refused or there is no fix in time.
-async function currentPosition() {
-  try {
-    const permission = await Location.requestForegroundPermissionsAsync();
-    if (permission.status !== 'granted') {
-      return null;
-    }
-    const position = await Promise.race([
-      Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
-      new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('timeout')), LOCATION_TIMEOUT_MS),
-      ),
-    ]);
-    return { latitude: position.coords.latitude, longitude: position.coords.longitude };
-  } catch {
-    return null;
-  }
-}
 
 function emptyForm() {
   return { photo: null, description: '', hazardType: null, clientReportId: uuidv4() };
@@ -52,34 +28,14 @@ function emptyForm() {
 export default function ReportHazardScreen() {
   const navigation = useNavigation();
   const [form, setForm] = useState(emptyForm);
-  const [location, setLocation] = useState(null);
-  const [locationStatus, setLocationStatus] = useState('locating');
+  // Step 3: the device's position (A2: 'unavailable' after the timeout).
+  const gps = useCurrentLocation();
+  const location = gps.location;
+  const locationStatus = gps.status;
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState(null);
   const [fieldErrors, setFieldErrors] = useState({});
   const [submitted, setSubmitted] = useState(null);
-
-  // Step 3: the position from the device's location service, or
-  // 'unavailable'. State is only set in the lookup's callback.
-  function showFix(fix) {
-    setLocation(fix);
-    setLocationStatus(fix ? 'ready' : 'unavailable');
-  }
-
-  useEffect(() => {
-    let current = true;
-    currentPosition().then((fix) => {
-      if (current) showFix(fix);
-    });
-    return () => {
-      current = false;
-    };
-  }, []);
-
-  function locateAgain() {
-    setLocationStatus('locating');
-    currentPosition().then(showFix);
-  }
 
   // Editing a field clears its error; every other input is kept as typed.
   const update = (field) => (value) => {
@@ -139,7 +95,7 @@ export default function ReportHazardScreen() {
     setSubmitted(null);
     setFieldErrors({});
     setForm(emptyForm());
-    locateAgain();
+    gps.retry();
   }
 
   if (submitted) {
@@ -171,7 +127,7 @@ export default function ReportHazardScreen() {
       <LocationRow
         location={location}
         status={locationStatus}
-        onRetry={locateAgain}
+        onRetry={gps.retry}
         error={fieldErrors.location}
       />
 
