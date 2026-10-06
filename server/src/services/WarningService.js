@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import { HazardAlert } from '../domain/alerts/HazardAlert.js';
+import { InvalidAlertTransitionError } from '../domain/alerts/InvalidAlertTransitionError.js';
 import { MessageTemplate } from '../domain/alerts/MessageTemplate.js';
 import { ReportHazardTypeMapper } from '../domain/alerts/ReportHazardTypeMapper.js';
 import { AlertStatus } from '../enums/AlertStatus.js';
@@ -15,9 +16,9 @@ import { hazardReportService as defaultReportService } from './HazardReportServi
 import { HazardAlertPresenter } from './HazardAlertPresenter.js';
 import { ReferenceNumberGenerator } from './ReferenceNumberGenerator.js';
 
-// UC01 Issue Hazard Warning, composing (main flow steps 1-8) and backing out
-// (A4): the WarningController's work in the sequence diagram up to the
-// confirmation.
+// UC01 Issue Hazard Warning, composing (main flow steps 1-8), previewing an
+// update (A2) and backing out (A4): the WarningController's work in the
+// sequence diagram up to the confirmation.
 // The controller hands it validated input; it asks the HazardAlert domain
 // class for every change, AreaRegistry for the scope, CitizenRegistry for the
 // reach and MessageTemplate for the text. Nothing here sends anything. A
@@ -145,6 +146,50 @@ export class WarningService {
       alert: await HazardAlertPresenter.present(doc),
       recipientCount,
       message,
+      channels: this.#channels.map((channel) => ({ channel, ready: true })),
+      activeWarning,
+    };
+  }
+
+  /**
+   * A2.1-A2.2, resuming at step 7 (contract §12.13): what updating an active
+   * warning to this severity and/or scope would send - the recipients
+   * recalculated for the new scope, the update message, and any other active
+   * warning the new scope would duplicate. It changes nothing: the version
+   * goes up only when the officer confirms (BroadcastService.update).
+   * @param {string} alertId
+   * @param {{ severity?: string, areaIds?: string[] }} changes Left out, the
+   *   current value stays.
+   * @returns {Promise<{ alert: object, nextVersion: number, recipientCount: number,
+   *   message: string, channels: { channel: string, ready: boolean }[],
+   *   activeWarning: object|null }>}
+   * @throws {ApiError} 404 for an unknown alert, 400 for an invalid scope, 409
+   *   if it isn't active.
+   */
+  async previewUpdate(alertId, { severity, areaIds }) {
+    const doc = await this.#findDoc(alertId);
+    const alert = HazardAlert.fromDocument(doc);
+    if (!alert.isActive()) {
+      throw new InvalidAlertTransitionError(
+        `Only an active alert can be updated – current status: ${alert.status}`,
+        alert.status,
+      );
+    }
+    const areas = await this.#validScope(
+      areaIds ?? alert.targets.map((target) => String(target.areaId)),
+    );
+    const districtIds = this.#areaRegistry.expandToDistricts(areas);
+
+    const [recipientCount, activeWarning] = await Promise.all([
+      this.#citizenRegistry.countRecipients(districtIds),
+      this.findActive(alert.hazardType, districtIds, { excludeId: alert.id }),
+    ]);
+
+    return {
+      alert: await HazardAlertPresenter.present(doc),
+      nextVersion: alert.version + 1,
+      recipientCount,
+      message: this.#messageTemplate.update(alert.hazardType, severity ?? alert.severity),
       channels: this.#channels.map((channel) => ({ channel, ready: true })),
       activeWarning,
     };
