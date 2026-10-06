@@ -5,8 +5,8 @@
 import { USE_MOCK } from '../constants/config';
 import authApiMock from './mock/authApi';
 import authApiReal from './authApi';
-import notificationsApiMock from './mock/notificationsApi';
-import notificationsApiReal from './notificationsApi';
+import groundReportsApiMock from './mock/groundReportsApi';
+import groundReportsApiReal from './groundReportsApi';
 
 export const authApi = USE_MOCK ? authApiMock : authApiReal;
-export const notificationsApi = USE_MOCK ? notificationsApiMock : notificationsApiReal;
+export const groundReportsApi = USE_MOCK ? groundReportsApiMock : groundReportsApiReal;
