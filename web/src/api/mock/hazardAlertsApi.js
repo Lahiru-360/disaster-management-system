@@ -2,7 +2,9 @@
 // same shapes the real client hands back and rejects with axios-shaped
 // errors, so swapping in the real client changes no calling code. It applies
 // the server's own rules - the 160-character message, unknown areas (E1),
-// DRAFT-only edits, broadcasts and discards (A4) - so the screen meets the same errors,
+// DRAFT-only edits, broadcasts and discards (A4), one active warning per hazard
+// type and district, and updates only of an active one (A2) - so the screen
+// meets the same errors,
 // counts citizens per district from ./areaFixtures.js (each once, even through
 // a basin), and generates the server's messages. A broadcast delivers on every
 // channel, as the server does with its demo failure rates at 0. Escalating a
@@ -164,9 +166,89 @@ function summaryFor(alert) {
   };
 }
 
-function generateMessage(hazardType, severity) {
+function advice(hazardType, severity) {
   const urgent = severity === 'HIGH' || severity === 'SEVERE';
-  return `${LABELS[hazardType]} Warning: ${severity}. ${ADVICE[hazardType][urgent ? 'urgent' : 'watch']}`;
+  return ADVICE[hazardType][urgent ? 'urgent' : 'watch'];
+}
+
+function generateMessage(hazardType, severity) {
+  return `${LABELS[hazardType]} Warning: ${severity}. ${advice(hazardType, severity)}`;
+}
+
+function updateMessage(hazardType, severity) {
+  return `UPDATE: ${LABELS[hazardType]} Warning now ${severity}. ${advice(hazardType, severity)}`;
+}
+
+const ACTIVE_STATUSES = ['BROADCAST', 'UPDATED'];
+
+const districtIdsOf = (targets) =>
+  expandToDistrictIds(targets.map(({ id: areaId }) => findArea(areaId)));
+
+// The server's findActive (§12.13): the most recently issued BROADCAST or
+// UPDATED alert of the type sharing a district with the scope, never `excludeId`.
+function findActive(hazardType, districtIds, excludeId = null) {
+  const conflict = [...alerts.values()]
+    .filter(
+      (alert) =>
+        alert.id !== excludeId &&
+        ACTIVE_STATUSES.includes(alert.status) &&
+        alert.hazardType === hazardType &&
+        districtIdsOf(alert.targets).some((districtId) => districtIds.includes(districtId)),
+    )
+    .sort((a, b) => b.issuedAt.localeCompare(a.issuedAt))[0];
+  if (!conflict) return null;
+  const { id, referenceNo, severity, targets, version } = conflict;
+  return copy({ id, referenceNo, hazardType, severity, targets, version });
+}
+
+function refuseConflict(hazardType, districtIds, excludeId) {
+  const conflict = findActive(hazardType, districtIds, excludeId);
+  if (conflict) {
+    throw apiError(
+      409,
+      'ACTIVE_WARNING_EXISTS',
+      `An active ${hazardType} warning (${conflict.referenceNo}) already covers this scope – update it instead`,
+    );
+  }
+}
+
+function requireActive(alert) {
+  if (!ACTIVE_STATUSES.includes(alert.status)) {
+    throw apiError(
+      409,
+      'INVALID_ALERT_TRANSITION',
+      `Only an active alert can be updated – current status: ${alert.status}`,
+    );
+  }
+}
+
+// The checks the update preview and the update share (§12.13): at least one
+// change, a known severity, and a scope of registered areas (E1). Resolves
+// to the new severity and the new targets.
+function validateChange(alert, { severity, areaIds }) {
+  if (severity === undefined && areaIds === undefined) {
+    throw validationError([{ field: 'severity', message: 'change the severity or the scope' }]);
+  }
+  if (severity !== undefined && !SEVERITIES.includes(severity)) {
+    throw validationError([
+      { field: 'severity', message: `must be one of [${SEVERITIES.join(', ')}]` },
+    ]);
+  }
+  if (areaIds !== undefined && (!Array.isArray(areaIds) || areaIds.length === 0)) {
+    throw validationError([{ field: 'areaIds', message: 'must contain at least 1 items' }]);
+  }
+  const requested = areaIds === undefined ? null : [...new Set(areaIds)];
+  const unknown = (requested ?? []).filter((areaId) => !findArea(areaId));
+  if (unknown.length > 0) {
+    throw validationError([
+      { field: 'areaIds', message: `unknown area ids: ${unknown.join(', ')}` },
+    ]);
+  }
+  requireActive(alert);
+  const targets = requested
+    ? requested.map(findArea).map(({ kind, area }) => ({ kind, id: area.id, name: area.name }))
+    : alert.targets;
+  return { severity: severity ?? alert.severity, targets };
 }
 
 // A1.2: what a confirmed report suggests. The mock reports are all filed
@@ -248,6 +330,7 @@ async function preview(id, { hazardType, severity, areaIds } = {}) {
   requireDraft(alert, 'previewed');
 
   const areas = requested.map(findArea);
+  const districtIds = expandToDistrictIds(areas);
   const message = generateMessage(hazardType, severity);
   Object.assign(alert, {
     hazardType,
@@ -259,10 +342,10 @@ async function preview(id, { hazardType, severity, areaIds } = {}) {
 
   return {
     alert: copy(alert),
-    recipientCount: citizensIn(expandToDistrictIds(areas)),
+    recipientCount: citizensIn(districtIds),
     message,
     channels: CHANNELS.map((channel) => ({ channel, ready: true })),
-    activeWarning: null,
+    activeWarning: findActive(hazardType, districtIds),
   };
 }
 
@@ -297,8 +380,9 @@ async function broadcast(id, message) {
   }
 
   // Counted again, as the server does, in case the preview is stale.
-  const areas = alert.targets.map(({ id: areaId }) => findArea(areaId));
-  recipients.set(alert.id, citizensIn(expandToDistrictIds(areas)));
+  const districtIds = districtIdsOf(alert.targets);
+  refuseConflict(alert.hazardType, districtIds, alert.id);
+  recipients.set(alert.id, citizensIn(districtIds));
 
   const now = new Date().toISOString();
   Object.assign(alert, {
@@ -309,6 +393,68 @@ async function broadcast(id, message) {
     updatedAt: now,
   });
   alert.statusHistory.push({ status: 'BROADCAST', version: alert.version, at: now, by: OFFICER });
+
+  return { alert: copy(alert), summary: summaryFor(alert) };
+}
+
+// A2 (§12.13): what the update would send. Changes nothing.
+async function previewUpdate(id, changes = {}) {
+  await delay();
+  takeFailure();
+  const alert = findAlert(id);
+  const { severity, targets } = validateChange(alert, changes);
+  const districtIds = districtIdsOf(targets);
+
+  return {
+    alert: copy(alert),
+    nextVersion: alert.version + 1,
+    recipientCount: citizensIn(districtIds),
+    message: updateMessage(alert.hazardType, severity),
+    channels: CHANNELS.map((channel) => ({ channel, ready: true })),
+    activeWarning: findActive(alert.hazardType, districtIds, alert.id),
+  };
+}
+
+// A2.3 (§12.14): UPDATED, the next version, sent to the recalculated
+// recipients; then the new draft it replaces is discarded.
+async function update(id, { severity, areaIds, message, replacesDraftId } = {}) {
+  await delay();
+  takeFailure();
+  const alert = findAlert(id);
+  const text = validateMessage(message);
+  const changed = validateChange(alert, { severity, areaIds });
+  const key = (targets) =>
+    targets
+      .map(({ id: areaId }) => areaId)
+      .sort()
+      .join(',');
+  if (changed.severity === alert.severity && key(changed.targets) === key(alert.targets)) {
+    throw validationError([{ field: 'severity', message: 'change the severity or the scope' }]);
+  }
+
+  const districtIds = districtIdsOf(changed.targets);
+  const count = citizensIn(districtIds);
+  if (count === 0) {
+    throw apiError(
+      409,
+      'NO_RECIPIENTS_IN_SCOPE',
+      'No registered citizens are in the selected scope',
+    );
+  }
+  refuseConflict(alert.hazardType, districtIds, alert.id);
+
+  const now = new Date().toISOString();
+  Object.assign(alert, {
+    severity: changed.severity,
+    targets: changed.targets,
+    message: text,
+    status: 'UPDATED',
+    version: alert.version + 1,
+    updatedAt: now,
+  });
+  alert.statusHistory.push({ status: 'UPDATED', version: alert.version, at: now, by: OFFICER });
+  recipients.set(alert.id, count);
+  if (alerts.get(replacesDraftId)?.status === 'DRAFT') alerts.delete(replacesDraftId);
 
   return { alert: copy(alert), summary: summaryFor(alert) };
 }
@@ -358,4 +504,6 @@ export default {
   getDeliverySummary,
   listDrafts,
   discardDraft,
+  previewUpdate,
+  update,
 };

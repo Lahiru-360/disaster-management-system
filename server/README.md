@@ -117,7 +117,7 @@ Seeding never removes anything, so an account whose role is no longer in `Role` 
 | `hazard-event` | `HazardEventSeeder`  | CLOSED "Kelani basin floods" (8–20 Jun 2026; Colombo, Gampaha, Kalutara) and ACTIVE "Flood – Gampaha District" (from 25 Sep 2026) |
 | `uc01`         | `Uc01Seeder`         | UC01 demo data (Anupa): hazard alerts, notifications                                                                              |
 | `uc02`         | `Uc02Seeder`         | UC02 demo data (Bineth): hazard reports                                                                                           |
-| `uc03`         | `Uc03Seeder`         | UC03 demo data (Lahiru): shelters, teams, stock                                                                                   |
+| `uc03`         | `Uc03Seeder`         | UC03 demo data (Lahiru): 5 Gampaha shelters, teams Alpha–Echo, organisation stock, recent supply logs                             |
 | `uc04`         | `Uc04Seeder`         | UC04 demo data (Sayuni): the closed-event dataset                                                                                 |
 
 ```bash

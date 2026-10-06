@@ -1,6 +1,13 @@
 // `options`: [{ value, label }]. In single mode `value`/`onChange` carry one
 // option value (or null); in multi mode they carry an array.
-export default function ChipGroup({ options, value, onChange, multiple = false, className, ...props }) {
+export default function ChipGroup({
+  options,
+  value,
+  onChange,
+  multiple = false,
+  className,
+  ...props
+}) {
   const selected = multiple ? (value ?? []) : value;
 
   const isSelected = (optionValue) =>
