@@ -17,9 +17,7 @@ async function markRead(id) {
   return response.data.data;
 }
 
-const notificationsApi = {
+export default {
   listMine,
   markRead,
 };
-
-export default notificationsApi;
