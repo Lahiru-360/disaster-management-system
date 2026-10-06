@@ -68,8 +68,8 @@ export class BroadcastService {
    * @returns {Promise<{ alert: object, summary: object }>} The alert object, now
    *   BROADCAST, and its delivery summary.
    * @throws {ApiError} 404 for an unknown alert, 409 if it isn't a previewed
-   *   DRAFT (or a colleague broadcast it first), 400 if its scope is no longer
-   *   registered.
+   *   DRAFT (or a colleague broadcast it first) or its scope holds no
+   *   citizens (E2), 400 if its scope is no longer registered.
    */
   async broadcast(alertId, officer, message) {
     const doc = await this.#findDoc(alertId);
@@ -79,6 +79,14 @@ export class BroadcastService {
     // Re-checked against the current data, in case the preview is stale.
     const districtIds = await this.#currentDistricts(alert);
     const recipients = await this.#citizenRegistry.findRecipients(districtIds);
+    // E2: a warning that would reach no one is never sent, so it stays DRAFT.
+    if (recipients.length === 0) {
+      throw new ApiError(
+        409,
+        'NO_RECIPIENTS_IN_SCOPE',
+        'No registered citizens are in the selected scope',
+      );
+    }
 
     // Only one broadcast of a draft can win: the update matches DRAFT only.
     const broadcastDoc = await this.#alertModel.findOneAndUpdate(
