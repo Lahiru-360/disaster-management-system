@@ -47,6 +47,9 @@
     "src/validators/OrganisationValidator.js",
     "src/routes/HazardEventRoutes.js",
     "src/routes/OrganisationRoutes.js",
-    "src/utils/SriLankaCalendar.js"
+    "src/utils/SriLankaCalendar.js",
+    "src/enums/ReportSectionKey.js",
+    "src/models/PostEventReport.js",
+    "src/domain/analysis/**/*.js"
   ]
 }
