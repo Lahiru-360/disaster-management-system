@@ -25,15 +25,20 @@ export class Shelter {
     if (!Number.isInteger(capacity) || capacity < 1) {
       throw new Error('Shelter capacity must be a whole number, 1 or more');
     }
-    if (!Number.isInteger(currentOccupancy) || currentOccupancy < 0) {
-      throw new Error('Shelter occupancy must be a whole number, 0 or more');
-    }
+    Shelter.#assertOccupancy(currentOccupancy);
     this.#shelterId = String(shelterId);
     this.#name = name;
     this.#district = district;
     this.#location = location ? Object.freeze({ ...location }) : undefined;
     this.#capacity = capacity;
     this.#currentOccupancy = currentOccupancy;
+  }
+
+  // E1: an occupancy is a whole number of people, never negative.
+  static #assertOccupancy(occupants) {
+    if (!Number.isInteger(occupants) || occupants < 0) {
+      throw new Error('Shelter occupancy must be a whole number, 0 or more');
+    }
   }
 
   /**
@@ -71,6 +76,18 @@ export class Shelter {
 
   get currentOccupancy() {
     return this.#currentOccupancy;
+  }
+
+  /**
+   * UC03 steps 3-4: records how many people are in the shelter now. Any whole
+   * number from 0 is allowed, above capacity too - nobody is turned away, the
+   * shelter is just FULL. Anything else (E1) is refused and changes nothing.
+   * @param {number} occupants
+   * @throws {Error} When occupants isn't a whole number, 0 or more.
+   */
+  updateOccupancy(occupants) {
+    Shelter.#assertOccupancy(occupants);
+    this.#currentOccupancy = occupants;
   }
 
   /**
