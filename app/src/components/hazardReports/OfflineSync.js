@@ -3,11 +3,9 @@ import { useEffect, useState } from 'react';
 import { Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { hazardReportsApi, uploadApi } from '../../api';
 import useAuth from '../../hooks/useAuth';
 import { isOnlineState } from '../../hooks/useConnectivity';
-import { SyncService } from '../../services/SyncService';
-import offlineReportQueue from '../../store/offlineReportQueue';
+import { onReportSent, reportSync as sync } from '../../services/reportSync';
 
 const NOTICE_MS = 4000;
 
@@ -25,15 +23,10 @@ export default function OfflineSync() {
   useEffect(() => {
     if (!signedIn) return undefined;
     let timer;
-    const sync = new SyncService({
-      queue: offlineReportQueue,
-      uploadApi,
-      hazardReportsApi,
-      onSent: (report) => {
-        clearTimeout(timer);
-        setNotice(`Report ${report.referenceNo} sent`);
-        timer = setTimeout(() => setNotice(null), NOTICE_MS);
-      },
+    const stopNotices = onReportSent((report) => {
+      clearTimeout(timer);
+      setNotice(`Report ${report.referenceNo} sent`);
+      timer = setTimeout(() => setNotice(null), NOTICE_MS);
     });
 
     // E2: after each run, wake up when the next WAITING report is due.
@@ -60,6 +53,7 @@ export default function OfflineSync() {
 
     return () => {
       unsubscribe();
+      stopNotices();
       clearTimeout(timer);
       clearTimeout(wakeTimer);
     };
