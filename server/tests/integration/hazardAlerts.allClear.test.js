@@ -61,7 +61,7 @@ const listActive = (user = duty) =>
   request(app).get('/api/hazard-alerts').query({ status: 'active' }).set(as(user));
 
 describe('UC01 A3: GET /api/hazard-alerts?status=active', () => {
-  it('DMS-124: lists the active warnings with how many citizens the all-clear will reach', async () => {
+  it('A3: lists the active warnings with how many citizens the all-clear will reach', async () => {
     await citizensIn(areas.colombo, 2);
     await citizensIn(areas.gampaha, 1);
     const active = await activeWarning([areas.colombo, areas.gampaha]);
@@ -85,14 +85,14 @@ describe('UC01 A3: GET /api/hazard-alerts?status=active', () => {
     });
   });
 
-  it('DMS-124: nothing active is 200 with []', async () => {
+  it('A3: nothing active is 200 with []', async () => {
     const res = await listActive();
 
     expect(res.status).toBe(200);
     expect(res.body.data.alerts).toEqual([]);
   });
 
-  it('DMS-124: a citizen is 403 FORBIDDEN', async () => {
+  it('A3: a citizen is 403 FORBIDDEN', async () => {
     const res = await listActive(await createUser({ homeDistrict: areas.colombo }));
 
     expect(res.status).toBe(403);
@@ -100,7 +100,7 @@ describe('UC01 A3: GET /api/hazard-alerts?status=active', () => {
 });
 
 describe('UC01 A3: POST /api/hazard-alerts/:id/all-clear', () => {
-  it('DMS-124: TC-26 sets CANCELLED and sends the all-clear, resuming at the delivery summary', async () => {
+  it('A3: TC-26 sets CANCELLED and sends the all-clear, resuming at the delivery summary', async () => {
     await citizensIn(areas.colombo, 2);
     const active = await activeWarning([areas.colombo]);
 
@@ -122,7 +122,7 @@ describe('UC01 A3: POST /api/hazard-alerts/:id/all-clear', () => {
     expect(await Notification.countDocuments({ alert: active.id, kind: 'ALL_CLEAR' })).toBe(6);
   });
 
-  it('DMS-124: TC-27 a citizen who changed district after the broadcast still receives it', async () => {
+  it('A3: TC-27 a citizen who changed district after the broadcast still receives it', async () => {
     const [moved] = await citizensIn(areas.colombo, 1);
     const active = await activeWarning([areas.colombo]);
     await User.updateOne({ _id: moved._id }, { homeDistrict: areas.kalutara._id });
@@ -146,7 +146,7 @@ describe('UC01 A3: POST /api/hazard-alerts/:id/all-clear', () => {
         return active.id;
       },
     ],
-  ])('DMS-124: TC-28 an all-clear on a %s alert is 409 and sends nothing', async (status, make) => {
+  ])('A3: TC-28 an all-clear on a %s alert is 409 and sends nothing', async (status, make) => {
     await citizensIn(areas.colombo, 1);
     const id = await make();
     const before = await Notification.countDocuments({ alert: id });
@@ -161,7 +161,7 @@ describe('UC01 A3: POST /api/hazard-alerts/:id/all-clear', () => {
     expect(await Notification.countDocuments({ alert: id })).toBe(before);
   });
 
-  it('DMS-124: TC-29 a CANCELLED alert no longer counts as active: a new warning in the same scope is allowed', async () => {
+  it('A3: TC-29 a CANCELLED alert no longer counts as active: a new warning in the same scope is allowed', async () => {
     await citizensIn(areas.colombo, 1);
     const ended = await activeWarning([areas.colombo]);
     await allClear(ended.id);
@@ -175,7 +175,7 @@ describe('UC01 A3: POST /api/hazard-alerts/:id/all-clear', () => {
     expect(res.body.data.alert.status).toBe('BROADCAST');
   });
 
-  it('DMS-124: a CANCELLED alert can no longer be updated', async () => {
+  it('A3: a CANCELLED alert can no longer be updated', async () => {
     await citizensIn(areas.colombo, 1);
     const active = await activeWarning([areas.colombo]);
     await allClear(active.id);
@@ -191,7 +191,7 @@ describe('UC01 A3: POST /api/hazard-alerts/:id/all-clear', () => {
     );
   });
 
-  it('DMS-124: anything in the body is ignored', async () => {
+  it('A3: anything in the body is ignored', async () => {
     await citizensIn(areas.colombo, 1);
     const active = await activeWarning([areas.colombo]);
 
@@ -204,7 +204,7 @@ describe('UC01 A3: POST /api/hazard-alerts/:id/all-clear', () => {
     expect(res.body.data.alert.message).toBe(ALL_CLEAR);
   });
 
-  it('DMS-124: an unknown alert is 404, a citizen is 403, and no token is 401', async () => {
+  it('A3: an unknown alert is 404, a citizen is 403, and no token is 401', async () => {
     await citizensIn(areas.colombo, 1);
     const active = await activeWarning([areas.colombo]);
     const citizen = await createUser({ homeDistrict: areas.colombo });

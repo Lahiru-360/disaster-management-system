@@ -52,7 +52,7 @@ const expectRefusedAndNothingSent = async (res, id) => {
 };
 
 describe('UC01 E2: no recipients in scope', () => {
-  it('DMS-127: TC-36 previewing a district with no citizens is 200 with recipientCount 0', async () => {
+  it('E2: TC-36 previewing a district with no citizens is 200 with recipientCount 0', async () => {
     const id = await startDraft();
 
     const res = await preview(id, areas.kalutara);
@@ -62,7 +62,7 @@ describe('UC01 E2: no recipients in scope', () => {
     expect(res.body.data.alert.status).toBe('DRAFT');
   });
 
-  it('DMS-127: TC-37 broadcasting to a district with no citizens is 409 NO_RECIPIENTS_IN_SCOPE', async () => {
+  it('E2: TC-37 broadcasting to a district with no citizens is 409 NO_RECIPIENTS_IN_SCOPE', async () => {
     const id = await startDraft();
     await preview(id, areas.kalutara);
 
@@ -71,7 +71,7 @@ describe('UC01 E2: no recipients in scope', () => {
     await expectRefusedAndNothingSent(res, id);
   });
 
-  it('DMS-127: TC-37 citizens only in an unselected district are not recipients', async () => {
+  it('E2: TC-37 citizens only in an unselected district are not recipients', async () => {
     await createUser({ homeDistrict: areas.colombo });
     await createUser({ homeDistrict: areas.gampaha });
     const id = await startDraft();
@@ -83,7 +83,7 @@ describe('UC01 E2: no recipients in scope', () => {
     await expectRefusedAndNothingSent(res, id);
   });
 
-  it('DMS-127: TC-37 deactivated citizens are not counted, so the broadcast is refused', async () => {
+  it('E2: TC-37 deactivated citizens are not counted, so the broadcast is refused', async () => {
     await createUser({ homeDistrict: areas.kalutara, isActive: false });
     const id = await startDraft();
 
@@ -94,7 +94,7 @@ describe('UC01 E2: no recipients in scope', () => {
     await expectRefusedAndNothingSent(res, id);
   });
 
-  it('DMS-127: TC-37 officers living in the scope are not citizens to warn', async () => {
+  it('E2: TC-37 officers living in the scope are not citizens to warn', async () => {
     await createUser({ role: Role.DISTRICT_OFFICER, homeDistrict: areas.kalutara });
     const id = await startDraft();
     await preview(id, areas.kalutara);
@@ -104,7 +104,7 @@ describe('UC01 E2: no recipients in scope', () => {
     await expectRefusedAndNothingSent(res, id);
   });
 
-  it('DMS-127: the scope is counted again at broadcast: citizens who left since the preview', async () => {
+  it('E2: the scope is counted again at broadcast: citizens who left since the preview', async () => {
     const citizen = await createUser({ homeDistrict: areas.kalutara });
     const id = await startDraft();
     const previewed = await preview(id, areas.kalutara);
@@ -116,7 +116,7 @@ describe('UC01 E2: no recipients in scope', () => {
     await expectRefusedAndNothingSent(res, id);
   });
 
-  it('DMS-127: TC-38 exactly one citizen in scope is broadcast to', async () => {
+  it('E2: TC-38 exactly one citizen in scope is broadcast to', async () => {
     const citizen = await createUser({ homeDistrict: areas.kalutara });
     const id = await startDraft();
     const previewed = await preview(id, areas.kalutara);
@@ -129,7 +129,7 @@ describe('UC01 E2: no recipients in scope', () => {
     expect(await Notification.countDocuments({ citizen: citizen._id })).toBe(3);
   });
 
-  it('DMS-127: E2.2 the officer changes the scope and can then broadcast', async () => {
+  it('E2.2: the officer changes the scope and can then broadcast', async () => {
     await createUser({ homeDistrict: areas.colombo });
     const id = await startDraft();
     await preview(id, areas.kalutara);
@@ -143,7 +143,7 @@ describe('UC01 E2: no recipients in scope', () => {
     expect(await Notification.countDocuments()).toBe(3);
   });
 
-  it('DMS-127: a draft that was never previewed is still INVALID_ALERT_TRANSITION, not E2', async () => {
+  it('E2: a draft that was never previewed is still INVALID_ALERT_TRANSITION, not E2', async () => {
     const id = await startDraft();
 
     const res = await broadcast(id);

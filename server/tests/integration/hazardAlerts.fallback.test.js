@@ -69,7 +69,7 @@ const unreached = (id, query = {}, user = duty) =>
   request(app).get(`/api/hazard-alerts/${id}/unreached`).query(query).set(as(user));
 
 describe('GET /api/hazard-alerts/:id/unreached', () => {
-  it('DMS-128: TC-42 lists the distinct citizens no channel reached, with district and phone', async () => {
+  it('E3: TC-42 lists the distinct citizens no channel reached, with district and phone', async () => {
     const id = await broadcastWarning();
     const [chamari, amal, bimal] = citizens;
     await failFor(id, chamari);
@@ -104,7 +104,7 @@ describe('GET /api/hazard-alerts/:id/unreached', () => {
     });
   });
 
-  it('DMS-128: TC-43 the delivery summary shows the same partial delivery', async () => {
+  it('E3: TC-43 the delivery summary shows the same partial delivery', async () => {
     const id = await broadcastWarning();
     await failFor(id, citizens[0]);
 
@@ -120,7 +120,7 @@ describe('GET /api/hazard-alerts/:id/unreached', () => {
     expect(list.body.data.total).toBe(1);
   });
 
-  it('DMS-128: pages with page and limit', async () => {
+  it('E3: pages with page and limit', async () => {
     const id = await broadcastWarning();
     for (const citizen of citizens) await failFor(id, citizen);
 
@@ -131,7 +131,7 @@ describe('GET /api/hazard-alerts/:id/unreached', () => {
     expect(res.body.data.citizens.map((c) => c.name)).toEqual(['Chamari Jayasena']);
   });
 
-  it('DMS-128: everyone reached, or a DRAFT that sent nothing, is an empty list', async () => {
+  it('E3: everyone reached, or a DRAFT that sent nothing, is an empty list', async () => {
     const id = await broadcastWarning();
     const draftId = await startDraft();
 
@@ -147,7 +147,7 @@ describe('GET /api/hazard-alerts/:id/unreached', () => {
     [{ limit: '0' }, 'limit', 'must be greater than or equal to 1'],
     [{ page: '0' }, 'page', 'must be greater than or equal to 1'],
     [{ page: 'two' }, 'page', 'must be a number'],
-  ])('DMS-128: refuses query %p with 400 VALIDATION_ERROR', async (query, field, message) => {
+  ])('E3: refuses query %p with 400 VALIDATION_ERROR', async (query, field, message) => {
     const id = await broadcastWarning();
 
     const res = await unreached(id, query);
@@ -159,7 +159,7 @@ describe('GET /api/hazard-alerts/:id/unreached', () => {
     });
   });
 
-  it('DMS-128: an unknown or malformed id is 404 NOT_FOUND', async () => {
+  it('E3: an unknown or malformed id is 404 NOT_FOUND', async () => {
     for (const id of [new mongoose.Types.ObjectId().toString(), 'nope']) {
       const res = await unreached(id);
       expect(res.status).toBe(404);
@@ -167,7 +167,7 @@ describe('GET /api/hazard-alerts/:id/unreached', () => {
     }
   });
 
-  it('DMS-128: a district officer is 403 FORBIDDEN and no token is 401', async () => {
+  it('E3: a district officer is 403 FORBIDDEN and no token is 401', async () => {
     const id = await broadcastWarning();
     const districtOfficer = await createUser({
       role: Role.DISTRICT_OFFICER,
