@@ -3,11 +3,9 @@ import { useEffect, useState } from 'react';
 import { Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { hazardReportsApi, uploadApi } from '../../api';
 import useAuth from '../../hooks/useAuth';
 import { isOnlineState } from '../../hooks/useConnectivity';
-import { SyncService } from '../../services/SyncService';
-import offlineReportQueue from '../../store/offlineReportQueue';
+import { onReportSent, reportSync as sync } from '../../services/reportSync';
 
 const NOTICE_MS = 4000;
 
@@ -25,30 +23,39 @@ export default function OfflineSync() {
   useEffect(() => {
     if (!signedIn) return undefined;
     let timer;
-    const sync = new SyncService({
-      queue: offlineReportQueue,
-      uploadApi,
-      hazardReportsApi,
-      onSent: (report) => {
-        clearTimeout(timer);
-        setNotice(`Report ${report.referenceNo} sent`);
-        timer = setTimeout(() => setNotice(null), NOTICE_MS);
-      },
+    const stopNotices = onReportSent((report) => {
+      clearTimeout(timer);
+      setNotice(`Report ${report.referenceNo} sent`);
+      timer = setTimeout(() => setNotice(null), NOTICE_MS);
     });
+
+    // E2: after each run, wake up when the next WAITING report is due.
+    let wakeTimer;
+    let online = false;
+    const runAndSchedule = async () => {
+      await sync.syncAll();
+      const due = await sync.nextDueAt();
+      clearTimeout(wakeTimer);
+      if (due && online) {
+        wakeTimer = setTimeout(runAndSchedule, Math.max(0, new Date(due).getTime() - Date.now()));
+      }
+    };
 
     let wasOnline = null;
     const unsubscribe = NetInfo.addEventListener((state) => {
-      const online = isOnlineState(state);
+      online = isOnlineState(state);
       // First answer (app start) or back from offline: send what is waiting.
       if (online && wasOnline !== true) {
-        sync.syncAll();
+        runAndSchedule();
       }
       wasOnline = online;
     });
 
     return () => {
       unsubscribe();
+      stopNotices();
       clearTimeout(timer);
+      clearTimeout(wakeTimer);
     };
   }, [signedIn]);
 
