@@ -94,6 +94,13 @@ export class HazardAlertController extends BaseController {
 
     ApiResponse.success(res, result, 200);
   }
+
+  // GET /api/hazard-alerts/:id/unreached - UC01 E3.3 (§12.16).
+  async unreached(req, res) {
+    const result = await this.#broadcastService.unreached(req.params.id, req.query);
+
+    ApiResponse.success(res, result, 200);
+  }
 }
 
 export const hazardAlertController = new HazardAlertController();

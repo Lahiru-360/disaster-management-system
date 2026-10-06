@@ -75,8 +75,8 @@ describe('DeliverySummary', () => {
 
   it('DMS-121: counts a record retried through the fallback as resent', async () => {
     await Notification.insertMany([
-      record(ann, 'PUSH', 'DELIVERED', { attempts: 2 }),
-      record(ben, 'PUSH', 'FAILED', { attempts: 3 }),
+      record(ann, 'PUSH', 'DELIVERED', { attempts: 2, fallbackChannel: 'SMS' }),
+      record(ben, 'PUSH', 'FAILED', { attempts: 3, fallbackChannel: 'SMS' }),
       record(cara, 'PUSH', 'DELIVERED'),
     ]);
 

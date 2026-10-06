@@ -186,6 +186,25 @@ export class BroadcastService {
     };
   }
 
+  /**
+   * E3.3, "[View list]" (contract §12.16): one page of the citizens the
+   * alert's current version reached on no channel. A DRAFT has sent nothing,
+   * so its list is empty.
+   * @param {string} alertId
+   * @param {{ page: number, limit: number }} paging Validated, defaults applied.
+   * @returns {Promise<{ version: number, citizens: object[], page: number,
+   *   limit: number, total: number }>}
+   * @throws {ApiError} 404 for an unknown or malformed id.
+   */
+  async unreached(alertId, { page, limit }) {
+    const doc = await this.#findDoc(alertId);
+    const { citizens, total } = await this.#summary.unreachedCitizens(doc.id, doc.version, {
+      page,
+      limit,
+    });
+    return { version: doc.version, citizens, page, limit, total };
+  }
+
   // The recipient × channel loop, a batch at a time: create each delivery as
   // QUEUED, send it through its channel, then save every result together.
   async #deliver(alert, recipients, kind) {
