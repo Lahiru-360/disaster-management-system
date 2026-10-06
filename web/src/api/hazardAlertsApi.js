@@ -80,6 +80,15 @@ async function getDeliverySummary(id) {
   return response.data.data;
 }
 
+// E3.3 (§12.16): one page of the citizens the current version reached on no
+// channel; resolves with { version, citizens, page, limit, total }.
+async function getUnreached(id, { page, limit } = {}) {
+  const response = await client.get(`/hazard-alerts/${id}/unreached`, {
+    params: { page, limit },
+  });
+  return response.data.data;
+}
+
 export default {
   startDraft,
   preview,
@@ -87,6 +96,7 @@ export default {
   getById,
   broadcast,
   getDeliverySummary,
+  getUnreached,
   listDrafts,
   discardDraft,
   previewUpdate,
