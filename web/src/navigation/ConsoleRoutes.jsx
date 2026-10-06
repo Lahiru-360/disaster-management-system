@@ -27,12 +27,9 @@ export default function ConsoleRoutes() {
       <Route element={<ConsoleLayout />}>
         <Route index element={<PlaceholderScreen title="Dashboard" />} />
         <Route path="hazard-warnings" element={<HazardWarningsScreen />} />
-        <Route path="hazard-warnings/new" element={<IssueWarningScreen />} />
+        <Route path="hazard-warnings/new" element={<IssueWarningScreen key="new" />} />
         <Route path="hazard-warnings/:id" element={<DeliverySummaryScreen />} />
-        <Route
-          path="hazard-warnings/:id/edit"
-          element={<PlaceholderScreen title="Update Hazard Warning" />}
-        />
+        <Route path="hazard-warnings/:id/edit" element={<IssueWarningScreen key="edit" />} />
         <Route path="ground-reports" element={<GroundReportsScreen />} />
         <Route
           path="shelter-resources"

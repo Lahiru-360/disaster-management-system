@@ -1,11 +1,12 @@
 import { useEffect, useId, useRef, useState } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 
 import { areasApi, hazardAlertsApi } from '../../api';
+import ActiveWarningBanner from '../../components/hazardWarnings/ActiveWarningBanner';
 import BroadcastPreview from '../../components/hazardWarnings/BroadcastPreview';
 import ChannelReadiness from '../../components/hazardWarnings/ChannelReadiness';
 import ConfirmBroadcastDialog from '../../components/hazardWarnings/ConfirmBroadcastDialog';
-import HazardTypePicker from '../../components/hazardWarnings/HazardTypePicker';
+import HazardTypePicker, { HAZARD_TYPES } from '../../components/hazardWarnings/HazardTypePicker';
 import RecipientCount from '../../components/hazardWarnings/RecipientCount';
 import ScopeSelector from '../../components/hazardWarnings/ScopeSelector';
 import SeverityPicker from '../../components/hazardWarnings/SeverityPicker';
@@ -30,6 +31,12 @@ const PREVIEW_DELAY_MS = 400;
 // on any other field goes in a Notice above the form.
 const SCOPE_FIELDS = ['areaIds'];
 
+// A warning in force, which can be updated (A2).
+const ACTIVE_STATUSES = ['BROADCAST', 'UPDATED'];
+
+// A scope as a key that ignores the order the areas were chosen in.
+const scopeKey = (ids) => [...new Set(ids)].sort().join(',');
+
 // UC01 main flow steps 1-8 (§5.1), the IssueWarningScreen of the sequence
 // diagram. Opening it starts a DRAFT (step 2). Once a hazard type, a severity
 // and at least one area are chosen (steps 3-5), the server validates the
@@ -44,12 +51,23 @@ const SCOPE_FIELDS = ['areaIds'];
 // A4: Back in the dialog only closes it, so every input stays. Cancel offers
 // to discard the draft; leaving any other way keeps it, and the Drafts list
 // reopens it here with ?draftId=.
+//
+// A2: when the preview finds an active warning of the same type in the scope,
+// a banner offers Update existing instead of a duplicate broadcast. That opens
+// this screen in edit mode at /hazard-warnings/:id/edit?replaces=<draft id>,
+// headed "Updating HA-1043 (v2)": the hazard type is fixed, the severity and
+// scope are pre-loaded, and each change is previewed against the recalculated
+// recipients (§12.13) without changing the warning. Confirm & Update sends it
+// (§12.14), and the new draft it replaces is then discarded by the server.
 export default function IssueWarningScreen() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const { id: editId } = useParams();
   const [searchParams] = useSearchParams();
+  const editing = Boolean(editId);
   const draftId = searchParams.get('draftId');
   const sourceReportId = searchParams.get('reportId');
+  const replacesDraftId = searchParams.get('replaces');
   const recipientCountId = useId();
   const canIssue = [ROLES.DMC_OFFICER, ROLES.DUTY_OFFICER].includes(user?.role);
 
@@ -88,23 +106,30 @@ export default function IssueWarningScreen() {
 
   const alertId = alert?.id;
   const complete = Boolean(hazardType && severity && areaIds.length > 0);
+  // A2.2: an update must change the severity or the scope.
+  const scopeChanged =
+    editing && alert ? scopeKey(areaIds) !== scopeKey(alert.targets.map(({ id }) => id)) : false;
+  const changed = !editing || (alert && (severity !== alert.severity || scopeChanged));
+  const title = editing && alert ? `Updating ${alert.referenceNo} (v${alert.version + 1})` : null;
 
   // Steps 1-2: open a DRAFT, or reopen the one being resumed (A4), and load
   // the areas to choose from. A1.2: an escalated report's suggestions are
-  // pre-selected.
+  // pre-selected. A2: open the active warning being updated instead.
   useEffect(() => {
     if (!canIssue || started.current) return;
     started.current = true;
-    Promise.all([
-      draftId
-        ? hazardAlertsApi.getById(draftId)
-        : hazardAlertsApi.startDraft(sourceReportId ? { sourceReportId } : undefined),
-      areasApi.listDistricts(),
-      areasApi.listRiverBasins(),
-    ]).then(
+    let opening;
+    if (editId) opening = hazardAlertsApi.getById(editId);
+    else if (draftId) opening = hazardAlertsApi.getById(draftId);
+    else opening = hazardAlertsApi.startDraft(sourceReportId ? { sourceReportId } : undefined);
+    Promise.all([opening, areasApi.listDistricts(), areasApi.listRiverBasins()]).then(
       ([draft, districts, riverBasins]) => {
         const opened = draft.alert;
-        if (opened.status !== 'DRAFT') {
+        if (editId && !ACTIVE_STATUSES.includes(opened.status)) {
+          setLoadError(`${opened.referenceNo} can't be updated: it is ${opened.status}.`);
+          return;
+        }
+        if (!editId && opened.status !== 'DRAFT') {
           setLoadError(`${opened.referenceNo} is no longer a draft: it is ${opened.status}.`);
           return;
         }
@@ -113,7 +138,8 @@ export default function IssueWarningScreen() {
         setHazardType(opened.hazardType);
         setSeverity(opened.severity);
         setAreaIds(opened.targets.map(({ id }) => id));
-        if (opened.message) {
+        // An update starts from the update message the preview writes.
+        if (opened.message && !editId) {
           resumedMessage.current = {
             hazardType: opened.hazardType,
             severity: opened.severity,
@@ -129,7 +155,7 @@ export default function IssueWarningScreen() {
       (error) =>
         setLoadError(apiErrorMessage(error, 'The warning could not be opened. Try again.')),
     );
-  }, [canIssue, draftId, sourceReportId]);
+  }, [canIssue, editId, draftId, sourceReportId]);
 
   // Steps 6-7: preview whenever the choices are complete and have settled.
   useEffect(() => {
@@ -138,8 +164,10 @@ export default function IssueWarningScreen() {
 
     const timer = setTimeout(() => {
       setPreviewing(true);
-      hazardAlertsApi
-        .preview(alertId, { hazardType, severity, areaIds })
+      (editing
+        ? hazardAlertsApi.previewUpdate(alertId, { severity, areaIds })
+        : hazardAlertsApi.preview(alertId, { hazardType, severity, areaIds })
+      )
         .then(
           (result) => {
             if (request !== previewRequest.current) return;
@@ -180,7 +208,7 @@ export default function IssueWarningScreen() {
         });
     }, PREVIEW_DELAY_MS);
     return () => clearTimeout(timer);
-  }, [alertId, complete, hazardType, severity, areaIds]);
+  }, [alertId, editing, complete, hazardType, severity, areaIds]);
 
   // E1.2: back at step 5, the refused scope's message clears as soon as the
   // officer changes the scope.
@@ -190,11 +218,15 @@ export default function IssueWarningScreen() {
   }
 
   // Step 8: save an edited message to the draft when the officer leaves it.
+  // An update's message has no draft to go to: it is sent with the update.
   async function saveMessage() {
     const text = message.trim();
-    if (text === savedMessage) return;
     if (!text) {
       setMessageError('The message cannot be empty.');
+      return;
+    }
+    if (editing || text === savedMessage) {
+      setMessageError(null);
       return;
     }
     try {
@@ -212,11 +244,19 @@ export default function IssueWarningScreen() {
   }
 
   // Steps 11-14: send the message as the officer last saw it, then show the
-  // delivery summary. A failure closes the dialog; nothing was sent.
+  // delivery summary. A failure closes the dialog; nothing was sent. A2.3:
+  // an update sends only what changed, and names the draft it replaces.
   async function broadcast() {
     setSending(true);
     try {
-      const result = await hazardAlertsApi.broadcast(alertId, message.trim());
+      const result = editing
+        ? await hazardAlertsApi.update(alertId, {
+            severity: severity === alert.severity ? undefined : severity,
+            areaIds: scopeChanged ? areaIds : undefined,
+            message: message.trim(),
+            replacesDraftId: replacesDraftId ?? undefined,
+          })
+        : await hazardAlertsApi.broadcast(alertId, message.trim());
       navigate(`/hazard-warnings/${alertId}`, { state: result });
     } catch (error) {
       setSending(false);
@@ -224,7 +264,14 @@ export default function IssueWarningScreen() {
       const messageFieldError = mapFieldErrors(error, ['message']).byField.message;
       if (messageFieldError) setMessageError(messageFieldError);
       else {
-        setBroadcastError(apiErrorMessage(error, 'The warning could not be broadcast. Try again.'));
+        setBroadcastError(
+          apiErrorMessage(
+            error,
+            editing
+              ? 'The update could not be sent. Try again.'
+              : 'The warning could not be broadcast. Try again.',
+          ),
+        );
       }
     }
   }
@@ -245,7 +292,7 @@ export default function IssueWarningScreen() {
   if (!canIssue) {
     return (
       <Screen>
-        <ScreenHeader title="Issue Hazard Warning" />
+        <ScreenHeader title={editing ? 'Update Hazard Warning' : 'Issue Hazard Warning'} />
         <Notice className="mt-4">Issuing hazard warnings needs a DMC or duty officer.</Notice>
       </Screen>
     );
@@ -254,7 +301,7 @@ export default function IssueWarningScreen() {
   if (loadError) {
     return (
       <Screen>
-        <ScreenHeader title="Issue Hazard Warning" />
+        <ScreenHeader title={editing ? 'Update Hazard Warning' : 'Issue Hazard Warning'} />
         <Notice variant="error" className="mt-4">
           {loadError}
         </Notice>
@@ -270,7 +317,7 @@ export default function IssueWarningScreen() {
   if (!alert || !areas) {
     return (
       <Screen>
-        <ScreenHeader title="Issue Hazard Warning" />
+        <ScreenHeader title={editing ? 'Update Hazard Warning' : 'Issue Hazard Warning'} />
         <Loader className="mt-10" />
       </Screen>
     );
@@ -288,20 +335,42 @@ export default function IssueWarningScreen() {
   else if (previewError && !scopeError) {
     otherPreviewError = apiErrorMessage(previewError, 'The preview could not be made. Try again.');
   }
-  // Step 9: only a complete, previewed draft with citizens to reach and a
-  // message can be broadcast.
+  // A2.1: an active warning of the same type already covers the scope.
+  const activeWarning = preview?.activeWarning ?? null;
+  // Step 9: only a complete, previewed draft with citizens to reach, no
+  // active warning to duplicate and a message can be broadcast; an update
+  // must also change something.
   const canBroadcast = Boolean(
     complete &&
+    changed &&
     preview &&
     !previewing &&
     preview.recipientCount > 0 &&
+    !activeWarning &&
     message.trim() &&
     !messageError,
   );
+  // What the confirmation dialog announces: for an update, the new severity
+  // and scope rather than the warning as it stands.
+  const nameOf = new Map(
+    [...areas.districts, ...areas.riverBasins].map(({ id, name }) => [id, name]),
+  );
+  const confirmed = editing
+    ? { ...alert, severity, targets: areaIds.map((id) => ({ id, name: nameOf.get(id) ?? id })) }
+    : alert;
+
+  // Cancel: a draft may be discarded (A4). An update has nothing to discard,
+  // so it goes back to the draft it would replace, or to the warning.
+  function cancel() {
+    setBroadcastError(null);
+    if (!editing) setDiscarding(true);
+    else if (replacesDraftId) navigate(`/hazard-warnings/new?draftId=${replacesDraftId}`);
+    else navigate(`/hazard-warnings/${alertId}`);
+  }
 
   return (
     <Screen>
-      <ScreenHeader title="Issue Hazard Warning" />
+      <ScreenHeader title={title ?? 'Issue Hazard Warning'} />
 
       {prefill ? (
         <Notice icon="i" className="mt-4">
@@ -313,6 +382,18 @@ export default function IssueWarningScreen() {
             {prefill.reportRef.referenceNo}
           </Link>
         </Notice>
+      ) : null}
+
+      {activeWarning ? (
+        <ActiveWarningBanner
+          className="mt-4"
+          warning={activeWarning}
+          onUpdate={
+            editing
+              ? undefined
+              : () => navigate(`/hazard-warnings/${activeWarning.id}/edit?replaces=${alertId}`)
+          }
+        />
       ) : null}
 
       {otherPreviewError ? (
@@ -330,7 +411,17 @@ export default function IssueWarningScreen() {
         <Card>
           <SectionLabel>1. Hazard type</SectionLabel>
           <div className="mt-2.5">
-            <HazardTypePicker value={hazardType} onChange={setHazardType} />
+            {editing ? (
+              // A different hazard is a new warning, so an update keeps the type.
+              <p className="text-[14px] text-ink">
+                <strong>
+                  {HAZARD_TYPES.find(({ value }) => value === hazardType)?.label ?? hazardType}
+                </strong>
+                <span className="text-muted"> – an update keeps the hazard type</span>
+              </p>
+            ) : (
+              <HazardTypePicker value={hazardType} onChange={setHazardType} />
+            )}
           </div>
           {prefill && !prefill.hazardType && !hazardType ? (
             <p className="mt-2 text-[13px] text-muted">
@@ -404,15 +495,13 @@ export default function IssueWarningScreen() {
       <Card className="mt-6 flex flex-wrap items-center gap-3">
         <span className="text-[14px] text-muted">Status:</span>
         <StatusBadge tone="neutral">{alert.status}</StatusBadge>
+        {changed ? null : (
+          <span className="text-[13px] text-muted">
+            Change the severity or the scope to send an update.
+          </span>
+        )}
         <div className="ml-auto flex gap-3">
-          <Button
-            variant="outline"
-            fullWidth={false}
-            onClick={() => {
-              setBroadcastError(null);
-              setDiscarding(true);
-            }}
-          >
+          <Button variant="outline" fullWidth={false} onClick={cancel}>
             Cancel
           </Button>
           {/* With no recipients (E2) the disabled button points at the reason. */}
@@ -425,7 +514,7 @@ export default function IssueWarningScreen() {
               setConfirming(true);
             }}
           >
-            Confirm &amp; Broadcast
+            {editing ? 'Confirm & Update' : 'Confirm & Broadcast'}
           </Button>
         </div>
       </Card>
@@ -433,9 +522,10 @@ export default function IssueWarningScreen() {
       {preview ? (
         <ConfirmBroadcastDialog
           open={confirming}
-          alert={alert}
+          alert={confirmed}
           recipientCount={preview.recipientCount}
           channels={preview.channels}
+          isUpdate={editing}
           sending={sending}
           onConfirm={broadcast}
           onBack={() => setConfirming(false)}
