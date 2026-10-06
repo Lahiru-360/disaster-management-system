@@ -4,9 +4,11 @@
 
 import client from './client';
 
-// Step 2: opens a new DRAFT; resolves with { alert }.
-async function startDraft() {
-  const response = await client.post('/hazard-alerts', {});
+// Step 2: opens a new DRAFT; resolves with { alert }. With a sourceReportId
+// it escalates that confirmed report instead (A1, §12.10) and resolves with
+// { alert, prefill }.
+async function startDraft({ sourceReportId } = {}) {
+  const response = await client.post('/hazard-alerts', sourceReportId ? { sourceReportId } : {});
   return response.data.data;
 }
 

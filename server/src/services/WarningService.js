@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import { HazardAlert } from '../domain/alerts/HazardAlert.js';
 import { MessageTemplate } from '../domain/alerts/MessageTemplate.js';
+import { ReportHazardTypeMapper } from '../domain/alerts/ReportHazardTypeMapper.js';
 import { Channel } from '../enums/Channel.js';
 import { EventStatus } from '../enums/EventStatus.js';
 import { HazardAlert as HazardAlertModel } from '../models/HazardAlert.js';
@@ -9,6 +10,7 @@ import { ApiError } from '../utils/ApiError.js';
 import { systemClock } from '../utils/SystemClock.js';
 import { areaRegistry as defaultAreaRegistry } from './AreaRegistry.js';
 import { citizenRegistry as defaultCitizenRegistry } from './CitizenRegistry.js';
+import { hazardReportService as defaultReportService } from './HazardReportService.js';
 import { HazardAlertPresenter } from './HazardAlertPresenter.js';
 import { ReferenceNumberGenerator } from './ReferenceNumberGenerator.js';
 
@@ -16,13 +18,16 @@ import { ReferenceNumberGenerator } from './ReferenceNumberGenerator.js';
 // WarningController's work in the sequence diagram up to the confirmation.
 // The controller hands it validated input; it asks the HazardAlert domain
 // class for every change, AreaRegistry for the scope, CitizenRegistry for the
-// reach and MessageTemplate for the text. Nothing here sends anything. Every
-// collaborator comes through the constructor.
+// reach and MessageTemplate for the text. Nothing here sends anything. A
+// draft escalated from a confirmed report (A1) reads that report only through
+// UC02's HazardReportService (X-1), never its model. Every collaborator comes
+// through the constructor.
 export class WarningService {
   #alertModel;
   #eventModel;
   #areaRegistry;
   #citizenRegistry;
+  #reportService;
   #messageTemplate;
   #referenceNumbers;
   #channels;
@@ -33,6 +38,7 @@ export class WarningService {
     eventModel = HazardEventModel,
     areaRegistry = defaultAreaRegistry,
     citizenRegistry = defaultCitizenRegistry,
+    reportService = defaultReportService,
     messageTemplate = MessageTemplate,
     referenceNumbers = new ReferenceNumberGenerator({ counterName: 'hazardAlert', prefix: 'HA' }),
     channels = Object.values(Channel),
@@ -42,6 +48,7 @@ export class WarningService {
     this.#eventModel = eventModel;
     this.#areaRegistry = areaRegistry;
     this.#citizenRegistry = citizenRegistry;
+    this.#reportService = reportService;
     this.#messageTemplate = messageTemplate;
     this.#referenceNumbers = referenceNumbers;
     this.#channels = channels;
@@ -55,14 +62,53 @@ export class WarningService {
    * @returns {Promise<object>} The alert object (contract §12.1).
    */
   async startDraft(officer) {
-    const referenceNo = await this.#referenceNumbers.next();
-    const alert = HazardAlert.startDraft({ referenceNo, officer, at: this.#clock.now() });
-    const doc = await this.#alertModel.create({
-      referenceNo,
-      createdBy: alert.createdById,
-      ...alert.toFields(),
-    });
-    return HazardAlertPresenter.present(doc);
+    return this.#createDraft(officer, null);
+  }
+
+  /**
+   * A1.1-A1.2: opens a DRAFT linked to a CONFIRMED hazard report, with the
+   * values to pre-fill. Nothing else is set on the draft: the officer confirms
+   * or changes the suggestions in the first preview, from step 4 on.
+   * @param {{ id: string }} officer The signed-in DMC or duty officer.
+   * @param {string} reportId The hazard report to escalate.
+   * @returns {Promise<{ alert: object, prefill: { hazardType: string|null, districtId: string, reportRef: { id: string, referenceNo: string } } }>}
+   * @throws {ApiError} 404 for an unknown report, 409 if it isn't CONFIRMED.
+   */
+  async escalateFromReport(officer, reportId) {
+    const prefill = await this.prefillFromReport(reportId);
+    const alert = await this.#createDraft(officer, prefill.reportRef.id);
+    return { alert, prefill };
+  }
+
+  /**
+   * A1.2 (prefillFromReport in the sequence diagram): what an escalated report
+   * suggests for the warning. The hazard type comes from the report's type
+   * (null for a ground-impact report) and the district from its coordinates,
+   * or the district the report was filed under when no district is near them.
+   * @param {string} reportId
+   * @returns {Promise<{ hazardType: string|null, districtId: string, reportRef: { id: string, referenceNo: string } }>}
+   * @throws {ApiError} 404 for an unknown or malformed id, 409 if the report
+   *   isn't CONFIRMED.
+   */
+  async prefillFromReport(reportId) {
+    const report = await this.#reportService.findById(reportId);
+    if (!report) {
+      throw new ApiError(404, 'NOT_FOUND', 'Hazard report not found.');
+    }
+    if (!report.isEscalatable) {
+      throw new ApiError(
+        409,
+        'REPORT_NOT_ESCALATABLE',
+        `Only a confirmed report can be escalated – current status: ${report.status}`,
+      );
+    }
+    const { latitude, longitude } = report.location;
+    const district = await this.#areaRegistry.findDistrictForPoint(latitude, longitude);
+    return {
+      hazardType: ReportHazardTypeMapper.toAlertHazardType(report.hazardType),
+      districtId: district ? String(district.areaId) : report.district.id,
+      reportRef: { id: report.id, referenceNo: report.referenceNo },
+    };
   }
 
   /**
@@ -126,6 +172,22 @@ export class WarningService {
    */
   async findById(alertId) {
     return HazardAlertPresenter.present(await this.#findDoc(alertId));
+  }
+
+  async #createDraft(officer, sourceReport) {
+    const referenceNo = await this.#referenceNumbers.next();
+    const alert = HazardAlert.startDraft({
+      referenceNo,
+      officer,
+      at: this.#clock.now(),
+      sourceReport,
+    });
+    const doc = await this.#alertModel.create({
+      referenceNo,
+      createdBy: alert.createdById,
+      ...alert.toFields(),
+    });
+    return HazardAlertPresenter.present(doc);
   }
 
   async #findDoc(alertId) {
