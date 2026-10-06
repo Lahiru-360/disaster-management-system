@@ -43,10 +43,12 @@
     "src/controllers/OperationalPictureController.js",
     "src/controllers/ShelterController.js",
     "src/controllers/RescueTeamController.js",
+    "src/controllers/DispatchController.js",
     "src/validators/CoordinationValidator.js",
     "src/routes/OperationalPictureRoutes.js",
     "src/routes/ShelterRoutes.js",
-    "src/routes/RescueTeamRoutes.js"
+    "src/routes/RescueTeamRoutes.js",
+    "src/routes/DispatchRoutes.js"
   ],
   "uc04": [
     "src/domain/events/**/*.js",

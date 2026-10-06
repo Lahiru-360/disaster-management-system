@@ -21,6 +21,10 @@ import { notificationService as defaultNotificationService } from './Notificatio
 export class DispatchService {
   static #OBJECT_ID = /^[0-9a-fA-F]{24}$/;
 
+  // A dispatch the team is still working on, and one that is over.
+  static #OPEN = [DispatchStatus.ASSIGNED, DispatchStatus.ACKNOWLEDGED, DispatchStatus.ON_SITE];
+  static #CLOSED = [DispatchStatus.COMPLETED, DispatchStatus.DECLINED, DispatchStatus.UNRESPONSIVE];
+
   #dispatchModel;
   #rescueTeamModel;
   #districtScope;
@@ -130,6 +134,62 @@ export class DispatchService {
 
     await this.#notifyLead(team, doc);
     return this.#present(doc);
+  }
+
+  /**
+   * The field app's Assignments tab (contract §13.7.5): the team the lead
+   * leads, its open dispatches newest first, then its most recently closed
+   * one, so the app can still show "Assignment expired" after a timeout.
+   * @param {object} user The signed-in rescue team lead.
+   * @returns {Promise<{ team: object|null, dispatches: object[] }>}
+   */
+  async listMine(user) {
+    const team = await this.#rescueTeamModel
+      .findOne({ lead: user._id })
+      .populate(CoordinationPresenter.TEAM_POPULATE);
+    if (!team) return { team: null, dispatches: [] };
+
+    const [open, lastClosed] = await Promise.all([
+      this.#dispatchModel
+        .find({ team: team._id, status: { $in: DispatchService.#OPEN } })
+        .sort({ createdAt: -1 }),
+      this.#dispatchModel
+        .findOne({ team: team._id, status: { $in: DispatchService.#CLOSED } })
+        .sort({ updatedAt: -1 }),
+    ]);
+    const docs = lastClosed ? [...open, lastClosed] : open;
+    await this.#dispatchModel.populate(docs, CoordinationPresenter.DISPATCH_POPULATE);
+
+    const tasks = await this.currentTasksFor([team._id]);
+    return {
+      team: CoordinationPresenter.team(team, tasks.get(String(team._id)) ?? null),
+      dispatches: docs.map((doc) => CoordinationPresenter.dispatch(doc)),
+    };
+  }
+
+  /**
+   * Each team's open dispatch, for the dashboard's "Current task" column
+   * (contract §13.2): { dispatchId, status, priority, incidentLocation } by
+   * team id. A team has at most one, since it is dispatched only when AVAILABLE.
+   * @param {Array<object|string>} teamIds
+   * @returns {Promise<Map<string, object>>}
+   */
+  async currentTasksFor(teamIds) {
+    const open = await this.#dispatchModel.find({
+      team: { $in: teamIds },
+      status: { $in: DispatchService.#OPEN },
+    });
+    return new Map(
+      open.map((doc) => [
+        String(doc.team),
+        {
+          dispatchId: String(doc._id),
+          status: doc.status,
+          priority: doc.priority,
+          incidentLocation: CoordinationPresenter.dispatch(doc).incidentLocation,
+        },
+      ]),
+    );
   }
 
   /**

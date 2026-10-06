@@ -336,3 +336,73 @@ describe('DispatchService lead moves', () => {
     await expect(service.acknowledge(lead, 'nope')).rejects.toMatchObject({ status: 404 });
   });
 });
+
+describe('DispatchService.listMine', () => {
+  it('Main 10: the lead sees their team and its open dispatch', async () => {
+    const dispatch = await dispatchAlpha();
+
+    const mine = await service.listMine(lead);
+
+    expect(mine.team).toMatchObject({
+      id: alpha.id,
+      name: 'Team Alpha',
+      status: TeamStatus.DISPATCHED,
+      currentTask: { dispatchId: dispatch.id, status: DispatchStatus.ASSIGNED },
+    });
+    expect(mine.dispatches.map((d) => [d.id, d.status])).toEqual([
+      [dispatch.id, DispatchStatus.ASSIGNED],
+    ]);
+  });
+
+  it('Main 11: after completing, the closed dispatch is still listed (last closed one only)', async () => {
+    const first = await dispatchAlpha();
+    await service.acknowledge(lead, first.id);
+    await service.markOnSite(lead, first.id);
+    await service.complete(lead, first.id);
+    clock.advance(FakeClock.HOUR);
+    const second = await dispatchAlpha();
+    await service.acknowledge(lead, second.id);
+    await service.markOnSite(lead, second.id);
+    await service.complete(lead, second.id);
+    clock.advance(FakeClock.HOUR);
+    const third = await dispatchAlpha();
+
+    const mine = await service.listMine(lead);
+
+    expect(mine.dispatches.map((d) => [d.id, d.status])).toEqual([
+      [third.id, DispatchStatus.ASSIGNED],
+      [second.id, DispatchStatus.COMPLETED],
+    ]);
+  });
+
+  it('Main 10: a lead with no team gets team null and no dispatches', async () => {
+    const otherLead = await createUser({ role: Role.RESCUE_TEAM_LEAD });
+
+    expect(await service.listMine(otherLead)).toEqual({ team: null, dispatches: [] });
+  });
+});
+
+describe('DispatchService.currentTasksFor', () => {
+  it("Main 14: gives each busy team's open dispatch, and nothing for idle teams", async () => {
+    const dispatch = await dispatchAlpha();
+
+    const tasks = await service.currentTasksFor([alpha._id, echo._id]);
+
+    expect(tasks.get(alpha.id)).toEqual({
+      dispatchId: dispatch.id,
+      status: DispatchStatus.ASSIGNED,
+      priority: Priority.HIGH,
+      incidentLocation: INCIDENT,
+    });
+    expect(tasks.has(echo.id)).toBe(false);
+  });
+
+  it('Main 11: a completed dispatch is no longer a current task', async () => {
+    const dispatch = await dispatchAlpha();
+    await service.acknowledge(lead, dispatch.id);
+    await service.markOnSite(lead, dispatch.id);
+    await service.complete(lead, dispatch.id);
+
+    expect((await service.currentTasksFor([alpha._id])).size).toBe(0);
+  });
+});
