@@ -2,7 +2,9 @@ import { jest } from '@jest/globals';
 import mongoose from 'mongoose';
 import { DatabaseSeeder } from '../../scripts/DatabaseSeeder.js';
 import { District } from '../../src/models/District.js';
+import { HazardAlert } from '../../src/models/HazardAlert.js';
 import { HazardEvent } from '../../src/models/HazardEvent.js';
+import { Notification } from '../../src/models/Notification.js';
 import { Organisation } from '../../src/models/Organisation.js';
 import { RiverBasin } from '../../src/models/RiverBasin.js';
 import { User } from '../../src/models/User.js';
@@ -11,6 +13,10 @@ import { User } from '../../src/models/User.js';
 // second run must leave the database exactly as the first one did: the same
 // records in every collection, under the same ids, so nothing that points at
 // them breaks. Runs the real seeders, in their real order.
+
+// A full seed writes UC04's Kelani history (about 13,000 delivery records), so
+// each one takes several seconds.
+jest.setTimeout(120000);
 
 // Every collection's documents, as sorted ids - counts and identity at once.
 const snapshot = async () => {
@@ -33,7 +39,9 @@ const counts = (snap) =>
 beforeAll(async () => {
   // The unique indexes are what would turn a duplicate into an error.
   await Promise.all(
-    [District, RiverBasin, User, Organisation, HazardEvent].map((Model) => Model.init()),
+    [District, RiverBasin, User, Organisation, HazardEvent, HazardAlert, Notification].map(
+      (Model) => Model.init(),
+    ),
   );
 });
 
