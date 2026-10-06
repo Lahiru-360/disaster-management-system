@@ -32,6 +32,7 @@ describe('Notification (domain)', () => {
     expect(notification.deliveryChanges()).toEqual({
       status: 'DELIVERED',
       attempts: 1,
+      fallbackChannel: null,
       sentAt: SENT_AT,
       deliveredAt: SENT_AT,
       failureReason: null,
@@ -126,5 +127,79 @@ describe('Notification (domain)', () => {
 
     expect(notification).toMatchObject({ id: 'n1', alertId: 'a9', citizenId: 'c9' });
     expect(queued({ citizen: null }).citizenId).toBeNull();
+  });
+
+  it('DMS-128: TC-39 resendVia counts the attempt and records the fallback channel', () => {
+    const notification = queued();
+
+    notification.resendVia('SMS');
+    notification.markDelivered(SENT_AT);
+
+    expect(notification.deliveryChanges()).toEqual({
+      status: 'DELIVERED',
+      attempts: 2,
+      fallbackChannel: 'SMS',
+      sentAt: SENT_AT,
+      deliveredAt: SENT_AT,
+      failureReason: null,
+    });
+    expect(notification.channel).toBe('PUSH');
+  });
+
+  it('DMS-128: TC-40 two resends then a failure is FAILED after 3 attempts', () => {
+    const notification = queued();
+
+    notification.resendVia('SMS');
+    notification.resendVia('SMS');
+    notification.markFailed('SMS gateway did not accept the message', SENT_AT);
+
+    expect(notification).toMatchObject({
+      status: 'FAILED',
+      attempts: 3,
+      fallbackChannel: 'SMS',
+      failureReason: 'SMS gateway did not accept the message',
+    });
+  });
+
+  it.each([
+    ['SENT', (n) => n.markSent(SENT_AT)],
+    ['DELIVERED', (n) => n.markDelivered(SENT_AT)],
+    ['FAILED', (n) => n.markFailed('offline', SENT_AT)],
+  ])('DMS-128: refuses to resend a %s delivery', (status, mark) => {
+    const notification = queued();
+    mark(notification);
+
+    expect(() => notification.resendVia('SMS')).toThrow(`cannot resend a ${status} delivery`);
+    expect(notification.attempts).toBe(1);
+  });
+
+  it('DMS-128: fromDocument keeps attempts and the fallback channel', async () => {
+    const doc = await NotificationModel.create({
+      alert: new mongoose.Types.ObjectId(),
+      alertVersion: 1,
+      kind: 'WARNING',
+      citizen: new mongoose.Types.ObjectId(),
+      channel: 'PUSH',
+      status: 'FAILED',
+      attempts: 3,
+      fallbackChannel: 'SMS',
+    });
+
+    expect(Notification.fromDocument(doc)).toMatchObject({ attempts: 3, fallbackChannel: 'SMS' });
+  });
+
+  it('DMS-128: a new record has no fallback channel, and refuses one that is not a Channel', async () => {
+    const fields = {
+      alert: new mongoose.Types.ObjectId(),
+      alertVersion: 1,
+      kind: 'WARNING',
+      citizen: new mongoose.Types.ObjectId(),
+      channel: 'PUSH',
+    };
+
+    expect((await NotificationModel.create(fields)).fallbackChannel).toBeNull();
+    await expect(
+      NotificationModel.create({ ...fields, channel: 'SMS', fallbackChannel: 'EMAIL' }),
+    ).rejects.toThrow(/fallbackChannel/);
   });
 });
