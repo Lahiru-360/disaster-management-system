@@ -13,11 +13,15 @@ export class HazardAlertController extends BaseController {
     this.#warningService = warningService;
   }
 
-  // POST /api/hazard-alerts - UC01 steps 1-2 (§12.2).
+  // POST /api/hazard-alerts - UC01 steps 1-2 (§12.2), or A1 when the body
+  // names a confirmed report to escalate (§12.10).
   async startDraft(req, res) {
-    const alert = await this.#warningService.startDraft(req.user);
+    const { sourceReportId } = req.body;
+    const data = sourceReportId
+      ? await this.#warningService.escalateFromReport(req.user, sourceReportId)
+      : { alert: await this.#warningService.startDraft(req.user) };
 
-    ApiResponse.success(res, { alert }, 201);
+    ApiResponse.success(res, data, 201);
   }
 
   // POST /api/hazard-alerts/:id/preview - UC01 steps 3-7 (§12.3).
