@@ -22,6 +22,18 @@ export class CoordinationPresenter {
     { path: 'loggedBy', select: 'name' },
   ];
 
+  static DISPATCH_POPULATE = [
+    {
+      path: 'team',
+      select: 'name organisation',
+      populate: { path: 'organisation', select: 'name type' },
+    },
+    { path: 'district', select: 'name' },
+    { path: 'incident', select: 'name' },
+    { path: 'createdBy', select: 'name' },
+    { path: 'statusHistory.by', select: 'name' },
+  ];
+
   /**
    * The contract's shelter object: district as { id, name }, plus the rate
    * and status from the Shelter domain class.
@@ -89,6 +101,40 @@ export class CoordinationPresenter {
       quantity: json.quantity,
       distributedAt: json.distributedAt,
       loggedBy: CoordinationPresenter.reference(json.loggedBy, ['name']),
+    };
+  }
+
+  /**
+   * The contract's dispatch object, with the team's owning organisation.
+   * @param {object} doc A Dispatch document, populated with DISPATCH_POPULATE.
+   * @returns {object}
+   */
+  static dispatch(doc) {
+    const json = doc.toJSON();
+    const team = json.team
+      ? {
+          ...CoordinationPresenter.reference(json.team, ['name']),
+          organisation: CoordinationPresenter.organisation(json.team.organisation),
+        }
+      : null;
+    return {
+      id: String(json.id),
+      status: json.status,
+      team,
+      district: CoordinationPresenter.reference(json.district, ['name']),
+      incident: CoordinationPresenter.reference(json.incident, ['name']),
+      incidentLocation: CoordinationPresenter.#location(json.incidentLocation),
+      priority: json.priority,
+      supportRequested: json.supportRequested ?? false,
+      createdBy: CoordinationPresenter.reference(json.createdBy, ['name']),
+      createdAt: json.createdAt,
+      ackDeadline: json.ackDeadline ?? null,
+      declineReason: json.declineReason ?? null,
+      statusHistory: (json.statusHistory ?? []).map((entry) => ({
+        status: entry.status,
+        at: entry.at,
+        by: CoordinationPresenter.reference(entry.by, ['name']),
+      })),
     };
   }
 
