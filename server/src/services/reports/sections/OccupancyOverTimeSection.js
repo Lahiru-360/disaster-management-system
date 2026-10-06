@@ -29,6 +29,31 @@ export class OccupancyOverTimeSection extends ReportSection {
   }
 
   /**
+   * The highest daily total: a day's total is the sum of the districts'
+   * peaks that day. Days without any record don't count, and a tie goes to
+   * the earlier day.
+   * @param {{ districts: Array<{ days: Array<{ date: string, peak: number|null }> }> }} result
+   * @returns {{ peakOccupancy: number|null, peakOccupancyDate: string|null }}
+   */
+  summarise(result) {
+    const totals = new Map();
+    result.districts.forEach((row) =>
+      row.days
+        .filter((day) => day.peak !== null)
+        .forEach((day) => totals.set(day.date, (totals.get(day.date) ?? 0) + day.peak)),
+    );
+    let best = { peakOccupancy: null, peakOccupancyDate: null };
+    [...totals.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .forEach(([date, total]) => {
+        if (best.peakOccupancy === null || total > best.peakOccupancy) {
+          best = { peakOccupancy: total, peakOccupancyDate: date };
+        }
+      });
+    return best;
+  }
+
+  /**
    * @param {import('../../../domain/analysis/ReportContext.js').ReportContext} ctx
    * @returns {Promise<{ result: object, isEmpty: boolean, gaps: import('../../../domain/analysis/DataGap.js').DataGap[] }>}
    */

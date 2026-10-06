@@ -22,6 +22,14 @@ export class AlertTimelineSection extends ReportSection {
   }
 
   /**
+   * @param {{ alerts: number }} result
+   * @returns {{ alertsIssued: number }}
+   */
+  summarise(result) {
+    return { alertsIssued: result.alerts };
+  }
+
+  /**
    * @param {import('../../../domain/analysis/ReportContext.js').ReportContext} ctx
    * @returns {Promise<{ result: object, isEmpty: boolean, gaps: import('../../../domain/analysis/DataGap.js').DataGap[] }>}
    */

@@ -1,4 +1,3 @@
-import { ReportSectionKey } from '../../enums/ReportSectionKey.js';
 import { DataGap } from './DataGap.js';
 
 // A post-event analysis report (UC04): about one CLOSED hazard event, generated
@@ -106,8 +105,8 @@ export class PostEventReport {
    * @returns {PostEventReport} this report, so additions can be chained
    */
   addSection({ key, result, gaps = [] }) {
-    if (!Object.values(ReportSectionKey).includes(key)) {
-      throw new Error(`Unknown report section: ${key}`);
+    if (typeof key !== 'string' || key.trim() === '') {
+      throw new Error(`A report section needs a key, got ${key}`);
     }
     if (this.#sections.some((section) => section.key === key)) {
       throw new Error(`Report section added twice: ${key}`);

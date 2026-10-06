@@ -30,6 +30,14 @@ export class CitizensReachedSection extends ReportSection {
   }
 
   /**
+   * @param {{ citizensReached: number, citizensTargeted: number, reachedRate: number|null }} result
+   * @returns {{ citizensReached: number, citizensTargeted: number, reachedRate: number|null }}
+   */
+  summarise({ citizensReached, citizensTargeted, reachedRate }) {
+    return { citizensReached, citizensTargeted, reachedRate };
+  }
+
+  /**
    * @param {import('../../../domain/analysis/ReportContext.js').ReportContext} ctx
    * @returns {Promise<{ result: object, isEmpty: boolean, gaps: import('../../../domain/analysis/DataGap.js').DataGap[] }>}
    */

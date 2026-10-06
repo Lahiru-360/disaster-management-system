@@ -31,6 +31,14 @@ export class ResourceDistributionSection extends ReportSection {
   }
 
   /**
+   * @param {{ total: number }} result
+   * @returns {{ itemsDistributed: number }}
+   */
+  summarise(result) {
+    return { itemsDistributed: result.total };
+  }
+
+  /**
    * @param {import('../../../domain/analysis/ReportContext.js').ReportContext} ctx
    * @returns {Promise<{ result: object, isEmpty: boolean, gaps: import('../../../domain/analysis/DataGap.js').DataGap[] }>}
    */

@@ -1,4 +1,3 @@
-import { ReportSectionKey } from '../../enums/ReportSectionKey.js';
 import { SriLankaCalendar } from '../../utils/SriLankaCalendar.js';
 
 // A run of days in one report section with no records at all (UC04 step 10).
@@ -11,8 +10,8 @@ export class DataGap {
   #reason;
 
   constructor({ section, from, to, reason } = {}) {
-    if (!Object.values(ReportSectionKey).includes(section)) {
-      throw new Error(`DataGap needs a report section, got ${section}`);
+    if (typeof section !== 'string' || section.trim() === '') {
+      throw new Error(`DataGap needs a report section key, got ${section}`);
     }
     if (!SriLankaCalendar.isDay(from) || !SriLankaCalendar.isDay(to)) {
       throw new Error('DataGap needs from and to as YYYY-MM-DD days');

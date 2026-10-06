@@ -64,7 +64,7 @@ describe('DataGap (domain)', () => {
   });
 
   it.each([
-    ['an unknown section', { section: 'weather' }, /report section/],
+    ['a section without a key', { section: '  ' }, /report section key/],
     ['a day that is not YYYY-MM-DD', { from: '14 Jun' }, /YYYY-MM-DD/],
     ['a range that ends before it starts', { from: '2026-06-16' }, /not be after/],
     ['an empty reason', { reason: '   ' }, /reason/],
@@ -73,7 +73,7 @@ describe('DataGap (domain)', () => {
   });
 
   it('DMS-153: refuses no arguments at all', () => {
-    expect(() => new DataGap()).toThrow(/report section/);
+    expect(() => new DataGap()).toThrow(/report section key/);
   });
 });
 
@@ -125,7 +125,7 @@ describe('PostEventReport (domain)', () => {
   });
 
   it.each([
-    ['an unknown section', { key: 'weather', result: {} }, /Unknown report section/],
+    ['a section without a key', { key: '', result: {} }, /needs a key/],
     ['a section without a result', { key: OCCUPANCY_OVER_TIME, result: null }, /no result/],
     [
       "another section's gap",

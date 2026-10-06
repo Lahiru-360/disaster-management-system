@@ -6,7 +6,8 @@ import { GapDetector } from '../../domain/analysis/GapDetector.js';
 // calculate methods, so adding a section means writing one subclass and
 // registering it, with no change to the builder (Open/Closed).
 //
-// Subclasses define key, gapReason and compile(ctx). compile resolves to
+// Subclasses define key, gapReason and compile(ctx), and may define
+// summarise(result) to give the report's summary figures their share. compile resolves to
 // { result, isEmpty, gaps }: result is the section's own shape (§14.2), isEmpty
 // is true when the range has no records at all, and gaps are the DataGaps for
 // days with none.
@@ -35,6 +36,17 @@ export class ReportSection {
   // eslint-disable-next-line no-unused-vars
   async compile(ctx) {
     throw new Error(`${this.constructor.name} must implement compile(ctx)`);
+  }
+
+  /**
+   * The summary figures (§14.2) this section's result provides, e.g.
+   * { alertsIssued: 14 }. A section that provides none returns {}.
+   * @param {object} result what compile(ctx) returned as result
+   * @returns {object}
+   */
+  // eslint-disable-next-line no-unused-vars
+  summarise(result) {
+    return {};
   }
 
   /**
