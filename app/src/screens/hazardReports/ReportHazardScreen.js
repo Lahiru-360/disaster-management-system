@@ -1,11 +1,11 @@
 import { useNavigation } from '@react-navigation/native';
-import * as Location from 'expo-location';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 
 import { hazardReportsApi, uploadApi } from '../../api';
 import DescriptionField from '../../components/hazardReports/DescriptionField';
 import HazardTypeChips from '../../components/hazardReports/HazardTypeChips';
 import LocationRow from '../../components/hazardReports/LocationRow';
+import ManualLocationSheet from '../../components/hazardReports/ManualLocationSheet';
 import PhotoCapture from '../../components/hazardReports/PhotoCapture';
 import SubmittedState from '../../components/hazardReports/SubmittedState';
 import Button from '../../components/ui/Button';
@@ -14,32 +14,10 @@ import Screen from '../../components/ui/Screen';
 import ScreenHeader from '../../components/ui/ScreenHeader';
 import SectionLabel from '../../components/ui/SectionLabel';
 import { TABS } from '../../constants/roles';
+import useAuth from '../../hooks/useAuth';
+import useCurrentLocation from '../../hooks/useCurrentLocation';
 import { uuidv4 } from '../../utils/uuid';
 import { hazardReportErrorsFromServer, validateHazardReport } from '../../utils/validation';
-
-// How long to wait for a GPS fix before giving up (A2 then lets the reporter
-// set it by hand - DMS-133).
-const LOCATION_TIMEOUT_MS = 15000;
-
-// The current position as { latitude, longitude }, or null when permission is
-// refused or there is no fix in time.
-async function currentPosition() {
-  try {
-    const permission = await Location.requestForegroundPermissionsAsync();
-    if (permission.status !== 'granted') {
-      return null;
-    }
-    const position = await Promise.race([
-      Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
-      new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('timeout')), LOCATION_TIMEOUT_MS),
-      ),
-    ]);
-    return { latitude: position.coords.latitude, longitude: position.coords.longitude };
-  } catch {
-    return null;
-  }
-}
 
 function emptyForm() {
   return { photo: null, description: '', hazardType: null, clientReportId: uuidv4() };
@@ -52,43 +30,35 @@ function emptyForm() {
 export default function ReportHazardScreen() {
   const navigation = useNavigation();
   const [form, setForm] = useState(emptyForm);
-  const [location, setLocation] = useState(null);
-  const [locationStatus, setLocationStatus] = useState('locating');
+  // Step 3: the device's position (A2: 'unavailable' after the timeout).
+  const gps = useCurrentLocation();
+  // A2: a location set by hand ({ location, placeName }) wins over the GPS.
+  const [manual, setManual] = useState(null);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  // A2.2 opens the picker by itself when there is no fix - once, so closing it
+  // leaves the reporter on the form.
+  const [autoSheetShown, setAutoSheetShown] = useState(false);
+  const { user } = useAuth();
+  const location = manual ? manual.location : gps.location;
+  const locationSource = manual ? 'MANUAL' : 'GPS';
+  const showSheet = sheetOpen || (gps.status === 'unavailable' && !manual && !autoSheetShown);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState(null);
   const [fieldErrors, setFieldErrors] = useState({});
   const [submitted, setSubmitted] = useState(null);
 
-  // Step 3: the position from the device's location service, or
-  // 'unavailable'. State is only set in the lookup's callback.
-  function showFix(fix) {
-    setLocation(fix);
-    setLocationStatus(fix ? 'ready' : 'unavailable');
-  }
-
-  useEffect(() => {
-    let current = true;
-    currentPosition().then((fix) => {
-      if (current) showFix(fix);
-    });
-    return () => {
-      current = false;
-    };
-  }, []);
-
-  function locateAgain() {
-    setLocationStatus('locating');
-    currentPosition().then(showFix);
-  }
-
-  // Editing a field clears its error; every other input is kept as typed.
-  const update = (field) => (value) => {
-    setForm((current) => ({ ...current, [field]: value }));
+  function clearFieldError(field) {
     setFieldErrors((current) => {
       const next = { ...current };
       delete next[field];
       return next;
     });
+  }
+
+  // Editing a field clears its error; every other input is kept as typed.
+  const update = (field) => (value) => {
+    setForm((current) => ({ ...current, [field]: value }));
+    clearFieldError(field);
   };
 
   // Step 5: upload the photo (§6, folder hazard-reports), then send the
@@ -114,7 +84,7 @@ export default function ReportHazardScreen() {
         description: form.description,
         hazardType: form.hazardType,
         location,
-        locationSource: 'GPS',
+        locationSource,
         photoUrl,
         clientReportId: form.clientReportId,
       });
@@ -139,7 +109,9 @@ export default function ReportHazardScreen() {
     setSubmitted(null);
     setFieldErrors({});
     setForm(emptyForm());
-    locateAgain();
+    setManual(null);
+    setAutoSheetShown(false);
+    gps.retry();
   }
 
   if (submitted) {
@@ -170,9 +142,29 @@ export default function ReportHazardScreen() {
       <SectionLabel className="mb-2">Location</SectionLabel>
       <LocationRow
         location={location}
-        status={locationStatus}
-        onRetry={locateAgain}
+        status={gps.status}
+        source={locationSource}
+        placeName={manual?.placeName}
+        onRetry={() => {
+          setManual(null);
+          gps.retry();
+        }}
+        onSetManually={() => setSheetOpen(true)}
         error={fieldErrors.location}
+      />
+      <ManualLocationSheet
+        visible={showSheet}
+        homeDistrictId={user?.homeDistrict}
+        onChoose={(chosen, placeName) => {
+          setManual({ location: chosen, placeName });
+          setSheetOpen(false);
+          setAutoSheetShown(true);
+          clearFieldError('location');
+        }}
+        onClose={() => {
+          setSheetOpen(false);
+          setAutoSheetShown(true);
+        }}
       />
 
       <SectionLabel className="mb-2">Description</SectionLabel>
