@@ -1807,7 +1807,7 @@ A preview that finds **no recipients is not an error**: it is `200` with `recipi
 }
 ```
 
-An empty `areaIds` is `400` on `areaIds` too ("must contain at least 1 items"), as is a malformed id. A missing or unknown `hazardType` or `severity` is `400` on that field.
+An empty `areaIds` is `400` on `areaIds` too ("must contain at least 1 items"), as is a malformed id. A list holding anything but text (a number, `null`, an object) is `400` on `areaIds` with "must be a list of area ids". A missing or unknown `hazardType` or `severity` is `400` on that field.
 
 **Failure — `409 Conflict`** (the alert is no longer a draft)
 

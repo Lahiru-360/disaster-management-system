@@ -19,15 +19,15 @@ import SectionLabel from '../../components/ui/SectionLabel';
 import StatusBadge from '../../components/ui/StatusBadge';
 import { ROLES } from '../../constants/roles';
 import useAuth from '../../hooks/useAuth';
+import { apiErrorMessage, mapFieldErrors } from '../../utils/apiErrors';
 
 // How long the choices must stay still before the preview is asked for, so
 // ticking several areas in a row makes one request.
 const PREVIEW_DELAY_MS = 400;
 
-const errorMessage = (error, fallback) => error?.response?.data?.error?.message ?? fallback;
-
-const fieldError = (error, field) =>
-  error?.response?.data?.error?.errors?.find((entry) => entry.field === field)?.message ?? null;
+// The preview field this form highlights (the Target scope card); an error
+// on any other field goes in a Notice above the form.
+const SCOPE_FIELDS = ['areaIds'];
 
 // UC01 main flow steps 1-8 (§5.1), the IssueWarningScreen of the sequence
 // diagram. Opening it starts a DRAFT (step 2). Once a hazard type, a severity
@@ -82,7 +82,8 @@ export default function IssueWarningScreen() {
         setAlert(draft.alert);
         setAreas({ districts, riverBasins });
       },
-      (error) => setLoadError(errorMessage(error, 'The warning could not be opened. Try again.')),
+      (error) =>
+        setLoadError(apiErrorMessage(error, 'The warning could not be opened. Try again.')),
     );
   }, [canIssue]);
 
@@ -118,6 +119,13 @@ export default function IssueWarningScreen() {
     return () => clearTimeout(timer);
   }, [alertId, complete, hazardType, severity, areaIds]);
 
+  // E1.2: back at step 5, the refused scope's message clears as soon as the
+  // officer changes the scope.
+  function changeScope(ids) {
+    setAreaIds(ids);
+    setPreviewError(null);
+  }
+
   // Step 8: save an edited message to the draft when the officer leaves it.
   async function saveMessage() {
     const text = message.trim();
@@ -134,8 +142,8 @@ export default function IssueWarningScreen() {
       setMessageError(null);
     } catch (error) {
       setMessageError(
-        fieldError(error, 'message') ??
-          errorMessage(error, 'The message could not be saved. Try again.'),
+        mapFieldErrors(error, ['message']).byField.message ??
+          apiErrorMessage(error, 'The message could not be saved. Try again.'),
       );
     }
   }
@@ -150,9 +158,11 @@ export default function IssueWarningScreen() {
     } catch (error) {
       setSending(false);
       setConfirming(false);
-      const messageFieldError = fieldError(error, 'message');
+      const messageFieldError = mapFieldErrors(error, ['message']).byField.message;
       if (messageFieldError) setMessageError(messageFieldError);
-      else setBroadcastError(errorMessage(error, 'The warning could not be broadcast. Try again.'));
+      else {
+        setBroadcastError(apiErrorMessage(error, 'The warning could not be broadcast. Try again.'));
+      }
     }
   }
 
@@ -185,11 +195,15 @@ export default function IssueWarningScreen() {
     );
   }
 
-  const scopeError = fieldError(previewError, 'areaIds');
-  const otherPreviewError =
-    previewError && !scopeError
-      ? errorMessage(previewError, 'The preview could not be made. Try again.')
-      : null;
+  // E1: a scope the server refused is shown on the Target scope card, with
+  // every choice kept, so the officer corrects it and the preview runs again.
+  const { byField, others } = mapFieldErrors(previewError, SCOPE_FIELDS);
+  const scopeError = byField.areaIds ? `Check the target scope – ${byField.areaIds}` : null;
+  let otherPreviewError = null;
+  if (others.length > 0) otherPreviewError = others.join('; ');
+  else if (previewError && !scopeError) {
+    otherPreviewError = apiErrorMessage(previewError, 'The preview could not be made. Try again.');
+  }
   // Step 9: only a complete, previewed draft with citizens to reach and a
   // message can be broadcast.
   const canBroadcast = Boolean(
@@ -233,7 +247,7 @@ export default function IssueWarningScreen() {
               districts={areas.districts}
               riverBasins={areas.riverBasins}
               value={areaIds}
-              onChange={setAreaIds}
+              onChange={changeScope}
               error={scopeError}
             />
           </div>
@@ -258,7 +272,13 @@ export default function IssueWarningScreen() {
           ) : !preview ? (
             previewing ? (
               <Loader className="mt-6" />
-            ) : null
+            ) : (
+              <p className="mt-3 text-[14px] text-muted">
+                {scopeError
+                  ? 'Correct the target scope to preview the warning.'
+                  : 'The preview will appear here once it can be made.'}
+              </p>
+            )
           ) : (
             <>
               <div className="mt-3">
