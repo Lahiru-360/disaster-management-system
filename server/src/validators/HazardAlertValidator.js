@@ -67,9 +67,18 @@ export class HazardAlertValidator {
   });
 
   // GET /api/hazard-alerts/:id/unreached (§12.16), paged as the inbox (§11.2).
+  static #pageNumber = Joi.number().integer().min(1).messages({
+    'number.base': 'must be a number',
+    'number.integer': 'must be an integer',
+    'number.min': 'must be greater than or equal to {#limit}',
+    'number.max': 'must be less than or equal to {#limit}',
+  });
+
   static unreachedQuery = Joi.object({
-    page: Joi.number().integer().min(1).default(1),
-    limit: Joi.number().integer().min(1).max(HazardAlertValidator.UNREACHED_MAX_LIMIT).default(20),
+    page: HazardAlertValidator.#pageNumber.default(1),
+    limit: HazardAlertValidator.#pageNumber
+      .max(HazardAlertValidator.UNREACHED_MAX_LIMIT)
+      .default(20),
   });
 
   // POST /api/hazard-alerts/:id/preview (§12.3).

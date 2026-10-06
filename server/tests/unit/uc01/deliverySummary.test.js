@@ -1,6 +1,9 @@
 import mongoose from 'mongoose';
 import { Notification } from '../../../src/models/Notification.js';
 import { DeliverySummary, deliverySummary } from '../../../src/services/DeliverySummary.js';
+import { FallbackPolicy } from '../../../src/domain/alerts/FallbackPolicy.js';
+import { seedAreas } from '../../helpers/areaFixtures.js';
+import { createUser } from '../../helpers/userFactory.js';
 
 const id = () => new mongoose.Types.ObjectId();
 
@@ -99,6 +102,120 @@ describe('DeliverySummary', () => {
       totals: { sent: 0, delivered: 0, failed: 0 },
       fallback: { channel: 'SMS', resent: 0 },
       unreachedCount: 0,
+    });
+  });
+
+  it("DMS-128: reports the injected policy's fallback channel", async () => {
+    const summary = await new DeliverySummary({
+      fallback: new FallbackPolicy({ channel: 'PUSH' }),
+    }).forAlert(id(), 1);
+
+    expect(summary.fallback).toEqual({ channel: 'PUSH', resent: 0 });
+  });
+
+  describe('unreachedCitizens (E3.3)', () => {
+    let areas;
+    let people;
+    const PAGE = { page: 1, limit: 20 };
+
+    // Zara in Colombo with a phone, Asha in Gampaha without, Malan in Colombo.
+    beforeEach(async () => {
+      areas = await seedAreas();
+      people = {
+        zara: await createUser({
+          name: 'Zara Fernando',
+          homeDistrict: areas.colombo,
+          phone: '+94771111111',
+        }),
+        asha: await createUser({ name: 'Asha Silva', homeDistrict: areas.gampaha }),
+        malan: await createUser({
+          name: 'Malan Perera',
+          homeDistrict: areas.colombo,
+          phone: '+94772222222',
+        }),
+      };
+    });
+
+    it('DMS-128: TC-42 lists the distinct citizens with no DELIVERED record, by name, with district and phone', async () => {
+      const { zara, asha, malan } = people;
+      await Notification.insertMany([
+        record(zara._id, 'PUSH', 'FAILED'),
+        record(zara._id, 'SMS', 'FAILED'),
+        record(zara._id, 'AUDIBLE', 'SENT'),
+        record(asha._id, 'PUSH', 'FAILED'),
+        record(asha._id, 'SMS', 'FAILED'),
+        record(malan._id, 'PUSH', 'DELIVERED'),
+      ]);
+
+      const result = await deliverySummary.unreachedCitizens(alert, 1, PAGE);
+
+      expect(result).toEqual({
+        citizens: [
+          {
+            id: asha.id,
+            name: 'Asha Silva',
+            district: { id: areas.gampaha.id, name: 'Gampaha' },
+            phone: null,
+          },
+          {
+            id: zara.id,
+            name: 'Zara Fernando',
+            district: { id: areas.colombo.id, name: 'Colombo' },
+            phone: '+94771111111',
+          },
+        ],
+        total: 2,
+      });
+    });
+
+    it('DMS-128: TC-41 a citizen delivered by audible while push failed is not unreached', async () => {
+      const { zara } = people;
+      await Notification.insertMany([
+        record(zara._id, 'PUSH', 'FAILED', { attempts: 3, fallbackChannel: 'SMS' }),
+        record(zara._id, 'SMS', 'FAILED', { attempts: 3, fallbackChannel: 'SMS' }),
+        record(zara._id, 'AUDIBLE', 'DELIVERED'),
+      ]);
+
+      await expect(deliverySummary.unreachedCitizens(alert, 1, PAGE)).resolves.toEqual({
+        citizens: [],
+        total: 0,
+      });
+      await expect(deliverySummary.forAlert(alert, 1)).resolves.toMatchObject({
+        unreachedCount: 0,
+      });
+    });
+
+    it('DMS-128: pages by name then id without overlap; the total matches unreachedCount', async () => {
+      await Notification.insertMany(
+        Object.values(people).map((person) => record(person._id, 'PUSH', 'FAILED')),
+      );
+
+      const first = await deliverySummary.unreachedCitizens(alert, 1, { page: 1, limit: 2 });
+      const second = await deliverySummary.unreachedCitizens(alert, 1, { page: 2, limit: 2 });
+      const past = await deliverySummary.unreachedCitizens(alert, 1, { page: 3, limit: 2 });
+
+      expect(first.citizens.map((c) => c.name)).toEqual(['Asha Silva', 'Malan Perera']);
+      expect(second.citizens.map((c) => c.name)).toEqual(['Zara Fernando']);
+      expect(past).toEqual({ citizens: [], total: 3 });
+      expect(first.total).toBe(3);
+      expect((await deliverySummary.forAlert(alert, 1)).unreachedCount).toBe(3);
+    });
+
+    it('DMS-128: counts only the requested alert and version', async () => {
+      const { zara, asha } = people;
+      await Notification.insertMany([
+        record(zara._id, 'PUSH', 'FAILED', { alertVersion: 2 }),
+        record(asha._id, 'PUSH', 'FAILED', { alert: id() }),
+        record(asha._id, 'PUSH', 'DELIVERED'),
+      ]);
+
+      await expect(deliverySummary.unreachedCitizens(alert, 1, PAGE)).resolves.toEqual({
+        citizens: [],
+        total: 0,
+      });
+      await expect(deliverySummary.unreachedCitizens(alert, 2, PAGE)).resolves.toMatchObject({
+        total: 1,
+      });
     });
   });
 });
