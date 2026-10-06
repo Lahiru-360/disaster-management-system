@@ -126,6 +126,15 @@ describe('HazardAlert (domain)', () => {
     expect(alert.isActive()).toBe(true);
   });
 
+  it("DMS-121: broadcast takes the final message, replacing the draft's", () => {
+    const alert = composed();
+
+    alert.broadcast(OFFICER, T1, '  Move to higher ground now.  ');
+
+    expect(alert.message).toBe('Move to higher ground now.');
+    expect(() => composed().broadcast(OFFICER, T1, 'x'.repeat(161))).toThrow('1-160 characters');
+  });
+
   it('DMS-120: a draft that was never previewed cannot be broadcast', () => {
     const alert = draft();
 

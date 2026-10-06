@@ -33,6 +33,13 @@ export class HazardAlertRoutes extends BaseRoutes {
       RequestValidator.body(HazardAlertValidator.draftMessageSchema),
       hazardAlertController.saveDraftMessage,
     );
+    router.post(
+      '/:id/broadcast',
+      ...officer,
+      RequestValidator.body(HazardAlertValidator.broadcastSchema),
+      hazardAlertController.broadcast,
+    );
+    router.get('/:id/delivery-summary', ...officer, hazardAlertController.deliverySummary);
     router.get('/:id', ...officer, hazardAlertController.getById);
   }
 }
