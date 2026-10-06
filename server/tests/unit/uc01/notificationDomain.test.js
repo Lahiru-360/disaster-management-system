@@ -16,7 +16,7 @@ const queued = (overrides = {}) =>
   });
 
 describe('Notification (domain)', () => {
-  it('DMS-121: starts QUEUED with one attempt', () => {
+  it('Main 13: starts QUEUED with one attempt', () => {
     const notification = queued();
 
     expect(notification.status).toBe('QUEUED');
@@ -24,7 +24,7 @@ describe('Notification (domain)', () => {
     expect(notification.isFinal()).toBe(false);
   });
 
-  it('DMS-121: markDelivered from QUEUED sets sentAt and deliveredAt', () => {
+  it('Main 14: markDelivered from QUEUED sets sentAt and deliveredAt', () => {
     const notification = queued();
 
     notification.markDelivered(SENT_AT);
@@ -40,7 +40,7 @@ describe('Notification (domain)', () => {
     expect(notification.isFinal()).toBe(true);
   });
 
-  it('DMS-121: SENT then DELIVERED keeps the first sentAt', () => {
+  it('Main 14: SENT then DELIVERED keeps the first sentAt', () => {
     const notification = queued();
 
     notification.markSent(SENT_AT);
@@ -53,7 +53,7 @@ describe('Notification (domain)', () => {
     });
   });
 
-  it('DMS-121: markFailed records the reason', () => {
+  it('Main 14: markFailed records the reason', () => {
     const notification = queued();
 
     notification.markFailed('gateway down', SENT_AT);
@@ -66,7 +66,7 @@ describe('Notification (domain)', () => {
     });
   });
 
-  it('DMS-121: a failure without a reason still says why', () => {
+  it('Main 14: a failure without a reason still says why', () => {
     const notification = queued({ status: 'SENT', sentAt: SENT_AT });
 
     notification.markFailed(undefined, LATER);
@@ -81,17 +81,17 @@ describe('Notification (domain)', () => {
     ['FAILED', (n) => n.markDelivered(LATER)],
     ['FAILED', (n) => n.markSent(LATER)],
     ['SENT', (n) => n.markSent(LATER)],
-  ])('DMS-121: refuses a change from %s', (status, change) => {
+  ])('Domain: refuses a change from %s', (status, change) => {
     const notification = queued({ status, sentAt: SENT_AT });
 
     expect(() => change(notification)).toThrow(`cannot go from ${status}`);
   });
 
-  it('DMS-121: refuses an unknown status', () => {
+  it('Domain: refuses an unknown status', () => {
     expect(() => queued({ status: 'LOST' })).toThrow('unknown status "LOST"');
   });
 
-  it('DMS-121: fromDocument reads a stored record, ids as strings', async () => {
+  it('Domain: fromDocument reads a stored record, ids as strings', async () => {
     const alert = new mongoose.Types.ObjectId();
     const citizen = new mongoose.Types.ObjectId();
     const doc = await NotificationModel.create({
@@ -115,7 +115,7 @@ describe('Notification (domain)', () => {
     });
   });
 
-  it('DMS-121: fromDocument accepts a plain object with populated refs', () => {
+  it('Domain: fromDocument accepts a plain object with populated refs', () => {
     const notification = Notification.fromDocument({
       id: 'n1',
       alert: { id: 'a9' },
@@ -129,7 +129,7 @@ describe('Notification (domain)', () => {
     expect(queued({ citizen: null }).citizenId).toBeNull();
   });
 
-  it('DMS-128: TC-39 resendVia counts the attempt and records the fallback channel', () => {
+  it('E3: TC-39 resendVia counts the attempt and records the fallback channel', () => {
     const notification = queued();
 
     notification.resendVia('SMS');
@@ -146,7 +146,7 @@ describe('Notification (domain)', () => {
     expect(notification.channel).toBe('PUSH');
   });
 
-  it('DMS-128: TC-40 two resends then a failure is FAILED after 3 attempts', () => {
+  it('E3: TC-40 two resends then a failure is FAILED after 3 attempts', () => {
     const notification = queued();
 
     notification.resendVia('SMS');
@@ -165,7 +165,7 @@ describe('Notification (domain)', () => {
     ['SENT', (n) => n.markSent(SENT_AT)],
     ['DELIVERED', (n) => n.markDelivered(SENT_AT)],
     ['FAILED', (n) => n.markFailed('offline', SENT_AT)],
-  ])('DMS-128: refuses to resend a %s delivery', (status, mark) => {
+  ])('E3: refuses to resend a %s delivery', (status, mark) => {
     const notification = queued();
     mark(notification);
 
@@ -173,7 +173,7 @@ describe('Notification (domain)', () => {
     expect(notification.attempts).toBe(1);
   });
 
-  it('DMS-128: fromDocument keeps attempts and the fallback channel', async () => {
+  it('E3: fromDocument keeps attempts and the fallback channel', async () => {
     const doc = await NotificationModel.create({
       alert: new mongoose.Types.ObjectId(),
       alertVersion: 1,
@@ -188,7 +188,7 @@ describe('Notification (domain)', () => {
     expect(Notification.fromDocument(doc)).toMatchObject({ attempts: 3, fallbackChannel: 'SMS' });
   });
 
-  it('DMS-128: a new record has no fallback channel, and refuses one that is not a Channel', async () => {
+  it('E3: a new record has no fallback channel, and refuses one that is not a Channel', async () => {
     const fields = {
       alert: new mongoose.Types.ObjectId(),
       alertVersion: 1,
