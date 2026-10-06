@@ -85,6 +85,10 @@
     "src/enums/ReportSectionKey.js",
     "src/models/PostEventReport.js",
     "src/domain/analysis/**/*.js",
-    "src/services/reports/**/*.js"
+    "src/services/reports/**/*.js",
+    "src/services/PostEventReportService.js",
+    "src/validators/PostEventReportValidator.js",
+    "src/controllers/PostEventReportController.js",
+    "src/routes/PostEventReportRoutes.js"
   ]
 }
