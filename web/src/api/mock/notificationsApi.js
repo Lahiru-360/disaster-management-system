@@ -2,11 +2,11 @@
 // same shapes the real client hands back and rejects with axios-shaped
 // errors, so swapping in the real client changes no calling code.
 // `mockControls.failNext` fakes the failures that can't be triggered by
-// tapping - a dropped connection or a server error.
+// clicking - a dropped connection or a server error.
 //
 // One shared inbox for whoever is signed in, in this module's memory, so
-// reloading the app resets it. `mockControls.receive` adds an item, to see it
-// arrive on the next pull-to-refresh.
+// reloading the page resets it. `mockControls.receive` adds an item, to see
+// the bell's count change on the next poll.
 
 const MIN_DELAY_MS = 300;
 const MAX_DELAY_MS = 800;
@@ -17,37 +17,37 @@ let nextId = 10;
 
 const minutesAgo = (minutes) => new Date(Date.now() - minutes * 60000).toISOString();
 
-// Newest first: one of each kind a field user receives.
+// Newest first, one of each kind an officer receives.
 const inbox = [
   {
-    id: '66fa1b2c3d4e5f6a7b8c9d04',
-    type: 'ASSIGNMENT',
-    title: 'New assignment',
-    body: 'Rescue at Biyagama, HIGH priority. Respond within 15 minutes.',
-    link: '/assignments/66fb3d4e5f6a7b8c9d0e1f01',
-    severity: null,
-    readAt: null,
-    createdAt: minutesAgo(3),
-  },
-  {
     id: '66fa1b2c3d4e5f6a7b8c9d03',
-    type: 'REPORT_CONFIRMED',
-    title: 'Report confirmed',
-    body: 'Your report GR-2481 was confirmed by the duty officer. Thank you.',
-    link: '/my-reports/66f9a0c1b2c3d4e5f6a7b801',
+    type: 'REPORT_SUBMITTED',
+    title: 'New ground report',
+    body: 'New ground report GR-2481 – Rising river / Flood – Kolonnawa',
+    link: '/ground-reports',
     severity: null,
     readAt: null,
-    createdAt: minutesAgo(26),
+    createdAt: minutesAgo(4),
   },
   {
     id: '66fa1b2c3d4e5f6a7b8c9d02',
-    type: 'REPORT_DISMISSED',
-    title: 'Report reviewed',
-    body: 'Thank you for report GR-2476. After review it was not used for a warning (reason: Duplicate). Please keep reporting what you see.',
-    link: '/my-reports/66f9a0c1b2c3d4e5f6a7b7f3',
+    type: 'SHELTER_CAPACITY',
+    title: 'Shelters near capacity',
+    body: 'All shelters in Gampaha are near capacity or full (Gampaha Central College 92%)',
+    link: '/shelter-resources',
     severity: null,
-    readAt: minutesAgo(60),
-    createdAt: minutesAgo(120),
+    readAt: null,
+    createdAt: minutesAgo(38),
+  },
+  {
+    id: '66fa1b2c3d4e5f6a7b8c9d01',
+    type: 'SUPPORT_REQUEST',
+    title: 'Rescue support requested',
+    body: 'Gampaha requests rescue support – Biyagama, HIGH',
+    link: '/rescue-teams',
+    severity: null,
+    readAt: minutesAgo(50),
+    createdAt: minutesAgo(95),
   },
 ];
 
@@ -139,10 +139,10 @@ export const mockControls = {
   receive(fields = {}) {
     inbox.unshift({
       id: `66fa1b2c3d4e5f6a7b8c9e${String(nextId++).padStart(2, '0')}`,
-      type: 'REPORT_CONFIRMED',
-      title: 'Report confirmed',
-      body: 'Your report GR-2482 was confirmed by the duty officer. Thank you.',
-      link: '/my-reports/66f9a0c1b2c3d4e5f6a7b802',
+      type: 'REPORT_SUBMITTED',
+      title: 'New ground report',
+      body: 'New ground report GR-2482 – Landslide – Kegalle',
+      link: '/ground-reports',
       severity: null,
       readAt: null,
       createdAt: new Date().toISOString(),
@@ -151,9 +151,7 @@ export const mockControls = {
   },
 };
 
-const notificationsApi = {
+export default {
   listMine,
   markRead,
 };
-
-export default notificationsApi;

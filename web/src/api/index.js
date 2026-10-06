@@ -7,6 +7,9 @@ import authApiMock from './mock/authApi';
 import authApiReal from './authApi';
 import groundReportsApiMock from './mock/groundReportsApi';
 import groundReportsApiReal from './groundReportsApi';
+import notificationsApiMock from './mock/notificationsApi';
+import notificationsApiReal from './notificationsApi';
 
 export const authApi = USE_MOCK ? authApiMock : authApiReal;
 export const groundReportsApi = USE_MOCK ? groundReportsApiMock : groundReportsApiReal;
+export const notificationsApi = USE_MOCK ? notificationsApiMock : notificationsApiReal;
