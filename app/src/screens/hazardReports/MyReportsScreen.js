@@ -1,5 +1,5 @@
-import { useFocusEffect } from '@react-navigation/native';
-import { useCallback, useState } from 'react';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import { useCallback, useEffect, useState } from 'react';
 import { FlatList, RefreshControl } from 'react-native';
 
 import { hazardReportsApi } from '../../api';
@@ -9,16 +9,57 @@ import Loader from '../../components/ui/Loader';
 import Notice from '../../components/ui/Notice';
 import Screen from '../../components/ui/Screen';
 import ScreenHeader from '../../components/ui/ScreenHeader';
+import { TABS } from '../../constants/roles';
+import { reportSync } from '../../services/reportSync';
+import offlineReportQueue from '../../store/offlineReportQueue';
 
 // The reporter's own reports, newest first, with where each review stands
 // (GET /api/hazard-reports/mine, contract §9.3). Reloads whenever the tab
 // comes into view - a report just sent from the Report tab shows straight
 // away - and on pull-to-refresh. Reports still waiting on the phone to be
-// sent (A3, DMS-134) join this list once the offline queue exists.
+// sent (A3) are listed first as "Waiting to send", kept up to date as the
+// offline queue changes.
+// A report still on the phone (A3/E2), in the shape MyReportRow shows: no
+// reference until the server gives it one, and a note on why it waits.
+function toQueuedRow(item) {
+  let note = null;
+  if (item.state === 'NEEDS_ATTENTION') {
+    note = `${item.lastError ?? 'The server refused it'}. Tap to correct it.`;
+  } else if (item.state === 'WAITING' && item.nextAttemptAt) {
+    const at = new Date(item.nextAttemptAt).toLocaleTimeString([], {
+      hour: 'numeric',
+      minute: '2-digit',
+    });
+    note = `Couldn't send (${item.lastError ?? 'no connection'}). Trying again at ${at}.`;
+  }
+  return {
+    id: `queued-${item.clientReportId}`,
+    clientReportId: item.clientReportId,
+    queued: true,
+    referenceNo: 'Not sent yet',
+    hazardType: item.hazardType,
+    submittedAt: item.createdAt,
+    status: item.state,
+    note,
+  };
+}
+
 export default function MyReportsScreen() {
+  const navigation = useNavigation();
   const [reports, setReports] = useState(null);
   const [error, setError] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [queued, setQueued] = useState([]);
+
+  useEffect(() => {
+    let current = true;
+    offlineReportQueue.list().then((items) => current && setQueued(items));
+    const unsubscribe = offlineReportQueue.subscribe(setQueued);
+    return () => {
+      current = false;
+      unsubscribe();
+    };
+  }, []);
 
   const load = useCallback(
     () =>
@@ -55,13 +96,28 @@ export default function MyReportsScreen() {
           {error}
         </Notice>
       ) : null}
-      {reports === null && !error ? (
+      {reports === null && !error && queued.length === 0 ? (
         <Loader />
       ) : (
         <FlatList
-          data={reports ?? []}
+          data={[...queued.map(toQueuedRow), ...(reports ?? [])]}
           keyExtractor={(report) => report.id}
-          renderItem={({ item }) => <MyReportRow report={item} />}
+          renderItem={({ item }) => (
+            <MyReportRow
+              report={item}
+              onRetry={
+                item.queued ? () => reportSync.retryNow(item.clientReportId).then(load) : undefined
+              }
+              onPress={
+                item.status === 'NEEDS_ATTENTION'
+                  ? () =>
+                      navigation.navigate(TABS.REPORT, {
+                        correctClientReportId: item.clientReportId,
+                      })
+                  : undefined
+              }
+            />
+          )}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />}
           contentContainerClassName="pb-6 flex-grow"
           ListEmptyComponent={

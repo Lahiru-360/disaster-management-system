@@ -26,6 +26,9 @@ const validInput = (overrides = {}) => ({
   ...overrides,
 });
 
+// submit() answers { report, created }; most tests here only need the report.
+const submitReport = async (reportService, ...args) => (await reportService.submit(...args)).report;
+
 let clock;
 let channel;
 let service;
@@ -51,7 +54,7 @@ describe('HazardReportService.submit', () => {
   it('Main 8 (TC-01): stores the report as PENDING with a GR reference and source GPS', async () => {
     const citizen = await createUser();
 
-    const report = await service.submit(citizen, validInput());
+    const report = await submitReport(service, citizen, validInput());
 
     expect(report).toMatchObject({
       referenceNo: 'GR-0001',
@@ -71,13 +74,13 @@ describe('HazardReportService.submit', () => {
   });
 
   it('Main 8: stamps submittedAt from the injected clock', async () => {
-    const report = await service.submit(await createUser(), validInput());
+    const report = await submitReport(service, await createUser(), validInput());
 
     expect(report.submittedAt).toEqual(new Date('2026-10-02T04:54:00.000Z'));
   });
 
   it('Main 8 (TC-05): derives the district from the coordinates', async () => {
-    const report = await service.submit(await createUser(), validInput());
+    const report = await submitReport(service, await createUser(), validInput());
 
     expect(report.district).toEqual({ id: areas.colombo.id, name: 'Colombo' });
   });
@@ -85,7 +88,7 @@ describe('HazardReportService.submit', () => {
   it('Main 8: shows the reporter as { id, role } only, never their name', async () => {
     const citizen = await createUser({ role: Role.COMMUNITY_VOLUNTEER });
 
-    const report = await service.submit(citizen, validInput());
+    const report = await submitReport(service, citizen, validInput());
 
     expect(report.reporter).toEqual({ id: citizen.id, role: Role.COMMUNITY_VOLUNTEER });
   });
@@ -93,7 +96,7 @@ describe('HazardReportService.submit', () => {
   it("Main 8: falls back to the reporter's home district when the point is in none", async () => {
     const citizen = await createUser({ homeDistrict: areas.gampaha });
 
-    const report = await service.submit(citizen, validInput({ location: JAFFNA }));
+    const report = await submitReport(service, citizen, validInput({ location: JAFFNA }));
 
     expect(report.district).toEqual({ id: areas.gampaha.id, name: 'Gampaha' });
   });
@@ -101,7 +104,9 @@ describe('HazardReportService.submit', () => {
   it('E1: refuses a point in no district from a reporter with no home district', async () => {
     const citizen = await createUser();
 
-    await expect(service.submit(citizen, validInput({ location: JAFFNA }))).rejects.toMatchObject({
+    await expect(
+      submitReport(service, citizen, validInput({ location: JAFFNA })),
+    ).rejects.toMatchObject({
       status: 400,
       code: 'VALIDATION_ERROR',
       errors: [{ field: 'location', message: 'must be inside a district of Sri Lanka' }],
@@ -112,13 +117,14 @@ describe('HazardReportService.submit', () => {
   it('A3: keeps the clientReportId the app sent', async () => {
     const clientReportId = 'b4f0c9e2-6a1d-4c7e-9f3a-2d8e5b7a1c60';
 
-    const report = await service.submit(await createUser(), validInput({ clientReportId }));
+    const report = await submitReport(service, await createUser(), validInput({ clientReportId }));
 
     expect(report.clientReportId).toBe(clientReportId);
   });
 
   it('A2 (TC-20): stores locationSource MANUAL', async () => {
-    const report = await service.submit(
+    const report = await submitReport(
+      service,
       await createUser(),
       validInput({ locationSource: 'MANUAL' }),
     );
@@ -130,7 +136,7 @@ describe('HazardReportService.submit', () => {
     const citizen = await createUser();
 
     const reports = await Promise.all(
-      Array.from({ length: 8 }, () => service.submit(citizen, validInput())),
+      Array.from({ length: 8 }, () => submitReport(service, citizen, validInput())),
     );
 
     expect(reports.map((r) => r.referenceNo).sort()).toEqual(
@@ -140,17 +146,17 @@ describe('HazardReportService.submit', () => {
 
   describe('clustering (step 7 / A4)', () => {
     it('Main 7: starts a new cluster with its own id when nothing matches', async () => {
-      const report = await service.submit(await createUser(), validInput());
+      const report = await submitReport(service, await createUser(), validInput());
 
       expect(String(report.clusterId)).toBe(String(report.id));
     });
 
     it('A4 (TC-25): joins the cluster of a matching report 30 minutes earlier', async () => {
       const citizen = await createUser();
-      const first = await service.submit(citizen, validInput());
+      const first = await submitReport(service, citizen, validInput());
 
       clock.advance(30 * FakeClock.MINUTE);
-      const second = await service.submit(citizen, validInput());
+      const second = await submitReport(service, citizen, validInput());
 
       expect(String(second.clusterId)).toBe(String(first.id));
       expect(second.referenceNo).not.toBe(first.referenceNo);
@@ -158,10 +164,10 @@ describe('HazardReportService.submit', () => {
 
     it('A4 (TC-27): starts a new cluster once the 2-hour window has passed', async () => {
       const citizen = await createUser();
-      const first = await service.submit(citizen, validInput());
+      const first = await submitReport(service, citizen, validInput());
 
       clock.advance(2 * FakeClock.HOUR + FakeClock.MINUTE);
-      const second = await service.submit(citizen, validInput());
+      const second = await submitReport(service, citizen, validInput());
 
       expect(String(second.clusterId)).toBe(String(second.id));
       expect(String(second.clusterId)).not.toBe(String(first.clusterId));
@@ -171,18 +177,20 @@ describe('HazardReportService.submit', () => {
       const citizen = await createUser();
       // Two clusters 600 m apart - too far to have joined each other - both
       // within 500 m of a point between them.
-      const west = await service.submit(
+      const west = await submitReport(
+        service,
         citizen,
         validInput({ location: { latitude: 6.9382, longitude: 79.8985 } }),
       );
       clock.advance(10 * FakeClock.MINUTE);
-      const east = await service.submit(
+      const east = await submitReport(
+        service,
         citizen,
         validInput({ location: { latitude: 6.9382, longitude: 79.9039 } }),
       );
       clock.advance(10 * FakeClock.MINUTE);
 
-      const middle = await service.submit(citizen, validInput());
+      const middle = await submitReport(service, citizen, validInput());
 
       expect(String(east.clusterId)).not.toBe(String(west.clusterId));
       expect(String(middle.clusterId)).toBe(String(west.clusterId));
@@ -190,9 +198,9 @@ describe('HazardReportService.submit', () => {
 
     it('A4 (TC-29): does not join a report of a different type', async () => {
       const citizen = await createUser();
-      await service.submit(citizen, validInput({ hazardType: 'LANDSLIDE' }));
+      await submitReport(service, citizen, validInput({ hazardType: 'LANDSLIDE' }));
 
-      const second = await service.submit(citizen, validInput());
+      const second = await submitReport(service, citizen, validInput());
 
       expect(String(second.clusterId)).toBe(String(second.id));
     });
@@ -211,7 +219,7 @@ describe('HazardReportService.submit', () => {
       });
       const dmcOfficer = await createUser({ role: Role.DMC_OFFICER });
 
-      const report = await service.submit(await createUser(), validInput());
+      const report = await submitReport(service, await createUser(), validInput());
 
       for (const officer of [onShift, alsoOnShift]) {
         const inbox = await inboxOf(officer);
@@ -232,7 +240,7 @@ describe('HazardReportService.submit', () => {
       const otherDuty = await createUser({ role: Role.DUTY_OFFICER, shiftDistrict: areas.gampaha });
       const citizen = await createUser();
 
-      await service.submit(citizen, validInput());
+      await submitReport(service, citizen, validInput());
 
       expect(await inboxOf(dmcOfficer)).toHaveLength(1);
       expect(await inboxOf(otherDuty)).toHaveLength(1);
@@ -243,7 +251,7 @@ describe('HazardReportService.submit', () => {
       await createUser({ role: Role.DUTY_OFFICER, shiftDistrict: areas.colombo });
       channel.willReturn([new Error('push gateway down')]);
 
-      const report = await service.submit(await createUser(), validInput());
+      const report = await submitReport(service, await createUser(), validInput());
 
       expect(report.status).toBe(ReportStatus.PENDING);
       expect(await HazardReport.countDocuments()).toBe(1);
@@ -257,7 +265,7 @@ describe('HazardReportService.submit', () => {
         notifications: { notifyRole: jest.fn().mockRejectedValue(new Error('db down')) },
       });
 
-      const report = await failing.submit(await createUser(), validInput());
+      const report = await submitReport(failing, await createUser(), validInput());
 
       expect(report.referenceNo).toBe('GR-0001');
       expect(await HazardReport.countDocuments()).toBe(1);
@@ -267,5 +275,37 @@ describe('HazardReportService.submit', () => {
       );
       jest.restoreAllMocks();
     });
+  });
+});
+
+describe('resend (A3, DMS-134.4)', () => {
+  const clientReportId = 'b4f0c9e2-6a1d-4c7e-9f3a-2d8e5b7a1c60';
+
+  it('A3: answers created true, then created false with the same report', async () => {
+    const citizen = await createUser();
+
+    const first = await service.submit(citizen, validInput({ clientReportId }));
+    const second = await service.submit(citizen, validInput({ clientReportId }));
+
+    expect(first.created).toBe(true);
+    expect(second.created).toBe(false);
+    expect(second.report.id).toEqual(first.report.id);
+  });
+
+  it('A3: a copy that loses the race at the unique index returns the stored report', async () => {
+    const citizen = await createUser();
+    const create = HazardReport.create.bind(HazardReport);
+    // The other copy lands between this one's lookup and its insert.
+    jest.spyOn(HazardReport, 'create').mockImplementationOnce(async (fields) => {
+      await create({ ...fields, _id: undefined, referenceNo: 'GR-9999' });
+      return create(fields);
+    });
+
+    const result = await service.submit(citizen, validInput({ clientReportId }));
+
+    expect(result.created).toBe(false);
+    expect(result.report.referenceNo).toBe('GR-9999');
+    expect(await HazardReport.countDocuments()).toBe(1);
+    jest.restoreAllMocks();
   });
 });

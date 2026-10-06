@@ -247,6 +247,37 @@ async function listShelters({ districtId } = {}) {
   return inDistrict(districtId) ? shelters.map(presentShelter) : [];
 }
 
+// Steps 3-5. Mirrors the server: a whole number, 0 or more, is valid (0 is an
+// empty shelter, more than capacity shows as FULL); anything else is a 400 on
+// `occupants` and changes nothing (E1). A2's suggestion and E2's DMC alert
+// are not simulated here yet, so `alternateShelter` and `dmcAlerted` stay as
+// the contract's "not flagged" shape.
+async function updateOccupancy(shelterId, occupants) {
+  await delay();
+  takeFailure();
+  const record = shelters.find((s) => s.id === shelterId);
+  if (!record) throw apiError(404, 'NOT_FOUND', 'Shelter not found.');
+  if (typeof occupants !== 'number' || !Number.isInteger(occupants) || occupants < 0) {
+    const error = apiError(400, 'VALIDATION_ERROR', 'Request validation failed.');
+    error.response.data.error.errors = [
+      { field: 'occupants', message: 'must be a whole number, 0 or more' },
+    ];
+    throw error;
+  }
+
+  record.currentOccupancy = occupants;
+  record.updatedAt = new Date().toISOString();
+  const saved = presentShelter(record);
+  return {
+    shelter: saved,
+    rate: saved.rate,
+    status: saved.status,
+    flagged: ['NEAR_CAPACITY', 'FULL'].includes(saved.status),
+    alternateShelter: null,
+    dmcAlerted: false,
+  };
+}
+
 async function listRescueTeams({ districtId } = {}) {
   await delay();
   takeFailure();
@@ -267,5 +298,6 @@ export const mockControls = {
 export default {
   getOperationalPicture,
   listShelters,
+  updateOccupancy,
   listRescueTeams,
 };

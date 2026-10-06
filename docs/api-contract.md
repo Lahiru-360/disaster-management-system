@@ -115,7 +115,10 @@ Every error response — regardless of cause — returns the same outer shape:
 | `STORAGE_UNAVAILABLE` | The storage backend (Supabase) failed or was unreachable. Always `502`. |
 | `EMAIL_UNAVAILABLE` | The transactional email provider failed or was unreachable while sending. Always `502`. |
 | `REPORT_ALREADY_REVIEWED` | Confirm or dismiss on a hazard report that is no longer `PENDING` (§9.6–9.7). Always `409`; the message names the current status. |
+| `REPORT_NOT_ESCALATABLE` | Escalating a hazard report to a warning (§12.10) when the report isn't `CONFIRMED`, i.e. it is still `PENDING` or was `DISMISSED`. Always `409`; the message names the current status. |
 | `INVALID_ALERT_TRANSITION` | An action a hazard alert's current status doesn't allow, e.g. previewing, editing or broadcasting an alert that is no longer `DRAFT` (§12.3–12.4, §12.6). Always `409`; the message names the current status. |
+| `NO_RECIPIENTS_IN_SCOPE` | Broadcasting a hazard alert whose scope holds no registered citizens (§12.6, UC01 E2). Always `409`; nothing is sent and the alert stays `DRAFT`. |
+| `ACTIVE_WARNING_EXISTS` | Broadcasting a new hazard alert, or updating one, when an active warning of the same hazard type already covers a district in its scope (§12.6, §12.14, UC01 A2). Always `409`; nothing is sent and nothing changes. The message names the active warning. |
 | `NO_ACTIVE_INCIDENT` | A UC03 officer write while the district has no `ACTIVE` hazard event (§13.1). Always `409`. |
 | `SHELTER_NAME_TAKEN` | Registering a shelter whose name, ignoring case and surrounding spaces, is already used in the district (§13.4.3). Always `409`. |
 | `SHELTER_NO_SPACE` | Redirecting arrivals to a shelter that has no spare capacity (§13.4.4). Always `409`. |
@@ -989,7 +992,7 @@ The server then:
 
 **Success — `200 OK`** (resend: the caller already submitted a report with this `clientReportId`)
 
-The existing report is returned, unchanged, in the same shape as `201`. Nothing new is stored and nobody is notified again — even if two copies arrive at the same moment, exactly one report exists afterwards.
+The existing report is returned, unchanged, in the same shape as `201`. Nothing new is stored and nobody is notified again — even if two copies arrive at the same moment, exactly one report exists afterwards. A resend only matches the caller's own reports: a `clientReportId` that another user's report already has is refused with `400 VALIDATION_ERROR` on `clientReportId` ("is already used - generate a new one"), which a v4 UUID makes practically impossible.
 
 **Failure — `400 Bad Request`** (one entry per invalid field)
 
@@ -1621,7 +1624,7 @@ For server code, not clients. A use case never writes an inbox item itself; it c
 
 ## 12. Hazard alerts endpoints
 
-UC01 Issue Hazard Warning. An officer composes a location-specific warning, previews how many citizens it will reach and what they will read, and then broadcasts it (DMS-121). This section covers **composing** (UC01 main flow steps 1–8: start a draft, preview it, save an edited message, read an alert back) and **broadcasting** (steps 9–14: broadcast, delivery summary). Composing never sends anything, and no delivery record exists while an alert is `DRAFT`.
+UC01 Issue Hazard Warning. An officer composes a location-specific warning, previews how many citizens it will reach and what they will read, and then broadcasts it (DMS-121). This section covers **composing** (UC01 main flow steps 1–8: start a draft, preview it, save an edited message, read an alert back) **broadcasting** (steps 9–14: broadcast, delivery summary), **backing out** (A4: list the drafts, discard one) and **updating** an active warning (A2: preview the update, then update and send). Composing never sends anything, and no delivery record exists while an alert is `DRAFT`.
 
 Every endpoint requires `Authorization: Bearer <accessToken>` and admits `dmc_officer` and `duty_officer` (a duty officer is a DMC officer). Every other role is `403 FORBIDDEN`. Drafts are shared work: any admitted officer can open, preview and edit any draft, not only its creator.
 
@@ -1683,7 +1686,7 @@ Every endpoint below that returns an alert returns this shape. A new draft has n
 
 UC01 main flow steps 1–2. The web console calls this as soon as the officer opens *Issue Hazard Warning*, so the draft exists while they compose it.
 
-**Request:** an empty object `{}`. (DMS-122 adds an optional `sourceReportId` for escalating a confirmed report; it is documented there.)
+**Request:** an empty object `{}`. To escalate a confirmed hazard report instead, send `{ "sourceReportId": "<report id>" }`; that variant is documented in 12.10.
 
 **Success — `201 Created`**
 
@@ -1746,7 +1749,7 @@ UC01 main flow steps 3–7. Sent whenever the officer has chosen a hazard type, 
 The server then:
 
 1. **Validates the scope** (step 6). Every id must be a registered district or river basin; otherwise the request fails with `400` on `areaIds`, naming the unknown ids (UC01 E1, DMS-126).
-2. **Checks for an active warning** of the same hazard type covering any of the same districts (UC01 A2, DMS-123), and returns it as `activeWarning`.
+2. **Checks for an active warning** of the same hazard type covering any of the same districts (UC01 A2, DMS-123; the conflict rule is in 12.13), and returns it as `activeWarning`. If several conflict, it returns the most recently issued one.
 3. **Counts the recipients** (step 7): the active `citizen` and `community_volunteer` accounts whose home district is covered by the scope. A basin covers every district it spans, and **each citizen is counted once**, even when a district and a basin covering it are both selected.
 4. **Generates the message** from the hazard type and severity, at most 160 characters.
 5. **Stores** the hazard type, severity, scope, message and covering `ACTIVE` event on the draft. The status stays `DRAFT`.
@@ -1807,7 +1810,7 @@ A preview that finds **no recipients is not an error**: it is `200` with `recipi
 }
 ```
 
-An empty `areaIds` is `400` on `areaIds` too ("must contain at least 1 items"), as is a malformed id. A missing or unknown `hazardType` or `severity` is `400` on that field.
+An empty `areaIds` is `400` on `areaIds` too ("must contain at least 1 items"), as is a malformed id. A list holding anything but text (a number, `null`, an object) is `400` on `areaIds` with "must be a list of area ids". A missing or unknown `hazardType` or `severity` is `400` on that field.
 
 **Failure — `409 Conflict`** (the alert is no longer a draft)
 
@@ -1959,13 +1962,41 @@ The server then:
 }
 ```
 
-A draft without a hazard type, severity or scope (it was never previewed) gets the same code, with the message "Preview the warning before broadcasting it". Either way nothing is sent and no delivery record is created. UC01 A2 and E2 add their own `409`s here (`ACTIVE_WARNING_EXISTS`, DMS-123; `NO_RECIPIENTS_IN_SCOPE`, DMS-127).
+A draft without a hazard type, severity or scope (it was never previewed) gets the same code, with the message "Preview the warning before broadcasting it". Either way nothing is sent and no delivery record is created.
+
+**Failure — `409 Conflict`** (UC01 E2: the scope holds no registered citizens, counted again at broadcast)
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "NO_RECIPIENTS_IN_SCOPE",
+    "message": "No registered citizens are in the selected scope"
+  }
+}
+```
+
+The alert stays `DRAFT` and no delivery record or inbox item is created. The officer changes the scope (step 5) and previews again. The preview itself never refuses an empty scope: it returns `recipientCount: 0` (12.3), and the web disables **Confirm & Broadcast**.
+
+**Failure — `409 Conflict`** (UC01 A2: an active warning of the same hazard type already covers a district in the scope, checked again at broadcast with the rule in 12.13)
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "ACTIVE_WARNING_EXISTS",
+    "message": "An active FLOOD warning (HA-1040) already covers this scope – update it instead"
+  }
+}
+```
+
+The new draft stays `DRAFT` and nothing is sent. The web offers **Update existing** (12.13).
 
 **Failure — `400 Bad Request`** — `message` missing, empty or over 160 characters, as in 12.4.
 
 **Failure — `404 Not Found`** and **`403 Forbidden`** — see 12.8.
 
-Checked by TC-09, TC-10, TC-12–TC-14.
+Checked by TC-09, TC-10, TC-12–TC-14; E2 by TC-37 and TC-38; A2 by TC-23.
 
 ### 12.7 Delivery summary — `GET /api/hazard-alerts/:id/delivery-summary`
 
@@ -2020,7 +2051,11 @@ Checked by TC-11.
 | `401` | `TOKEN_INVALID` | Access token invalid, or its user no longer exists or has been deactivated. |
 | `403` | `FORBIDDEN` | The caller isn't a `dmc_officer` or `duty_officer`. |
 | `404` | `NOT_FOUND` | The alert doesn't exist, or the id isn't valid. |
-| `409` | `INVALID_ALERT_TRANSITION` | Preview, save-message or broadcast on an alert that is no longer `DRAFT`, or broadcast of a draft that was never previewed. |
+| `404` | `NOT_FOUND` | A draft started with a `sourceReportId` that is unknown or isn't a valid id (12.10). The message is `Hazard report not found.` |
+| `409` | `INVALID_ALERT_TRANSITION` | Preview, save-message, broadcast or discard on an alert that is no longer `DRAFT`, or broadcast of a draft that was never previewed. Update preview or update (12.13–12.14) of an alert that isn't active. |
+| `409` | `NO_RECIPIENTS_IN_SCOPE` | Broadcast of a draft, or an update, whose scope holds no registered citizens (UC01 E2). |
+| `409` | `ACTIVE_WARNING_EXISTS` | Broadcast of a draft, or an update, whose scope conflicts with another active warning of the same hazard type (UC01 A2, 12.13). |
+| `409` | `REPORT_NOT_ESCALATABLE` | A draft started from a hazard report that isn't `CONFIRMED` (12.10). |
 | `500` | `INTERNAL_ERROR` | Unhandled server-side failure. |
 
 ### 12.9 The delivery record
@@ -2041,6 +2076,323 @@ One record per recipient, channel and alert version, created by a broadcast (12.
 | `failureReason` | string or `null` | Set when `FAILED`. |
 
 Unique on `{ alert, alertVersion, citizen, channel }`; also indexed by `{ alert, status }`.
+
+### 12.10 Escalate a confirmed report — `POST /api/hazard-alerts` with `sourceReportId`
+
+UC01 A1 (DMS-122), before step 3. A duty officer who has just confirmed a hazard report (§9.6) selects **Escalate to Warning** on the report. The web console opens `/hazard-warnings/new?reportId=<id>` and starts the draft with the report's id. Escalation is always started by an officer: confirming a report never creates an alert.
+
+**Roles:** as 12.2, `dmc_officer` and `duty_officer`. The report isn't district-scoped here, unlike §9.
+
+**Request**
+
+```json
+{ "sourceReportId": "66f9a0c1b2c3d4e5f6a7b801" }
+```
+
+| Field | Type | Rules |
+|---|---|---|
+| `sourceReportId` | string | Optional. The id of a hazard report (§9.1). Leave it out to start a plain draft (12.2). |
+
+The new `DRAFT` links back to the report through `sourceReport`. Its type, severity, scope and message stay empty, as in 12.2. The server sends back suggested values in `prefill`, and the officer confirms or changes them in the first preview (12.3). The flow then continues at step 4 (severity).
+
+**Success — `201 Created`**
+
+```json
+{
+  "success": true,
+  "data": {
+    "alert": {
+      "id": "66fb2c3d4e5f6a7b8c9d0e01",
+      "referenceNo": "HA-1043",
+      "hazardType": null,
+      "status": "DRAFT",
+      "targets": [],
+      "sourceReport": { "id": "66f9a0c1b2c3d4e5f6a7b801", "referenceNo": "GR-2481" },
+      "...": "the rest of the alert object from 12.1"
+    },
+    "prefill": {
+      "hazardType": "FLOOD",
+      "districtId": "66f7c1a2b3c4d5e6f7a8b901",
+      "reportRef": { "id": "66f9a0c1b2c3d4e5f6a7b801", "referenceNo": "GR-2481" }
+    }
+  }
+}
+```
+
+| Field | Type | Notes |
+|---|---|---|
+| `prefill.hazardType` | enum or `null` | The report's hazard type mapped to an alert hazard type: `RISING_RIVER_FLOOD` → `FLOOD`, `LANDSLIDE` → `LANDSLIDE`. `BLOCKED_ROAD` and `OTHER` are ground-impact reports, so the value is `null` and the web shows the hint "Ground-impact report – choose the hazard type". |
+| `prefill.districtId` | string | The district (§7) that contains the report's coordinates. If no district is within 50 km of the point, it is the district the report was filed under (§9.1). The web pre-selects it as the scope. |
+| `prefill.reportRef` | `{ id, referenceNo }` | The report, for the banner "(i) Pre-filled from confirmed report GR-2481", which links back to it. |
+
+A request without `sourceReportId` returns no `prefill` key (12.2).
+
+**Failure — `409 Conflict`** (the report is `PENDING` or `DISMISSED`)
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "REPORT_NOT_ESCALATABLE",
+    "message": "Only a confirmed report can be escalated – current status: PENDING"
+  }
+}
+```
+
+**Failure — `404 Not Found`** (the report id is unknown or isn't valid)
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "Hazard report not found."
+  }
+}
+```
+
+**Failure — `400 Bad Request`** — `sourceReportId` is present but isn't a non-empty string (`VALIDATION_ERROR`, field `sourceReportId`).
+
+**Failure — `403 Forbidden`** and **`401 Unauthorized`** — as in 12.2.
+
+No draft is created when the request fails.
+
+Checked by TC-16–TC-19.
+
+### 12.11 List alerts — `GET /api/hazard-alerts?status=draft`
+
+UC01 A4. A draft the officer walked away from (the browser's Back button, a closed tab) is kept, and the **Drafts** filter on the *Hazard Warnings* page lists it so it can be resumed. Resuming reopens the draft with 12.5 and carries on with 12.3, 12.4 and 12.6.
+
+**Query**
+
+| Parameter | Rule |
+|---|---|
+| `status` | **Required.** Only `draft` is accepted for now. (DMS-124 adds `active` for the active warnings list.) |
+
+**Success — `200 OK`**
+
+```json
+{
+  "success": true,
+  "data": {
+    "alerts": [
+      {
+        "id": "66fb2c3d4e5f6a7b8c9d0e01",
+        "referenceNo": "HA-1043",
+        "hazardType": "FLOOD",
+        "severity": "SEVERE",
+        "status": "DRAFT",
+        "...": "the rest of the alert object from 12.1"
+      }
+    ]
+  }
+}
+```
+
+- Every `DRAFT`, whoever started it (drafts are shared work), most recently changed (`updatedAt`) first, without pagination.
+- A draft that was never previewed is listed too, with `hazardType`, `severity` and `message` still `null` and `targets` `[]`.
+- No drafts is `200` with `[]`.
+
+**Failure — `400 Bad Request`** (`status` missing or not `draft`)
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "Request validation failed.",
+    "errors": [{ "field": "status", "message": "must be one of [draft]" }]
+  }
+}
+```
+
+**Failure — `403 Forbidden`** — see 12.8.
+
+Checked by the A4 list tests in DMS-125.4.
+
+### 12.12 Discard a draft — `DELETE /api/hazard-alerts/:id`
+
+UC01 A4. The officer selects **Cancel** on the *Issue Hazard Warning* screen and then **Discard draft** in the confirmation ("Discard this draft? Nothing has been sent."). The draft is removed, nothing is sent, and the web returns to `/hazard-warnings`. Backing out of the broadcast confirmation with **Back** (12.6) calls nothing: the draft and every input stay as they were.
+
+**Request:** no body.
+
+**Success — `200 OK`**
+
+```json
+{
+  "success": true,
+  "data": {
+    "alert": {
+      "id": "66fb2c3d4e5f6a7b8c9d0e01",
+      "referenceNo": "HA-1043",
+      "status": "DRAFT",
+      "...": "the rest of the alert object from 12.1, as it was before it was discarded"
+    }
+  }
+}
+```
+
+The alert is deleted, not marked: afterwards 12.5 on the same id is `404`, and it no longer appears in 12.11. A draft has no delivery records (12.9), so none are created or removed. Its `HA-` reference number is not reused.
+
+**Failure — `409 Conflict`** (the alert isn't a `DRAFT`: it was broadcast, possibly by a colleague, or later updated or cancelled)
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "INVALID_ALERT_TRANSITION",
+    "message": "Only a DRAFT alert can be discarded – current status: BROADCAST"
+  }
+}
+```
+
+Nothing changes: the alert and its delivery records stay.
+
+**Failure — `404 Not Found`** (unknown or malformed id, or already discarded) and **`403 Forbidden`** — see 12.8.
+
+Checked by TC-30, TC-31.
+
+### 12.13 Preview an update — `POST /api/hazard-alerts/:id/update-preview`
+
+UC01 A2, at step 6. When the preview of a new draft (12.3) returns an `activeWarning`, the web shows the banner "(!) An active Flood warning (HIGH) already covers Colombo [Update existing]". **Update existing** opens `/hazard-warnings/:id/edit` on the active warning, headed "Updating HA-1040 (v2)", with its severity and scope pre-loaded (12.5). The officer changes the severity and/or the scope (A2.2), and the flow resumes at step 7: this endpoint recalculates the recipients and writes the update message. **It changes nothing**: the version goes up only when the officer confirms (12.14), so backing out leaves no trace.
+
+**Conflict rule** (also used by 12.3 and 12.6). An alert is *active* when its status is `BROADCAST` or `UPDATED`. Two alerts *conflict* when they have the **same `hazardType`** and at least **one district in common** once both scopes are expanded: a river basin covers every district it spans. A different hazard type in the same district is not a conflict, and a `DRAFT` or `CANCELLED` alert never conflicts.
+
+**Request**
+
+```json
+{
+  "severity": "SEVERE",
+  "areaIds": ["66f7c1a2b3c4d5e6f7a8b901", "66f7c1a2b3c4d5e6f7a8b902"]
+}
+```
+
+| Field | Rule |
+|---|---|
+| `severity` | Optional. One of the `severity` values in 12.1. Left out, the current severity stays. |
+| `areaIds` | Optional. At least one area id from §7, as in 12.3 (E1 applies). Left out, the current scope stays. |
+
+At least one of the two must be present. The hazard type can't change: a different hazard is a new warning.
+
+**Success — `200 OK`**
+
+```json
+{
+  "success": true,
+  "data": {
+    "alert": {
+      "id": "66fb2c3d4e5f6a7b8c9d0e00",
+      "referenceNo": "HA-1040",
+      "hazardType": "FLOOD",
+      "severity": "HIGH",
+      "status": "BROADCAST",
+      "version": 1,
+      "...": "the rest of the alert object from 12.1, unchanged"
+    },
+    "nextVersion": 2,
+    "recipientCount": 61500,
+    "message": "UPDATE: Flood Warning now SEVERE. Move to higher ground and follow official guidance.",
+    "channels": [
+      { "channel": "PUSH", "ready": true },
+      { "channel": "SMS", "ready": true },
+      { "channel": "AUDIBLE", "ready": true }
+    ],
+    "activeWarning": null
+  }
+}
+```
+
+| Field | Notes |
+|---|---|
+| `alert` | The active warning as stored, not changed by this call. |
+| `nextVersion` | The version the update will be sent as: `alert.version + 1`. |
+| `recipientCount` | Distinct citizens in the **new** scope, counted as in 12.3 step 3. These are the update's recipients, not the original ones. |
+| `message` | The update message for the new severity, at most 160 characters: `UPDATE: <Type> Warning now <SEVERITY>.` followed by the advice from 12.3. The officer may edit it before confirming (step 8). |
+| `channels` | As in 12.3. |
+| `activeWarning` | `null`, or **another** active warning that the new scope would conflict with (the alert never conflicts with itself). The update itself would then be refused (12.14). |
+
+A preview that finds **no recipients is not an error**: `200` with `recipientCount: 0` (UC01 E2), and the update is refused later.
+
+**Failure — `400 Bad Request`** — `VALIDATION_ERROR`: an unknown, malformed or empty `areaIds` as in 12.3 (UC01 E1); an unknown `severity`; or neither field present (`errors: [{ "field": "severity", "message": "change the severity or the scope" }]`).
+
+**Failure — `409 Conflict`** (the alert isn't active: it is still a `DRAFT`, or it was `CANCELLED`)
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "INVALID_ALERT_TRANSITION",
+    "message": "Only an active alert can be updated – current status: CANCELLED"
+  }
+}
+```
+
+**Failure — `404 Not Found`** and **`403 Forbidden`** — see 12.8.
+
+The conflict rule is checked by TC-20–TC-22 (through 12.3), and this preview by the A2 tests in DMS-123.6.
+
+### 12.14 Update and send — `PATCH /api/hazard-alerts/:id`
+
+UC01 A2.3, then steps 9–14. The officer selects **Confirm & Update**; the confirmation dialog states the new severity, the areas, the recipient count and the channels ("You are about to send an UPDATE: the Flood warning HA-1040 is now SEVERE, to 61,500 citizens in Colombo and Gampaha via Push, SMS and Audible alert."), and **Send update** calls this. Back in the dialog sends nothing.
+
+**Request**
+
+```json
+{
+  "severity": "SEVERE",
+  "areaIds": ["66f7c1a2b3c4d5e6f7a8b901", "66f7c1a2b3c4d5e6f7a8b902"],
+  "message": "UPDATE: Flood Warning now SEVERE. Move to higher ground and follow official guidance.",
+  "replacesDraftId": "66fb2c3d4e5f6a7b8c9d0e01"
+}
+```
+
+| Field | Rule |
+|---|---|
+| `severity`, `areaIds` | As in 12.13. At least one must be present, and together they must change the alert: the same severity and the same set of areas is `400`. |
+| `message` | **Required.** 1–160 characters after trimming: the update message as the officer last saw it. It replaces the alert's message. |
+| `replacesDraftId` | Optional. The new `DRAFT` that found this conflict (12.3). Once the update has been sent, it is discarded as in 12.12, since it is no longer needed. If it is no longer a `DRAFT`, or is already gone, it is left alone and the update still succeeds. |
+
+The server then:
+
+1. **Validates** the scope (UC01 E1) and **counts the recipients** in the new scope again. None → `409 NO_RECIPIENTS_IN_SCOPE` (UC01 E2), and nothing changes.
+2. Checks that the new scope doesn't conflict with **another** active warning (rule in 12.13) → `409 ACTIVE_WARNING_EXISTS`.
+3. Sets the alert to **`UPDATED`**, adds one to `version`, stores the new severity, scope and message, and adds a `statusHistory` entry `{ status: "UPDATED", version, at, by }`. `issuedBy` and `issuedAt` keep the first broadcast.
+4. Sends the update to the **recalculated** recipients: the citizens in the new scope, whether or not they had the original warning. Delivery works as in 12.6 steps 3–4, with delivery records of `kind: UPDATE` and `alertVersion` set to the new version, and an inbox item of type `HAZARD_ALERT` with the new severity.
+5. Discards `replacesDraftId`, if given.
+6. Returns the alert and the delivery summary for the **new version** (12.7).
+
+An `UPDATED` alert can be updated again: each update is one more version (1 → 2 → 3).
+
+**Success — `200 OK`**
+
+```json
+{
+  "success": true,
+  "data": {
+    "alert": {
+      "id": "66fb2c3d4e5f6a7b8c9d0e00",
+      "referenceNo": "HA-1040",
+      "severity": "SEVERE",
+      "status": "UPDATED",
+      "version": 2,
+      "...": "the rest of the alert object from 12.1"
+    },
+    "summary": { "version": 2, "...": "the rest of the summary object from 12.7" }
+  }
+}
+```
+
+**Failure — `409 Conflict`** — nothing changes, nothing is sent, and `replacesDraftId` is kept:
+
+- `INVALID_ALERT_TRANSITION`: the alert isn't active (a `DRAFT`, or `CANCELLED`, possibly by a colleague's all-clear), as in 12.13.
+- `NO_RECIPIENTS_IN_SCOPE`: the new scope holds no registered citizens, as in 12.6.
+- `ACTIVE_WARNING_EXISTS`: the new scope conflicts with another active warning, as in 12.6.
+
+**Failure — `400 Bad Request`** — as in 12.13, plus `message` missing, empty or over 160 characters (12.4), a `replacesDraftId` that isn't a non-empty string, or an update that changes nothing.
+
+**Failure — `404 Not Found`** and **`403 Forbidden`** — see 12.8.
+
+Checked by TC-24, TC-25.
 
 ---
 

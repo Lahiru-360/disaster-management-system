@@ -5,6 +5,7 @@ import { Shelter as ShelterDomain } from '../../../src/domain/coordination/Shelt
 import { Role } from '../../../src/enums/Role.js';
 import { ShelterStatus } from '../../../src/enums/ShelterStatus.js';
 import { TeamStatus } from '../../../src/enums/TeamStatus.js';
+import { OccupancyRecord } from '../../../src/models/OccupancyRecord.js';
 import { Organisation } from '../../../src/models/Organisation.js';
 import { ReliefStock } from '../../../src/models/ReliefStock.js';
 import { RescueTeam } from '../../../src/models/RescueTeam.js';
@@ -34,7 +35,9 @@ const seedPrerequisites = async () => {
 const ids = async (Model) => (await Model.find().sort({ _id: 1 })).map((doc) => doc.id);
 
 beforeAll(async () => {
-  await Promise.all([Shelter, RescueTeam, ReliefStock, Organisation, User].map((M) => M.init()));
+  await Promise.all(
+    [Shelter, OccupancyRecord, RescueTeam, ReliefStock, Organisation, User].map((M) => M.init()),
+  );
 });
 
 beforeEach(() => {
@@ -121,15 +124,59 @@ describe('Uc03Seeder', () => {
     expect(logs.every((log) => String(log.district) === areas.gampaha.id)).toBe(true);
   });
 
+  it('DMS-141.6: seeds five days of occupancy history per shelter, ending at the current occupancy', async () => {
+    await new Uc03Seeder().run();
+
+    const shelters = await Shelter.find().sort({ name: 1 });
+    expect(await OccupancyRecord.countDocuments()).toBe(shelters.length * 5);
+
+    for (const shelter of shelters) {
+      const records = await OccupancyRecord.find({ shelter: shelter._id }).sort({ recordedAt: 1 });
+      expect(records).toHaveLength(5);
+      expect(records.at(-1).occupants).toBe(shelter.currentOccupancy);
+      const occupants = records.map((record) => record.occupants);
+      expect(occupants).toEqual([...occupants].sort((a, b) => a - b));
+      expect(records.every((record) => record.capacity === shelter.capacity)).toBe(true);
+      expect(records.every((record) => String(record.district) === areas.gampaha.id)).toBe(true);
+      expect(records.every((record) => String(record.recordedBy) === officer.id)).toBe(true);
+    }
+  });
+
+  it('DMS-141.6: the history falls inside the active incident, before the demo snapshot', async () => {
+    await new Uc03Seeder().run();
+
+    const records = await OccupancyRecord.find().sort({ recordedAt: 1 });
+
+    expect(records[0].recordedAt >= new Date('2026-09-25T00:00:00.000Z')).toBe(true);
+    expect(records.at(-1).recordedAt <= new Date('2026-10-03T09:00:00.000Z')).toBe(true);
+  });
+
+  it('DMS-141.6: re-seeding keeps the history as it is, even after an officer adds an update', async () => {
+    await new Uc03Seeder().run();
+    const shelter = await Shelter.findOne({ name: 'Gampaha Central College' });
+    await OccupancyRecord.create({
+      shelter: shelter._id,
+      district: shelter.district,
+      occupants: 500,
+      capacity: 500,
+      recordedAt: new Date('2026-10-04T10:00:00.000Z'),
+      recordedBy: officer._id,
+    });
+
+    await new Uc03Seeder().run();
+
+    expect(await OccupancyRecord.countDocuments()).toBe(5 * 5 + 1);
+  });
+
   it('DMS-140.7: running twice keeps the same records under the same ids', async () => {
     await new Uc03Seeder().run();
     const first = await Promise.all(
-      [Shelter, RescueTeam, ReliefStock, SupplyDistribution].map(ids),
+      [Shelter, OccupancyRecord, RescueTeam, ReliefStock, SupplyDistribution].map(ids),
     );
 
     await new Uc03Seeder().run();
     const second = await Promise.all(
-      [Shelter, RescueTeam, ReliefStock, SupplyDistribution].map(ids),
+      [Shelter, OccupancyRecord, RescueTeam, ReliefStock, SupplyDistribution].map(ids),
     );
 
     expect(second).toEqual(first);
@@ -149,7 +196,7 @@ describe('Uc03Seeder', () => {
   });
 
   it('DMS-140.7: recreates the same ids after its collections are emptied (--reset-demo)', async () => {
-    const models = [Shelter, RescueTeam, ReliefStock, SupplyDistribution];
+    const models = [Shelter, OccupancyRecord, RescueTeam, ReliefStock, SupplyDistribution];
     await new Uc03Seeder().run();
     const first = await Promise.all(models.map(ids));
 
@@ -159,9 +206,10 @@ describe('Uc03Seeder', () => {
     expect(await Promise.all(models.map(ids))).toEqual(first);
   });
 
-  it('DMS-140.7: lists its four collections for --reset-demo', () => {
+  it('DMS-140.7: lists its five collections for --reset-demo', () => {
     expect(new Uc03Seeder().demoModels).toEqual([
       Shelter,
+      OccupancyRecord,
       RescueTeam,
       ReliefStock,
       SupplyDistribution,
