@@ -14,7 +14,12 @@
     "src/services/DuplicateReportFinder.js",
     "src/services/HazardReportService.js",
     "src/controllers/HazardReportController.js",
-    "src/routes/HazardReportRoutes.js"
+    "src/routes/HazardReportRoutes.js",
+    "src/models/Place.js",
+    "src/services/PlaceService.js",
+    "src/validators/PlaceValidator.js",
+    "src/controllers/PlaceController.js",
+    "src/routes/PlaceRoutes.js"
   ],
   "uc03": [
     "src/enums/ShelterStatus.js",
@@ -25,7 +30,20 @@
     "src/models/Shelter.js",
     "src/models/RescueTeam.js",
     "src/models/ReliefStock.js",
-    "src/domain/coordination/**/*.js"
+    "src/models/SupplyDistribution.js",
+    "src/domain/coordination/**/*.js",
+    "src/services/CoordinationPresenter.js",
+    "src/services/OperationalPictureService.js",
+    "src/services/DistrictScope.js",
+    "src/services/ShelterService.js",
+    "src/services/RescueTeamService.js",
+    "src/controllers/OperationalPictureController.js",
+    "src/controllers/ShelterController.js",
+    "src/controllers/RescueTeamController.js",
+    "src/validators/CoordinationValidator.js",
+    "src/routes/OperationalPictureRoutes.js",
+    "src/routes/ShelterRoutes.js",
+    "src/routes/RescueTeamRoutes.js"
   ],
   "uc04": [
     "src/domain/events/**/*.js",

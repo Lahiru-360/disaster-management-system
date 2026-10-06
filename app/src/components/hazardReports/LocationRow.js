@@ -10,10 +10,29 @@ export function formatCoordinates({ latitude, longitude }) {
   return `${lat}, ${lng}`;
 }
 
-// UC02 step 3: the position the device's location service gave, shown as
-// "GPS: 6.9382 N, 79.9012 E". While it is being fixed the row says so; when
-// there is no fix it offers a retry (setting it by hand is A2, DMS-133).
-export default function LocationRow({ location, status, onRetry, error }) {
+// UC02 step 3 / A2 (§5.1 wireframe): "GPS: 6.9382 N, 79.9012 E" with a Set
+// manually button always beside it, and "Manually entered" once the reporter
+// has set it by hand. While the GPS is fixing the row says so; with no fix it
+// says "Location unavailable" and offers to try again.
+export default function LocationRow({
+  location,
+  status,
+  source,
+  placeName,
+  onRetry,
+  onSetManually,
+  error,
+}) {
+  const manual = source === 'MANUAL' && location;
+
+  const text = manual
+    ? `${placeName ? `${placeName}: ` : ''}${formatCoordinates(location)}`
+    : status === 'ready' && location
+      ? `GPS: ${formatCoordinates(location)}`
+      : status === 'locating'
+        ? 'Finding your location…'
+        : 'Location unavailable';
+
   return (
     <View className="mb-4">
       <View
@@ -22,19 +41,18 @@ export default function LocationRow({ location, status, onRetry, error }) {
           error ? 'border-danger bg-paper' : 'border-transparent bg-haze',
         ].join(' ')}
       >
-        <Text className="flex-1 text-body font-medium text-ink">
-          {status === 'ready' && location
-            ? `GPS: ${formatCoordinates(location)}`
-            : status === 'locating'
-              ? 'Finding your location…'
-              : 'Location unavailable'}
-        </Text>
-        {status === 'unavailable' ? (
-          <Button variant="small" fullWidth={false} onPress={onRetry}>
-            Try again
-          </Button>
-        ) : null}
+        <Text className="flex-1 text-body font-medium text-ink">{text}</Text>
+        <Button variant="small" fullWidth={false} onPress={onSetManually}>
+          Set manually
+        </Button>
       </View>
+      {manual ? (
+        <Text className="mt-1.5 text-[13px] italic text-muted">Manually entered</Text>
+      ) : status === 'unavailable' ? (
+        <Button variant="small" fullWidth={false} className="mt-2" onPress={onRetry}>
+          Try GPS again
+        </Button>
+      ) : null}
       {error ? <Text className="mt-1.5 text-[13px] font-medium text-danger">{error}</Text> : null}
     </View>
   );
