@@ -1,10 +1,12 @@
 import { jest } from '@jest/globals';
 import { DistrictSeeder } from '../../../scripts/DistrictSeeder.js';
 import { PeopleSeeder } from '../../../scripts/PeopleSeeder.js';
+import { PLACE_GAZETTEER } from '../../../scripts/PlaceGazetteer.js';
 import { Uc02Seeder } from '../../../scripts/Uc02Seeder.js';
 import { ReportStatus } from '../../../src/enums/ReportStatus.js';
 import { District } from '../../../src/models/District.js';
 import { HazardReport } from '../../../src/models/HazardReport.js';
+import { Place } from '../../../src/models/Place.js';
 import { User } from '../../../src/models/User.js';
 import { ReferenceNumberGenerator } from '../../../src/services/ReferenceNumberGenerator.js';
 import { FakeClock } from '../../helpers/FakeClock.js';
@@ -128,6 +130,20 @@ describe('Uc02Seeder', () => {
       expect(after[ref]._id).toEqual(before[ref]._id);
       expect(after[ref].clusterId).toEqual(before[ref].clusterId);
     }
+  });
+
+  it('A2: seeds the place gazetteer across all 25 districts, once', async () => {
+    await seed();
+    await seed();
+
+    const places = await Place.find().populate('district').lean();
+    expect(places).toHaveLength(PLACE_GAZETTEER.length);
+    expect(new Set(places.map((place) => place.district.name)).size).toBe(25);
+    expect(places.find((place) => place.name === 'Kolonnawa').district.name).toBe('Colombo');
+  });
+
+  it('A2: keeps the gazetteer when --reset-demo empties the reports', () => {
+    expect(new Uc02Seeder().demoModels).not.toContain(Place);
   });
 
   it('stops when the districts have not been seeded', async () => {

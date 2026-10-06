@@ -5,9 +5,11 @@ import { ReportHazardType } from '../src/enums/ReportHazardType.js';
 import { ReportStatus } from '../src/enums/ReportStatus.js';
 import { District } from '../src/models/District.js';
 import { HazardReport } from '../src/models/HazardReport.js';
+import { Place } from '../src/models/Place.js';
 import { User } from '../src/models/User.js';
 import { ReferenceNumberGenerator } from '../src/services/ReferenceNumberGenerator.js';
 import { systemClock } from '../src/utils/SystemClock.js';
+import { PLACE_GAZETTEER } from './PlaceGazetteer.js';
 import { Seeder } from './Seeder.js';
 
 // UC02 demo data: the duty officer's queue from the §5.2 wireframe, so the
@@ -90,7 +92,7 @@ export class Uc02Seeder extends Seeder {
     this.#referenceNumbers = referenceNumbers;
   }
 
-  // --reset-demo empties the reports, and run() puts the same demo queue back
+  // --reset-demo empties the reports (not the gazetteer), and run() puts the same demo queue back
   // under the same ids. The GR- counter is left alone: it never drops below
   // the seeded numbers, so a reset never reissues one.
   get demoModels() {
@@ -141,6 +143,28 @@ export class Uc02Seeder extends Seeder {
 
     await this.#referenceNumbers.reserveUpTo(Uc02Seeder.#HIGHEST_SEEDED);
     console.log(`Seeded ${Uc02Seeder.#REPORTS.length} UC02 hazard reports`);
+
+    await Uc02Seeder.#seedPlaces();
+  }
+
+  // The A2 place-name gazetteer: reference data, matched by name and district
+  // and updated in place, so --reset-demo never empties it.
+  static async #seedPlaces() {
+    const districts = await District.find().select('name');
+    const idsByName = new Map(districts.map((district) => [district.name, district._id]));
+
+    for (const [name, districtName, latitude, longitude] of PLACE_GAZETTEER) {
+      const district = idsByName.get(districtName);
+      if (!district) {
+        throw new Error(`Place "${name}" names unknown district "${districtName}"`);
+      }
+      await Place.findOneAndUpdate(
+        { name, district },
+        { $set: { name, district, location: { latitude, longitude } } },
+        { upsert: true, runValidators: true },
+      );
+    }
+    console.log(`Seeded ${PLACE_GAZETTEER.length} gazetteer places`);
   }
 
   // A missing reporter means PeopleSeeder hasn't run, so the seed stops rather

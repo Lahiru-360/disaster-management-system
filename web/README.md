@@ -66,9 +66,12 @@ web/
 │   │   ├── client.js               Axios + interceptors + refresh queue (same as the app's)
 │   │   ├── index.js                resolves mock vs real from USE_MOCK
 │   │   ├── authApi.js              real implementation: login, refresh, logout, getCurrentUser
+│   │   ├── notificationsApi.js     in-app inbox: listMine, markRead (contract §11)
 │   │   └── mock/
-│   │       └── authApi.js          same signatures, fake data, FAKES FAILURES TOO
+│   │       ├── authApi.js          same signatures, fake data, FAKES FAILURES TOO
+│   │       └── notificationsApi.js same signatures; mockControls.failNext / receive
 │   ├── components/
+│   │   ├── notifications/          top-bar bell + dropdown list (presentational)
 │   │   └── ui/                     shared kit: presentational only, props in, JSX out (see "UI kit")
 │   │       ├── AuthShell.jsx       navy panel + form layout for the login page
 │   │       ├── Brand.jsx           brand mark + APP_NAME wordmark
@@ -96,7 +99,8 @@ web/
 │   │   ├── roles.js                role values, labels, mobile/web platform per role
 │   │   └── demoUsers.js            demo accounts: login picker + mock API users
 │   ├── hooks/
-│   │   └── useAuth.js              consumes AuthContext
+│   │   ├── useAuth.js              consumes AuthContext
+│   │   └── useNotifications.js     inbox for the bell, polled every 30 s
 │   ├── navigation/
 │   │   ├── RootNavigator.jsx       conditional render, NOT navigation; gates non-officer roles
 │   │   ├── AuthRoutes.jsx          signed-out routes: /login

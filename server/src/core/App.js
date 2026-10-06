@@ -11,6 +11,7 @@ import { hazardReportRoutes } from '../routes/HazardReportRoutes.js';
 import { healthRoutes } from '../routes/HealthRoutes.js';
 import { notificationRoutes } from '../routes/NotificationRoutes.js';
 import { organisationRoutes } from '../routes/OrganisationRoutes.js';
+import { placeRoutes } from '../routes/PlaceRoutes.js';
 import { uploadRoutes } from '../routes/UploadRoutes.js';
 
 // Builds the Express application: global middleware first, then every route
@@ -29,6 +30,7 @@ export class App {
       organisationRoutes,
       notificationRoutes,
       hazardReportRoutes,
+      placeRoutes,
       hazardAlertRoutes,
     ],
   ) {
