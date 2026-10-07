@@ -1,4 +1,5 @@
 import { ReportExport as ReportExportModel } from '../models/ReportExport.js';
+import { ApiError } from '../utils/ApiError.js';
 import { systemClock } from '../utils/SystemClock.js';
 import { CsvReportExporter } from './reports/exporters/CsvReportExporter.js';
 import { PdfReportExporter } from './reports/exporters/PdfReportExporter.js';
@@ -9,6 +10,10 @@ import { storageService as defaultStorageService } from './StorageService.js';
 // file. It writes the file with the ReportExporter for the format, uploads it
 // to storage and records a ReportExport. Each request is a new export, even of
 // a format exported before: earlier files are kept as an audit trail.
+//
+// E3: when the file can't be written (500 EXPORT_FAILED) or uploaded (502
+// STORAGE_UNAVAILABLE), nothing is recorded, so the same request can simply be
+// sent again while the report stays on screen.
 //
 // The exporters are injected, so a new format is one ReportExporter
 // registered in the list, with no change here (Open/Closed).
@@ -48,13 +53,14 @@ export class ExportService {
    * @param {string} reportId
    * @param {string} format an ExportFormat
    * @returns {Promise<{ exportId: string, format: string, fileUrl: string, createdAt: Date }>}
+   * @throws {ApiError} 404 NOT_FOUND, or for E3 500 EXPORT_FAILED / 502 STORAGE_UNAVAILABLE
    */
   async generateFile(officer, reportId, format) {
     const report = await this.#reportService.findById(reportId);
     const exporter = this.#exporterFor(format);
 
-    const file = await exporter.write(report);
-    const fileUrl = await this.#storage.storeFile(file, exporter.mimeType, ExportService.FOLDER);
+    const file = await ExportService.#write(exporter, report);
+    const fileUrl = await this.#upload(file, exporter.mimeType);
 
     const saved = await this.#exportModel.create({
       report: report.id,
@@ -69,6 +75,36 @@ export class ExportService {
       fileUrl: saved.fileUrl,
       createdAt: saved.createdAt,
     };
+  }
+
+  // E3.1: whatever stopped the exporter, the officer can only try again.
+  static async #write(exporter, report) {
+    try {
+      return await exporter.write(report);
+    } catch {
+      throw new ApiError(
+        500,
+        'EXPORT_FAILED',
+        'The export file could not be created. Please try again.',
+      );
+    }
+  }
+
+  // StorageService already answers 502 STORAGE_UNAVAILABLE; any other
+  // storage failure is given the same code, since it is just as safe to retry.
+  async #upload(file, mimeType) {
+    try {
+      return await this.#storage.storeFile(file, mimeType, ExportService.FOLDER);
+    } catch (err) {
+      if (err instanceof ApiError) {
+        throw err;
+      }
+      throw new ApiError(
+        502,
+        'STORAGE_UNAVAILABLE',
+        'Could not upload the file. Please try again.',
+      );
+    }
   }
 
   #exporterFor(format) {
