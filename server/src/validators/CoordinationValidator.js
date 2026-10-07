@@ -29,6 +29,65 @@ export class CoordinationValidator {
     quantity: Joi.number().strict().required(),
   });
 
+  static SHELTER_NAME_MAX_LENGTH = 100;
+
+  static SHELTER_LABEL_MAX_LENGTH = 200;
+
+  // The whole location is one rule, so every problem with the point or its
+  // label lands on `location` with one message (contract §13.4.3). Returns
+  // the point with its label trimmed, or without one.
+  static #shelterLocation = Joi.any()
+    .required()
+    .custom((value, helpers) => {
+      const { lat, lng, label } = value ?? {};
+      if (
+        typeof value !== 'object' ||
+        typeof lat !== 'number' ||
+        typeof lng !== 'number' ||
+        !(lat >= -90 && lat <= 90) ||
+        !(lng >= -180 && lng <= 180)
+      ) {
+        return helpers.error('location.malformed');
+      }
+      if (label !== undefined && label !== null) {
+        const trimmed = typeof label === 'string' ? label.trim() : null;
+        if (trimmed === null || trimmed.length > CoordinationValidator.SHELTER_LABEL_MAX_LENGTH) {
+          return helpers.error('location.label');
+        }
+        return trimmed ? { lat, lng, label: trimmed } : { lat, lng };
+      }
+      return { lat, lng };
+    })
+    .messages({
+      'any.required': 'is required',
+      'location.malformed': 'must have a lat from -90 to 90 and a lng from -180 to 180',
+      'location.label': `label must be text of at most ${CoordinationValidator.SHELTER_LABEL_MAX_LENGTH} characters`,
+    });
+
+  // UC03 A1 (§13.4.3): the new shelter's name, place and size. The district
+  // is never taken from the body - it is the officer's own. Messages are
+  // written without the field name, since `field` carries it.
+  static shelterBody = Joi.object({
+    name: Joi.string()
+      .trim()
+      .max(CoordinationValidator.SHELTER_NAME_MAX_LENGTH)
+      .required()
+      .messages({
+        'any.required': 'is required',
+        'string.empty': 'is required',
+        'string.base': 'must be text',
+        'string.max': `must be at most ${CoordinationValidator.SHELTER_NAME_MAX_LENGTH} characters`,
+      }),
+    location: CoordinationValidator.#shelterLocation,
+    capacity: Joi.number().strict().integer().min(1).required().messages({
+      'any.required': 'is required',
+      'number.base': 'must be a whole number, 1 or more',
+      'number.integer': 'must be a whole number, 1 or more',
+      'number.min': 'must be a whole number, 1 or more',
+      'number.infinity': 'must be a whole number, 1 or more',
+    }),
+  });
+
   // UC03 E1: a whole number of people, 0 or more (an empty shelter). A JSON
   // number only - "12" is refused rather than converted - and one message for
   // every way it can be wrong, as the contract shows (§13.4.2).
