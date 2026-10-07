@@ -3718,7 +3718,7 @@ A failed notification never fails the request that triggered it.
 
 ## 14. Post-event reports endpoints
 
-UC04 Generate Post-Event Analysis Report. After a hazard event is **closed**, a DMC officer generates a statistical report for it with four sections: the alert timeline, citizens reached, shelter occupancy over time and resource distribution. Days with no records are flagged as **incomplete data** instead of being left out. This section covers generating a report and reading it back (UC04 main flow steps 1–11, DMS-153, with E1 and E2), and exporting it (steps 12–13, DMS-154, with E3, 14.8). Sharing (DMS-155) and filtering (DMS-156) add their own subsections.
+UC04 Generate Post-Event Analysis Report. After a hazard event is **closed**, a DMC officer generates a statistical report for it with four sections: the alert timeline, citizens reached, shelter occupancy over time and resource distribution. Days with no records are flagged as **incomplete data** instead of being left out. This section covers generating a report and reading it back (UC04 main flow steps 1–11, DMS-153, with E1 and E2), exporting it (steps 12–13, DMS-154, with E3, 14.8), and sharing it (steps 14–15, DMS-155, 14.9–14.10). Filtering (DMS-156) and the sharing failure (E4, DMS-162) add their own subsections.
 
 **Status: draft (DMS-153.1).** The Analytics data subsection (14.7) needs sign-off from the owners of the data it reads: Anupa for hazard alerts and delivery records, Lahiru for occupancy and distribution records.
 
@@ -4285,6 +4285,151 @@ For both E3 failures the web shows "Export failed – try again" under the expor
 | `500` | `INTERNAL_ERROR` | Any other unhandled server-side failure. |
 
 Checked by TC-19–TC-23 (DMS-154) and TC-44–TC-46 (E3, DMS-161).
+
+### 14.9 Share a report — `POST /api/post-event-reports/:id/shares`
+
+UC04 main flow steps 14–15 (DMS-155). From the report view, the officer selects **Share…**, picks an organisation, confirms the recipient email, a format and a message, and selects **Share**. The server emails the organisation's contact a link to the exported file and records the share. The web then confirms "Shared with UNICEF Sri Lanka (liaison@example.org)".
+
+Admits `dmc_officer` and `duty_officer`, like every endpoint in §14. Sharing reads the stored report and its exports. It never compiles the report again.
+
+The path is the report, not an export, because *Share report* «include»s *Export report*: the officer can share before exporting, and the server makes the export when one is missing (step 3 below).
+
+**Request**
+
+```json
+{
+  "format": "PDF",
+  "organisationId": "66f7c1a2b3c4d5e6f7a8b9d7",
+  "recipientEmail": "liaison@example.org",
+  "message": "Post-event summary"
+}
+```
+
+| Field | Rule |
+|---|---|
+| `format` | Optional, default `PDF`. `PDF` or `CSV` (`ExportFormat`). Anything else → `400` on `format`: "must be one of [PDF, CSV]". |
+| `organisationId` | **Required.** The id of an organisation (§10.1). Not a valid id → `400` on `organisationId`. A valid id that no organisation has → `404 NOT_FOUND`. |
+| `recipientEmail` | **Required.** A valid email address, up to 254 characters, trimmed. The web pre-fills it with the organisation's `contactEmail` (§10.1) when it has one, and the officer can change it. |
+| `message` | Optional, default `Post-event summary`. Trimmed, 1–500 characters. A blank message → `400` on `message`. It is printed in the email body. |
+
+The report is the `:id` in the path. An id that isn't valid, or that no report has, is `404 NOT_FOUND`.
+
+The server then:
+
+1. **Finds** the report (404 if it doesn't exist) and the organisation (404 if it doesn't exist). Both are checked before anything is written, so a mistake here never leaves an export file behind.
+2. **Looks for an export** of this report in the requested `format`. It uses the newest one.
+3. **Include rule:** if the report has no export in that format, it creates one first, exactly as 14.8 does, and shares that. This can fail with `500 EXPORT_FAILED` or `502 STORAGE_UNAVAILABLE` (14.8); nothing is emailed or recorded then.
+4. **Sends the email** to `recipientEmail` through the shared email service (the no-op transport in development and tests, which records it without sending; Brevo in production):
+   - **Subject:** "Post-event report – \<event name\>".
+   - **Body (HTML and text):** the officer's `message`; the event name, hazard type and date range; the name of the officer who shared it; and the link to the exported file (`fileUrl`).
+5. **Records the share** as a `ReportShare { export, organisation, recipientEmail, message, sharedBy, sharedAt, status: SENT }` and returns it.
+
+If the email can't be sent, the answer is `502 EMAIL_UNAVAILABLE`. Recording that failure as a `FAILED` share, and retrying it, belong to E4 (DMS-162) and are added to this section by that ticket. The export and its file are kept either way.
+
+Every successful request creates a **new** share, even to an organisation and email already shared with. The existing export is reused, not re-made.
+
+**Success — `201 Created`**
+
+```json
+{
+  "success": true,
+  "data": {
+    "shareId": "66fc5d3e4f5a6b7c8d9e0a01",
+    "exportId": "66fc5b2c3d4e5f6a7b8c9f01",
+    "format": "PDF",
+    "fileUrl": "https://<project>.supabase.co/storage/v1/object/public/<bucket>/reports/0b6f3c1e-1d7a-4f4e-9a52-6c2f1e8d4b10.pdf",
+    "organisation": { "id": "66f7c1a2b3c4d5e6f7a8b9d7", "name": "UNICEF Sri Lanka" },
+    "recipientEmail": "liaison@example.org",
+    "message": "Post-event summary",
+    "sharedBy": { "id": "64f1a2b3c4d5e6f7a8b9c0d5", "name": "Kasun Silva" },
+    "sharedAt": "2026-10-07T09:45:00.000Z",
+    "status": "SENT"
+  }
+}
+```
+
+| Field | Type | Notes |
+|---|---|---|
+| `shareId` | string | The `ReportShare`'s id. |
+| `exportId` | string | The export whose file was sent. It is a new one when the include rule made it. |
+| `format` | `PDF` or `CSV` | The format of that export. |
+| `fileUrl` | string | The link the email carries. |
+| `organisation` | `{ id, name }` | Who the report was sent to. |
+| `recipientEmail` | string | As requested, trimmed. |
+| `message` | string | As requested, or the default. |
+| `sharedBy` | `{ id, name }` | The officer who shared it. |
+| `sharedAt` | ISO 8601 string | When the share was recorded. |
+| `status` | `ShareStatus` | `SENT` here. `ShareStatus` also has `FAILED` (E4, DMS-162). |
+
+**Failure — `400 Bad Request`** (a field failed its rule)
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "Request validation failed.",
+    "errors": [{ "field": "recipientEmail", "message": "must be a valid email" }]
+  }
+}
+```
+
+**Failure — `404 Not Found`** (no organisation has this id)
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "Organisation not found."
+  }
+}
+```
+
+| Status | Code | When |
+|---|---|---|
+| `400` | `VALIDATION_ERROR` | A body field failed its rule. Carries `errors`, one entry per field. |
+| `401` | `AUTH_HEADER_MISSING`, `AUTH_HEADER_MALFORMED`, `TOKEN_EXPIRED`, `TOKEN_INVALID` | As in 14.6. |
+| `403` | `FORBIDDEN` | The caller isn't a `dmc_officer` or `duty_officer`. |
+| `404` | `NOT_FOUND` | No report has this id, or the id isn't valid; or no organisation has `organisationId`. |
+| `500` | `EXPORT_FAILED` | The include rule had to make an export and the exporter couldn't write the file (14.8). Nothing is emailed or recorded. |
+| `502` | `STORAGE_UNAVAILABLE` | The include rule had to make an export and storage failed (14.8). Nothing is emailed or recorded. |
+| `502` | `EMAIL_UNAVAILABLE` | The email provider failed or was unreachable (E4, DMS-162). The export is kept. |
+| `500` | `INTERNAL_ERROR` | Any other unhandled server-side failure. |
+
+Checked by TC-24–TC-28 (DMS-155).
+
+### 14.10 A report's shares — `GET /api/post-event-reports/:id/shares`
+
+UC04 step 15 (DMS-155). The report view lists who the report has been shared with, newest first, with each share's status. Admits `dmc_officer` and `duty_officer`. **Request:** no body, no query.
+
+**Success — `200 OK`**
+
+```json
+{
+  "success": true,
+  "data": {
+    "shares": [
+      {
+        "shareId": "66fc5d3e4f5a6b7c8d9e0a01",
+        "exportId": "66fc5b2c3d4e5f6a7b8c9f01",
+        "format": "PDF",
+        "fileUrl": "https://<project>.supabase.co/storage/v1/object/public/<bucket>/reports/0b6f3c1e-1d7a-4f4e-9a52-6c2f1e8d4b10.pdf",
+        "organisation": { "id": "66f7c1a2b3c4d5e6f7a8b9d7", "name": "UNICEF Sri Lanka" },
+        "recipientEmail": "liaison@example.org",
+        "message": "Post-event summary",
+        "sharedBy": { "id": "64f1a2b3c4d5e6f7a8b9c0d5", "name": "Kasun Silva" },
+        "sharedAt": "2026-10-07T09:45:00.000Z",
+        "status": "SENT"
+      }
+    ]
+  }
+}
+```
+
+Each row is the share object from 14.9. A report nobody has shared returns `"shares": []`. No pagination.
+
+**Failure:** `401`, `403` and `404 NOT_FOUND` (no report has this id, or the id isn't valid), as in 14.6.
 
 ---
 
