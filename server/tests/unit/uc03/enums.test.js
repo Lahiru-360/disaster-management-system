@@ -4,7 +4,8 @@ import { ShelterStatus } from '../../../src/enums/ShelterStatus.js';
 import { SupplyType } from '../../../src/enums/SupplyType.js';
 import { TeamStatus } from '../../../src/enums/TeamStatus.js';
 
-// The values must match the UC03 class diagram exactly, in its order.
+// The values must match the UC03 class diagram exactly, in its order; UNASSIGNED
+// is the one addition (E3, deviation log).
 describe('UC03 enums', () => {
   it.each([
     ['ShelterStatus', ShelterStatus, ['AVAILABLE', 'FILLING_UP', 'NEAR_CAPACITY', 'FULL']],
@@ -12,7 +13,15 @@ describe('UC03 enums', () => {
     [
       'DispatchStatus',
       DispatchStatus,
-      ['ASSIGNED', 'ACKNOWLEDGED', 'ON_SITE', 'COMPLETED', 'DECLINED', 'UNRESPONSIVE'],
+      [
+        'ASSIGNED',
+        'ACKNOWLEDGED',
+        'ON_SITE',
+        'COMPLETED',
+        'DECLINED',
+        'UNRESPONSIVE',
+        'UNASSIGNED',
+      ],
     ],
     ['Priority', Priority, ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']],
     ['SupplyType', SupplyType, ['FOOD', 'WATER', 'MEDICINE', 'BLANKETS', 'HYGIENE_KITS']],

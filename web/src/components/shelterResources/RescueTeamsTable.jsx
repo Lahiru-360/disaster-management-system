@@ -1,3 +1,4 @@
+import Button from '../ui/Button';
 import DataTable from '../ui/DataTable';
 import EmptyState from '../ui/EmptyState';
 import StatusBadge from '../ui/StatusBadge';
@@ -17,7 +18,9 @@ const STATUS_LABELS = {
 };
 
 // Step 2's Rescue Teams table: name, organisation, base location, status and
-// the current task (the open dispatch's priority and location, or none).
+// the current task (the open dispatch's priority and location, or none). An
+// UNAVAILABLE team (E4: it never answered) has a Mark available button when
+// `onMarkAvailable` is given; `busyId` is the team being marked.
 const COLUMNS = [
   { key: 'name', header: 'Team' },
   { key: 'organisation', header: 'Organisation', render: (row) => row.organisation.name },
@@ -43,10 +46,32 @@ const COLUMNS = [
   },
 ];
 
-export default function RescueTeamsTable({ teams }) {
+export default function RescueTeamsTable({ teams, onMarkAvailable, busyId = null }) {
+  const columns = onMarkAvailable
+    ? [
+        ...COLUMNS,
+        {
+          key: 'actions',
+          header: <span className="sr-only">Actions</span>,
+          render: (row) =>
+            row.status === 'UNAVAILABLE' ? (
+              <Button
+                variant="small"
+                fullWidth={false}
+                loading={busyId === row.id}
+                disabled={busyId !== null}
+                onClick={() => onMarkAvailable(row)}
+              >
+                Mark available
+              </Button>
+            ) : null,
+        },
+      ]
+    : COLUMNS;
+
   return (
     <DataTable
-      columns={COLUMNS}
+      columns={columns}
       rows={teams}
       emptyState={
         <EmptyState

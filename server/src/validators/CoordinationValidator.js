@@ -44,17 +44,35 @@ export class CoordinationValidator {
       }),
   });
 
+  // The incident an officer dispatches a team to, or queues (§13.7.2, §13.9.1).
+  static #incidentLocation = Joi.object({
+    lat: Joi.number().strict().min(-90).max(90).required(),
+    lng: Joi.number().strict().min(-180).max(180).required(),
+    label: Joi.string().trim().max(200).allow(null),
+  }).required();
+
+  static #priority = Joi.string()
+    .valid(...Object.values(Priority))
+    .required();
+
   // UC03 steps 8-9 (§13.7.2).
   static dispatchBody = Joi.object({
     teamId: objectId.required(),
-    incidentLocation: Joi.object({
-      lat: Joi.number().strict().min(-90).max(90).required(),
-      lng: Joi.number().strict().min(-180).max(180).required(),
-      label: Joi.string().trim().max(200).allow(null),
-    }).required(),
-    priority: Joi.string()
-      .valid(...Object.values(Priority))
-      .required(),
+    incidentLocation: CoordinationValidator.#incidentLocation,
+    priority: CoordinationValidator.#priority,
+  });
+
+  // UC03 E3 (§13.9.1): no team is free, so the incident is queued. Support
+  // from the DMC is asked for unless the officer says otherwise.
+  static unassignedBody = Joi.object({
+    incidentLocation: CoordinationValidator.#incidentLocation,
+    priority: CoordinationValidator.#priority,
+    supportRequested: Joi.boolean().strict().default(true),
+  });
+
+  // UC03 E3 (§13.9.2): the team that takes a queued incident.
+  static assignBody = Joi.object({
+    teamId: objectId.required(),
   });
 
   // UC03 A3.1 (§13.8): why the lead turns the assignment down.
@@ -134,6 +152,12 @@ export class CoordinationValidator {
       'number.min': 'must be a whole number, 1 or more',
       'number.infinity': 'must be a whole number, 1 or more',
     }),
+  });
+
+  // UC03 A2.3 (§13.4.4): the shelter new arrivals are sent to. Whether it is
+  // another shelter of the same district, and has space, is the service's call.
+  static redirectBody = Joi.object({
+    toShelterId: objectId.required().messages({ 'any.required': '{#label} is required' }),
   });
 
   // UC03 E1: a whole number of people, 0 or more (an empty shelter). A JSON

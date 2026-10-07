@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import { Shelter } from '../domain/coordination/Shelter.js';
+import { ShelterStatus } from '../enums/ShelterStatus.js';
 
 // Turns UC03 documents into the objects the contract defines (§13.2), so
 // every coordination endpoint returns the same shapes. Expects documents with
@@ -27,6 +28,13 @@ export class CoordinationPresenter {
     { path: 'loggedBy', select: 'name' },
   ];
 
+  static REDIRECT_POPULATE = [
+    { path: 'from', select: 'name' },
+    { path: 'to', select: 'name' },
+    { path: 'district', select: 'name' },
+    { path: 'by', select: 'name' },
+  ];
+
   static DISPATCH_POPULATE = [
     {
       path: 'team',
@@ -43,9 +51,11 @@ export class CoordinationPresenter {
    * The contract's shelter object: district as { id, name }, plus the rate
    * and status from the Shelter domain class.
    * @param {object} doc A Shelter document, district populated.
+   * @param {{ id: string, name: string }|null} [redirectingTo] The target of the latest
+   *   redirect from this shelter. Shown only while the shelter is NEAR_CAPACITY or FULL.
    * @returns {object}
    */
-  static shelter(doc) {
+  static shelter(doc, redirectingTo = null) {
     const json = doc.toJSON();
     const shelter = Shelter.fromDocument(doc);
     return {
@@ -57,10 +67,29 @@ export class CoordinationPresenter {
       currentOccupancy: json.currentOccupancy,
       rate: shelter.occupancyRate(),
       status: shelter.status(),
-      // Set by redirects (DMS-145); none exist before that story.
-      redirectingTo: null,
+      redirectingTo: [ShelterStatus.NEAR_CAPACITY, ShelterStatus.FULL].includes(shelter.status())
+        ? redirectingTo
+        : null,
       createdAt: json.createdAt,
       updatedAt: json.updatedAt,
+    };
+  }
+
+  /**
+   * The contract's redirect record (§13.4.4): the two shelters, the district
+   * and the officer as { id, name }.
+   * @param {object} doc A ShelterRedirect document, from, to, district and by populated.
+   * @returns {object}
+   */
+  static redirect(doc) {
+    const json = doc.toJSON();
+    return {
+      id: String(json.id),
+      from: CoordinationPresenter.reference(json.from, ['name']),
+      to: CoordinationPresenter.reference(json.to, ['name']),
+      district: CoordinationPresenter.reference(json.district, ['name']),
+      by: CoordinationPresenter.reference(json.by, ['name']),
+      at: json.at,
     };
   }
 

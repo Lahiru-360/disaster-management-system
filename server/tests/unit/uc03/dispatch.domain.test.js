@@ -99,6 +99,90 @@ describe('Dispatch state machine', () => {
   });
 });
 
+describe('Dispatch E3 assign', () => {
+  const DEADLINE = new Date('2026-10-03T09:37:10.000Z');
+
+  const queued = () =>
+    dispatch(DispatchStatus.UNASSIGNED, {
+      ackDeadline: null,
+      supportRequested: true,
+      statusHistory: [
+        { status: DispatchStatus.UNASSIGNED, at: new Date('2026-10-03T09:30:00Z'), by: LEAD },
+      ],
+    });
+
+  it('TC-52: E3 assign moves UNASSIGNED to ASSIGNED, takes the team and the new deadline', () => {
+    const built = queued();
+
+    expect(built.assign('team-1', DEADLINE, LEAD, AT)).toEqual({
+      teamStatus: TeamStatus.DISPATCHED,
+    });
+    expect(built.status).toBe(DispatchStatus.ASSIGNED);
+    expect(built.team).toBe('team-1');
+    expect(built.ackDeadline).toEqual(DEADLINE);
+    expect(built.statusHistory.map((entry) => entry.status)).toEqual([
+      DispatchStatus.UNASSIGNED,
+      DispatchStatus.ASSIGNED,
+    ]);
+    expect(built.statusHistory[1]).toEqual({ status: DispatchStatus.ASSIGNED, at: AT, by: LEAD });
+  });
+
+  it('E3: a queued dispatch has no team or deadline, and remembers the support request', () => {
+    const built = queued();
+
+    expect(built.team).toBeNull();
+    expect(built.ackDeadline).toBeNull();
+    expect(built.supportRequested).toBe(true);
+    expect(dispatch(DispatchStatus.UNASSIGNED).supportRequested).toBe(false);
+  });
+
+  it('E3: an unassigned dispatch can only be assigned', () => {
+    const built = queued();
+
+    expect(built.can('assign')).toBe(true);
+    for (const action of ['acknowledge', 'decline', 'markOnSite', 'complete']) {
+      expect(built.can(action)).toBe(false);
+    }
+  });
+
+  it.each(Object.values(DispatchStatus).filter((s) => s !== DispatchStatus.UNASSIGNED))(
+    'TC-24: E3 assign from %s is refused with 409 and changes nothing',
+    (from) => {
+      const built = dispatch(from, { team: 'team-1' });
+
+      expect(() => built.assign('team-2', DEADLINE, LEAD, AT)).toThrow(
+        new InvalidDispatchTransitionError(from, 'assigned a team'),
+      );
+      expect(built.status).toBe(from);
+      expect(built.team).toBe('team-1');
+      expect(built.ackDeadline).toBeNull();
+      expect(built.statusHistory).toEqual([]);
+    },
+  );
+
+  it.each([
+    ['a team', [null, DEADLINE]],
+    ['a deadline', ['team-1', null]],
+  ])('E3: assign needs %s and changes nothing without it', (_name, [team, deadline]) => {
+    const built = queued();
+
+    expect(() => built.assign(team, deadline, LEAD, AT)).toThrow(/needs a/);
+    expect(built.status).toBe(DispatchStatus.UNASSIGNED);
+    expect(built.team).toBeNull();
+  });
+
+  it('E3: an assigned dispatch carries on to COMPLETED like any other', () => {
+    const built = queued();
+
+    built.assign('team-1', DEADLINE, LEAD, AT);
+    built.acknowledge(LEAD, AT);
+    built.markOnSite(LEAD, AT);
+    built.complete(LEAD, AT);
+
+    expect(built.status).toBe(DispatchStatus.COMPLETED);
+  });
+});
+
 describe('Dispatch construction', () => {
   it('Domain: keeps its details', () => {
     const built = dispatch(DispatchStatus.ASSIGNED, {

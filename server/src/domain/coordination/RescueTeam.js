@@ -1,4 +1,5 @@
 import { TeamStatus } from '../../enums/TeamStatus.js';
+import { InvalidTeamTransitionError } from './InvalidTeamTransitionError.js';
 
 // A rescue team an Organisation owns (UC03), dispatched to incidents in its
 // district.
@@ -93,5 +94,22 @@ export class RescueTeam {
    */
   isAvailable() {
     return this.#status === TeamStatus.AVAILABLE;
+  }
+
+  /**
+   * UC03 E4: an officer puts a team back in the available list. Only an
+   * UNAVAILABLE team (it missed its acknowledgement deadline) moves; one that
+   * is already AVAILABLE stays as it is. A DISPATCHED or ON_SITE team is out on
+   * a dispatch and becomes available when that is completed, not by hand.
+   * @returns {{ teamStatus: string|null }} The new status, or null when nothing changes.
+   * @throws {InvalidTeamTransitionError} From DISPATCHED or ON_SITE.
+   */
+  markAvailable() {
+    if (this.#status === TeamStatus.AVAILABLE) return { teamStatus: null };
+    if (this.#status !== TeamStatus.UNAVAILABLE) {
+      throw new InvalidTeamTransitionError(this.#name, this.#status);
+    }
+    this.#status = TeamStatus.AVAILABLE;
+    return { teamStatus: TeamStatus.AVAILABLE };
   }
 }

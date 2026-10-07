@@ -2597,7 +2597,7 @@ A shelter has **spare capacity** when its status is `AVAILABLE` or `FILLING_UP`,
 | `currentOccupancy` | integer | 0 or more. It may exceed `capacity`: nobody is turned away by the software, and the shelter shows as `FULL`. |
 | `rate` | number | `currentOccupancy / capacity`, unrounded, e.g. `0.92`, or `1.05` over capacity. Show `status` as given rather than recomputing it from a rounded percentage. |
 | `status` | `ShelterStatus` | Derived from `rate` by the table above. |
-| `redirectingTo` | reference or `null` | The shelter new arrivals are redirected to (13.4.4). Only set while this shelter is `NEAR_CAPACITY` or `FULL`. |
+| `redirectingTo` | `{ id, name }` or `null` | The shelter new arrivals are redirected to: the target of the latest redirect from this shelter (13.4.4). Shown only while this shelter is `NEAR_CAPACITY` or `FULL`, so it goes back to `null` by itself once an update brings the shelter below 90%; nothing needs to clear it. |
 
 #### The rescue team object
 
@@ -2834,7 +2834,11 @@ UC03 main flow steps 3–5 (DMS-141), with A2 (DMS-145), E1 (DMS-147) and E2 (DM
    | 500 | 1 | `FULL` |
    | 505 | 1.01 | `FULL` |
 
-3. **A2:** when the status is now `NEAR_CAPACITY` or `FULL`, the shelter is **flagged** and the response suggests the nearest other shelter in the same district with spare capacity, by distance between the shelters' locations.
+3. **A2:** when the status is now `NEAR_CAPACITY` or `FULL`, the shelter is **flagged** and the response suggests the nearest other shelter in the same district with **spare capacity**.
+   - *Spare capacity* means a status of `AVAILABLE` or `FILLING_UP`, that is, below 90%. It is the same rule that 13.4.4 applies when the officer redirects.
+   - *Nearest* is the straight-line (haversine) distance between the two shelters' `location` points. The shelter itself is never suggested, and neither is a shelter in another district. A tie is broken by name.
+   - The suggestion is only a suggestion: nothing is stored until the officer redirects (13.4.4).
+   - An update that leaves the shelter below 90% is not flagged, has no suggestion, and ends any redirect from it (see `redirectingTo` in 13.2).
 4. **E2:** when no other shelter in the district has spare capacity, there is no suggestion and every DMC officer is notified (13.12). For each district this alert is sent at most once an hour while the condition lasts, and again if space became available in between.
 
 **Success — `200 OK`** (main flow: 380 of 500, not flagged)
@@ -3038,6 +3042,13 @@ UC03 A2.3 (DMS-145). Records that new arrivals at shelter `:id` are sent to anot
 |---|---|
 | `toShelterId` | Required. Another shelter in the same district, not `:id` itself. |
 
+**Behaviour**
+1. Both shelters must be in the officer's own district, and the district must have an `ACTIVE` incident (13.1).
+2. The target must have **spare capacity at that moment**: a status of `AVAILABLE` or `FILLING_UP`, below 90% (the same meaning as in 13.4.2). It may have filled up since the suggestion was made; then nothing is stored (`409 SHELTER_NO_SPACE`).
+3. A redirect record is stored (below). A later redirect from the same shelter replaces the earlier one as the current redirect; the older records stay as history.
+4. `:id` shows the target as `redirectingTo` (13.2) while it is `NEAR_CAPACITY` or `FULL`. The shelter does not have to be flagged for the redirect to be stored, but it is only shown while it is.
+5. Nothing else changes: neither shelter's occupancy, and no occupancy record.
+
 **Success — `201 Created`**
 
 ```json
@@ -3068,7 +3079,26 @@ UC03 A2.3 (DMS-145). Records that new arrivals at shelter `:id` are sent to anot
 }
 ```
 
-Also `400 VALIDATION_ERROR` on `toShelterId` (missing, the same shelter, or a shelter in another district), `403 FORBIDDEN`, `404 NOT_FOUND` and `409 NO_ACTIVE_INCIDENT`.
+**The redirect record.** Each successful redirect stores one record; a refused one stores none. UC03 has no endpoint that lists them.
+
+| Field | Type | Notes |
+|---|---|---|
+| `from` | shelter id | The shelter whose new arrivals are sent away (`:id`). |
+| `to` | shelter id | The receiving shelter. |
+| `district` | district id | The district both shelters are in. |
+| `by` | user id | The district officer who redirected. |
+| `at` | date | When it was stored. |
+
+Records are indexed by `{ from, at }`.
+
+| Status | Code | When |
+|---|---|---|
+| `400` | `VALIDATION_ERROR` | `toShelterId` missing or malformed, the same shelter as `:id`, or a shelter in another district. Carries `errors` on `toShelterId`. |
+| `401` | `AUTH_HEADER_MISSING`, `AUTH_HEADER_MALFORMED`, `TOKEN_EXPIRED`, `TOKEN_INVALID` | As in 13.13. |
+| `403` | `FORBIDDEN` | The caller isn't a `district_officer`, or `:id` is in another district. |
+| `404` | `NOT_FOUND` | No shelter has `:id`, or none has `toShelterId` (a well-formed id of no shelter). |
+| `409` | `NO_ACTIVE_INCIDENT` | The officer's district has no `ACTIVE` hazard event. |
+| `409` | `SHELTER_NO_SPACE` | The target is `NEAR_CAPACITY` or `FULL`. |
 
 ### 13.5 List rescue teams — `GET /api/rescue-teams`
 
