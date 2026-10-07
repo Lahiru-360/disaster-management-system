@@ -16,6 +16,12 @@ export class RescueTeamController extends BaseController {
 
     ApiResponse.success(res, { teams }, 200);
   }
+
+  async markAvailable(req, res) {
+    const team = await this.#rescueTeamService.markAvailable(req.user, req.params.id);
+
+    ApiResponse.success(res, { team }, 200);
+  }
 }
 
 export const rescueTeamController = new RescueTeamController();
