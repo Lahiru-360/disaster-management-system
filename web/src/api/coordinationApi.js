@@ -30,6 +30,18 @@ async function listShelters({ districtId } = {}) {
 }
 
 /**
+ * `POST /api/shelters` (§13.4.3, A1) - registers a new shelter in the officer's
+ * own district, empty and AVAILABLE. Resolves with the new shelter. A capacity
+ * that isn't a whole number of 1 or more, or a missing name or location, rejects
+ * with 400 VALIDATION_ERROR; a name already used in the district (ignoring case
+ * and surrounding spaces) with 409 SHELTER_NAME_TAKEN.
+ */
+async function registerShelter({ name, location, capacity }) {
+  const response = await client.post('/shelters', { name, location, capacity });
+  return response.data.data.shelter;
+}
+
+/**
  * `PATCH /api/shelters/:id/occupancy` (§13.4.2, steps 3-5) - sets how many
  * people are in the shelter. Resolves with `{ shelter, rate, status, flagged,
  * alternateShelter, dmcAlerted }`. A value that isn't a whole number, 0 or more
@@ -120,6 +132,7 @@ async function listRescueTeams({ districtId } = {}) {
 export default {
   getOperationalPicture,
   listShelters,
+  registerShelter,
   updateOccupancy,
   listStock,
   logDistribution,
