@@ -13,6 +13,7 @@ import { District } from '../src/models/District.js';
 import { HazardAlert } from '../src/models/HazardAlert.js';
 import { HazardEvent } from '../src/models/HazardEvent.js';
 import { Notification } from '../src/models/Notification.js';
+import { OccupancyRecord } from '../src/models/OccupancyRecord.js';
 import { Organisation } from '../src/models/Organisation.js';
 import { PostEventReport } from '../src/models/PostEventReport.js';
 import { ReliefStock } from '../src/models/ReliefStock.js';
@@ -21,7 +22,6 @@ import { Shelter } from '../src/models/Shelter.js';
 import { SupplyDistribution } from '../src/models/SupplyDistribution.js';
 import { User } from '../src/models/User.js';
 import { ReferenceNumberGenerator } from '../src/services/ReferenceNumberGenerator.js';
-import { OccupancyRecordRepository } from '../src/services/reports/repositories/OccupancyRecordRepository.js';
 import { Seeder } from './Seeder.js';
 
 // UC04 demo data: the history of the CLOSED "Kelani basin floods" event (8-20
@@ -36,10 +36,6 @@ import { Seeder } from './Seeder.js';
 // empties; the history is reference data, like the event itself. Expects an
 // open connection and the districts, people, organisations, hazard events and
 // UC03 data already seeded - DatabaseSeeder owns both.
-//
-// FALLBACK (X-3): the OccupancyRecord model (DMS-141.2) is not on develop yet,
-// so occupancy records are written to its collection directly, in the frozen
-// §13.4.2 shape. Create them through the model once it merges (Check #275).
 export class Uc04Seeder extends Seeder {
   static #EVENT = 'Kelani basin floods';
 
@@ -359,7 +355,6 @@ export class Uc04Seeder extends Seeder {
     return shelters;
   }
 
-  // FALLBACK (X-3): straight into the collection, in the frozen §13.4.2 shape.
   static async #seedOccupancy(shelters, recordedBy) {
     const operations = Object.values(shelters)
       .flat()
@@ -372,6 +367,11 @@ export class Uc04Seeder extends Seeder {
                 filter: { shelter: shelter.id, recordedAt },
                 update: {
                   $setOnInsert: {
+                    _id: Uc04Seeder.#idFor(
+                      'occupancy',
+                      String(shelter.id),
+                      recordedAt.toISOString(),
+                    ),
                     district: shelter.district,
                     occupants: Math.round(shelter.peak * level * share),
                     capacity: shelter.capacity,
@@ -384,9 +384,7 @@ export class Uc04Seeder extends Seeder {
           }),
         ),
       );
-    await mongoose.connection
-      .collection(OccupancyRecordRepository.COLLECTION)
-      .bulkWrite(operations, { ordered: false });
+    await OccupancyRecord.bulkWrite(operations, { ordered: false });
     return operations.length;
   }
 

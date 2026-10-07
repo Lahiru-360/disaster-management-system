@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router';
 
 import { hazardAlertsApi } from '../../api';
+import PartialDeliveryPanel from '../../components/hazardWarnings/PartialDeliveryPanel';
+import UnreachedCitizensDialog from '../../components/hazardWarnings/UnreachedCitizensDialog';
 import Button from '../../components/ui/Button';
 import Card from '../../components/ui/Card';
 import DataTable from '../../components/ui/DataTable';
@@ -34,8 +36,10 @@ const errorMessage = (error, fallback) => error?.response?.data?.error?.message 
 
 // UC01 step 14 (§5.2): sent, delivered and failed per channel for one alert.
 // Opened straight after a broadcast, which hands over its { alert, summary }
-// in the router state, or at any time from its URL. Update warning (A2) and
-// Issue All-Clear (A3) lead on to DMS-123 and DMS-124.
+// in the router state, or at any time from its URL. Below the counts, the
+// partial-delivery block (E3) shows the SMS fallback's results and opens the
+// list of citizens not reached. Update warning (A2) and Issue All-Clear (A3)
+// lead on to DMS-123 and DMS-124.
 export default function DeliverySummaryScreen() {
   const { id } = useParams();
   const { state } = useLocation();
@@ -46,6 +50,12 @@ export default function DeliverySummaryScreen() {
   const handedOver = state?.alert?.id === id ? state : null;
   const [result, setResult] = useState(handedOver);
   const [loadError, setLoadError] = useState(null);
+  const [unreached, setUnreached] = useState({
+    open: false,
+    result: null,
+    loading: false,
+    error: null,
+  });
 
   useEffect(() => {
     if (!canIssue || handedOver) return undefined;
@@ -60,6 +70,20 @@ export default function DeliverySummaryScreen() {
       current = false;
     };
   }, [canIssue, handedOver, id]);
+
+  // E3.3: opens the list at page 1, or moves to another page.
+  const loadUnreached = (page) => {
+    setUnreached((current) => ({ ...current, open: true, loading: true, error: null }));
+    hazardAlertsApi.getUnreached(id, { page }).then(
+      (loaded) => setUnreached((current) => ({ ...current, result: loaded, loading: false })),
+      (error) =>
+        setUnreached((current) => ({
+          ...current,
+          loading: false,
+          error: errorMessage(error, 'The list could not be loaded. Try again.'),
+        })),
+    );
+  };
 
   if (!canIssue) {
     return (
@@ -115,7 +139,23 @@ export default function DeliverySummaryScreen() {
           rows={summary.perChannel}
           rowKey={(row) => row.channel}
         />
+        <PartialDeliveryPanel
+          className="mt-4"
+          fallback={summary.fallback}
+          unreachedCount={summary.unreachedCount}
+          onViewList={() => loadUnreached(1)}
+        />
       </Card>
+
+      <UnreachedCitizensDialog
+        open={unreached.open}
+        referenceNo={alert.referenceNo}
+        result={unreached.result}
+        loading={unreached.loading}
+        error={unreached.error}
+        onPage={loadUnreached}
+        onClose={() => setUnreached({ open: false, result: null, loading: false, error: null })}
+      />
 
       <Card className="mt-6 flex flex-wrap items-center gap-3">
         {active ? (

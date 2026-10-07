@@ -17,17 +17,17 @@ const cases = [
 ];
 
 describe.each(cases)('%s', (name, enumObject, expectedValues) => {
-  it(`DMS-120: holds exactly the class diagram's ${name} values`, () => {
+  it(`Domain: holds exactly the class diagram's ${name} values`, () => {
     expect(Object.values(enumObject)).toEqual(expectedValues);
   });
 
-  it(`DMS-120: maps each ${name} key to the same string`, () => {
+  it(`Domain: maps each ${name} key to the same string`, () => {
     for (const [key, value] of Object.entries(enumObject)) {
       expect(value).toBe(key);
     }
   });
 
-  it(`DMS-120: ${name} is frozen`, () => {
+  it(`Domain: ${name} is frozen`, () => {
     expect(Object.isFrozen(enumObject)).toBe(true);
   });
 });

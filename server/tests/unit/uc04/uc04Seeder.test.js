@@ -1,5 +1,4 @@
 import { jest } from '@jest/globals';
-import mongoose from 'mongoose';
 import { DistrictSeeder } from '../../../scripts/DistrictSeeder.js';
 import { HazardEventSeeder } from '../../../scripts/HazardEventSeeder.js';
 import { OrganisationSeeder } from '../../../scripts/OrganisationSeeder.js';
@@ -12,13 +11,13 @@ import { District } from '../../../src/models/District.js';
 import { HazardAlert } from '../../../src/models/HazardAlert.js';
 import { HazardEvent } from '../../../src/models/HazardEvent.js';
 import { Notification } from '../../../src/models/Notification.js';
+import { OccupancyRecord } from '../../../src/models/OccupancyRecord.js';
 import { PostEventReport } from '../../../src/models/PostEventReport.js';
 import { ReliefStock } from '../../../src/models/ReliefStock.js';
 import { Shelter } from '../../../src/models/Shelter.js';
 import { SupplyDistribution } from '../../../src/models/SupplyDistribution.js';
 import { User } from '../../../src/models/User.js';
 import { ReferenceNumberGenerator } from '../../../src/services/ReferenceNumberGenerator.js';
-import { OccupancyRecordRepository } from '../../../src/services/reports/repositories/OccupancyRecordRepository.js';
 import { AlertTimelineSection } from '../../../src/services/reports/sections/AlertTimelineSection.js';
 import { CitizensReachedSection } from '../../../src/services/reports/sections/CitizensReachedSection.js';
 import { OccupancyOverTimeSection } from '../../../src/services/reports/sections/OccupancyOverTimeSection.js';
@@ -27,8 +26,6 @@ import { ResourceDistributionSection } from '../../../src/services/reports/secti
 // The Kelani basin floods history (DMS-153.7) that the post-event report is
 // generated from, checked through the four real report sections.
 jest.setTimeout(120000);
-
-const occupancyRecords = () => mongoose.connection.collection(OccupancyRecordRepository.COLLECTION);
 
 const seedPrerequisites = async () => {
   await new DistrictSeeder().run();
@@ -56,7 +53,7 @@ const kelaniContext = async () => {
 const counts = async () => ({
   alerts: await HazardAlert.countDocuments(),
   deliveries: await Notification.countDocuments(),
-  occupancy: await occupancyRecords().countDocuments(),
+  occupancy: await OccupancyRecord.countDocuments(),
   distributions: await SupplyDistribution.countDocuments(),
   shelters: await Shelter.countDocuments(),
   stock: await ReliefStock.countDocuments(),
@@ -207,10 +204,11 @@ describe('Uc04Seeder', () => {
 
     expect(await counts()).toEqual(first);
     expect(first).toEqual(
-      // UC03 adds five September distributions of its own.
+      // UC03 adds five September distributions of its own, and five occupancy
+      // records for each of its five Gampaha shelters.
       expect.objectContaining({
         alerts: 14,
-        occupancy: 10 * 11 * 3,
+        occupancy: 10 * 11 * 3 + 5 * 5,
         distributions: 3 * 4 * 13 + 5,
       }),
     );

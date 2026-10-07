@@ -5,6 +5,7 @@ import morgan from 'morgan';
 import { ErrorHandler } from '../middleware/ErrorHandler.js';
 import { areaRoutes } from '../routes/AreaRoutes.js';
 import { authRoutes } from '../routes/AuthRoutes.js';
+import { dispatchRoutes } from '../routes/DispatchRoutes.js';
 import { hazardAlertRoutes } from '../routes/HazardAlertRoutes.js';
 import { hazardEventRoutes } from '../routes/HazardEventRoutes.js';
 import { hazardReportRoutes } from '../routes/HazardReportRoutes.js';
@@ -14,8 +15,10 @@ import { operationalPictureRoutes } from '../routes/OperationalPictureRoutes.js'
 import { organisationRoutes } from '../routes/OrganisationRoutes.js';
 import { placeRoutes } from '../routes/PlaceRoutes.js';
 import { postEventReportRoutes } from '../routes/PostEventReportRoutes.js';
+import { reliefStockRoutes } from '../routes/ReliefStockRoutes.js';
 import { rescueTeamRoutes } from '../routes/RescueTeamRoutes.js';
 import { shelterRoutes } from '../routes/ShelterRoutes.js';
+import { supplyDistributionRoutes } from '../routes/SupplyDistributionRoutes.js';
 import { uploadRoutes } from '../routes/UploadRoutes.js';
 
 // Builds the Express application: global middleware first, then every route
@@ -40,6 +43,9 @@ export class App {
       shelterRoutes,
       rescueTeamRoutes,
       postEventReportRoutes,
+      dispatchRoutes,
+      reliefStockRoutes,
+      supplyDistributionRoutes,
     ],
   ) {
     this.#registerMiddleware();

@@ -73,6 +73,26 @@ export class MessageTemplate {
     return `UPDATE: ${MessageTemplate.#label(hazardType)} Warning now ${severity}. ${action}`;
   }
 
+  /**
+   * The inbox heading for an all-clear (A3.2), e.g. "Flood Warning: ALL CLEAR".
+   * @param {string} hazardType An AlertHazardType.
+   * @returns {string}
+   */
+  static allClearTitle(hazardType) {
+    return `${MessageTemplate.#label(hazardType)} Warning: ALL CLEAR`;
+  }
+
+  /**
+   * The all-clear message (A3.2), e.g. "ALL CLEAR: The Flood warning has
+   * ended. It is now safe, but follow official guidance.", at most 160
+   * characters. It isn't editable: the officer only confirms it.
+   * @param {string} hazardType An AlertHazardType.
+   * @returns {string}
+   */
+  static allClear(hazardType) {
+    return `ALL CLEAR: The ${MessageTemplate.#label(hazardType)} warning has ended. It is now safe, but follow official guidance.`;
+  }
+
   static #label(hazardType) {
     const label = MessageTemplate.#LABELS[hazardType];
     if (!label) {

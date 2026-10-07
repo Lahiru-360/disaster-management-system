@@ -1,20 +1,13 @@
 import mongoose from 'mongoose';
+import { OccupancyRecord as OccupancyRecordModel } from '../../../models/OccupancyRecord.js';
 
 // UC03's shelter occupancy records (§13.4.2), read for occupancy over time.
 // Read-only.
-//
-// FALLBACK (X-3): the OccupancyRecord model (DMS-141.2) is not on develop yet,
-// so this reads its collection directly, using only the frozen §13.4.2 fields.
-// When it merges, query the model instead (Check #275).
 export class OccupancyRecordRepository {
-  static COLLECTION = 'occupancyrecords';
+  #occupancyModel;
 
-  static #FIELDS = { shelter: 1, district: 1, occupants: 1, recordedAt: 1 };
-
-  #connection;
-
-  constructor({ connection = mongoose.connection } = {}) {
-    this.#connection = connection;
+  constructor({ occupancyModel = OccupancyRecordModel } = {}) {
+    this.#occupancyModel = occupancyModel;
   }
 
   /**
@@ -23,16 +16,13 @@ export class OccupancyRecordRepository {
    * @returns {Promise<Array<{ shelter: string, district: string, occupants: number, recordedAt: Date }>>}
    */
   async findInRange({ districtIds, start, end }) {
-    const records = await this.#collection()
+    const records = await this.#occupancyModel
       .find(
-        {
-          district: { $in: OccupancyRecordRepository.#ids(districtIds) },
-          recordedAt: { $gte: start, $lt: end },
-        },
-        { projection: OccupancyRecordRepository.#FIELDS },
+        { district: { $in: districtIds }, recordedAt: { $gte: start, $lt: end } },
+        'shelter district occupants recordedAt',
       )
       .sort({ recordedAt: 1 })
-      .toArray();
+      .lean();
     return records.map(OccupancyRecordRepository.#toRecord);
   }
 
@@ -43,27 +33,18 @@ export class OccupancyRecordRepository {
    * @returns {Promise<Array<{ shelter: string, district: string, occupants: number, recordedAt: Date }>>}
    */
   async findLatestBefore({ districtIds, start }) {
-    const latest = await this.#collection()
-      .aggregate([
-        {
-          $match: {
-            district: { $in: OccupancyRecordRepository.#ids(districtIds) },
-            recordedAt: { $lt: start },
-          },
+    // An aggregate isn't cast by the schema, so the ids are made ObjectIds here.
+    const latest = await this.#occupancyModel.aggregate([
+      {
+        $match: {
+          district: { $in: districtIds.map((id) => new mongoose.Types.ObjectId(String(id))) },
+          recordedAt: { $lt: start },
         },
-        { $sort: { recordedAt: -1 } },
-        { $group: { _id: '$shelter', record: { $first: '$$ROOT' } } },
-      ])
-      .toArray();
+      },
+      { $sort: { recordedAt: -1 } },
+      { $group: { _id: '$shelter', record: { $first: '$$ROOT' } } },
+    ]);
     return latest.map(({ record }) => OccupancyRecordRepository.#toRecord(record));
-  }
-
-  #collection() {
-    return this.#connection.collection(OccupancyRecordRepository.COLLECTION);
-  }
-
-  static #ids(ids) {
-    return ids.map((id) => new mongoose.Types.ObjectId(String(id)));
   }
 
   static #toRecord(record) {

@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import { SupplyType } from '../src/enums/SupplyType.js';
 import { TeamStatus } from '../src/enums/TeamStatus.js';
 import { District } from '../src/models/District.js';
+import { OccupancyRecord } from '../src/models/OccupancyRecord.js';
 import { Organisation } from '../src/models/Organisation.js';
 import { ReliefStock } from '../src/models/ReliefStock.js';
 import { RescueTeam } from '../src/models/RescueTeam.js';
@@ -172,8 +173,20 @@ export class Uc03Seeder extends Seeder {
     },
   ];
 
+  // The shelters filled up over the days before the dashboard's snapshot: each
+  // share is the part of today's occupancy recorded at that evening's update
+  // (Sri Lanka time), ending at today's figure. This is the history UC04's
+  // "occupancy over time" reads, and the last record agrees with the shelter.
+  static #OCCUPANCY_HISTORY = [
+    { share: 0.2, at: '2026-09-29T18:00:00+05:30' },
+    { share: 0.45, at: '2026-09-30T18:00:00+05:30' },
+    { share: 0.7, at: '2026-10-01T18:00:00+05:30' },
+    { share: 0.9, at: '2026-10-02T18:00:00+05:30' },
+    { share: 1, at: '2026-10-03T08:00:00+05:30' },
+  ];
+
   get demoModels() {
-    return [Shelter, RescueTeam, ReliefStock, SupplyDistribution];
+    return [Shelter, OccupancyRecord, RescueTeam, ReliefStock, SupplyDistribution];
   }
 
   async run() {
@@ -193,6 +206,24 @@ export class Uc03Seeder extends Seeder {
         { upsert: true, runValidators: true, returnDocument: 'after' },
       );
       shelters.set(name, shelter._id);
+
+      // A record is matched by its shelter and time, so re-seeding never
+      // duplicates the history, and an officer's later updates are left alone.
+      for (const { share, at } of Uc03Seeder.#OCCUPANCY_HISTORY) {
+        await OccupancyRecord.findOneAndUpdate(
+          { shelter: shelter._id, recordedAt: new Date(at) },
+          {
+            $setOnInsert: {
+              _id: Uc03Seeder.#idFor('occupancy', name, at),
+              district,
+              occupants: Math.round(currentOccupancy * share),
+              capacity,
+              recordedBy: officer,
+            },
+          },
+          { upsert: true, runValidators: true },
+        );
+      }
     }
 
     for (const { name, organisation, memberCount, base, ledByDemoLead } of Uc03Seeder.#TEAMS) {
@@ -255,7 +286,7 @@ export class Uc03Seeder extends Seeder {
     }
 
     console.log(
-      `Seeded UC03: ${Uc03Seeder.#SHELTERS.length} shelters, ${Uc03Seeder.#TEAMS.length} rescue teams, ` +
+      `Seeded UC03: ${Uc03Seeder.#SHELTERS.length} shelters (${Uc03Seeder.#OCCUPANCY_HISTORY.length} occupancy records each), ${Uc03Seeder.#TEAMS.length} rescue teams, ` +
         `${Uc03Seeder.#STOCK.length} stock rows, ${Uc03Seeder.#DISTRIBUTIONS.length} supply logs`,
     );
   }
