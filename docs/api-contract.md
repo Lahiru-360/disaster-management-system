@@ -3717,7 +3717,7 @@ A failed notification never fails the request that triggered it.
 
 ## 14. Post-event reports endpoints
 
-UC04 Generate Post-Event Analysis Report. After a hazard event is **closed**, a DMC officer generates a statistical report for it with four sections: the alert timeline, citizens reached, shelter occupancy over time and resource distribution. Days with no records are flagged as **incomplete data** instead of being left out. This section covers generating a report and reading it back (UC04 main flow steps 1–11, DMS-153, with E1 and E2). Exporting (DMS-154), sharing (DMS-155) and filtering (DMS-156) add their own subsections.
+UC04 Generate Post-Event Analysis Report. After a hazard event is **closed**, a DMC officer generates a statistical report for it with four sections: the alert timeline, citizens reached, shelter occupancy over time and resource distribution. Days with no records are flagged as **incomplete data** instead of being left out. This section covers generating a report and reading it back (UC04 main flow steps 1–11, DMS-153, with E1 and E2), and filtering it (A1, DMS-156, 14.9). Exporting (DMS-154) and sharing (DMS-155) add their own subsections.
 
 **Status: draft (DMS-153.1).** The Analytics data subsection (14.7) needs sign-off from the owners of the data it reads: Anupa for hazard alerts and delivery records, Lahiru for occupancy and distribution records.
 
@@ -3794,7 +3794,7 @@ Every daily series in a report lists **every** day of the range, in order. A day
 | `generatedBy`, `generatedAt` | `{ id, name }` / ISO 8601 string | The officer who generated it, and when. |
 | `dateFrom`, `dateTo` | `YYYY-MM-DD` | The range the report covers, inclusive (14.1). |
 | `districts` | `[{ id, name }]` | The districts the report covers, in the event's order. |
-| `filters` | object | The A1 filters the report was compiled with (DMS-156). All `null` for a report generated here. |
+| `filters` | object | The A1 filters the report was compiled with (14.9): `hazardType`, `districtId` and `organisationId`, each `null` when not set. All `null` for a report generated here. |
 | `summary` | object | The summary figures at the top of the report view, below. A figure whose section wasn't requested is `null`. |
 | `hasGaps` | boolean | `true` when `gaps` isn't empty. The report view then shows the incomplete-data banner, e.g. "(!) 14–15 Jun: incomplete data – figures partial, not omitted". |
 | `gaps` | `[{ section, from, to, reason }]` | Every gap in every section, by section, then oldest first. `from` and `to` are inclusive `YYYY-MM-DD` dates. |
@@ -4145,6 +4145,83 @@ Post-event reports read other use cases' records **directly**: the delivery, occ
 | `statusHistory[].targets` | `[{ kind, area }]` | The alert's scope after this change, as stored on the alert. |
 
 Until they exist, every timeline entry shows the alert's current severity and areas (14.2).
+
+### 14.9 Filter a report — `POST /api/post-event-reports/:id/refine`
+
+UC04 A1 (DMS-156). The report view has a filter bar: *All hazards ▾*, *All districts ▾* and *All organisations ▾*. Changing a filter recompiles the report with the filters and stores the result as a **new** report, so an export of it (14.8) always matches what is on screen. The report it came from is never changed.
+
+The filters apply to the report's own selection: the same event, range, districts and sections (14.3). Refining a report that is already filtered **replaces** its filters; it doesn't add to them. Clearing every filter in the view reopens the original, unfiltered report (14.4); no request is sent and nothing is stored. The view keeps the original's id in its URL (`/reports/<id>?original=<originalId>`); a filtered report opened without it (e.g. from Recent reports) generates its selection again instead (14.3).
+
+Admits `dmc_officer` and `duty_officer`, like every endpoint in §14.
+
+**Request**
+
+```json
+{ "hazardType": null, "districtId": "66f7c1a2b3c4d5e6f7a8b902", "organisationId": "66f7c1a2b3c4d5e6f7a8b9d7" }
+```
+
+| Field | Rule |
+|---|---|
+| `hazardType` | Optional; `null` or left out for all hazards. One of `AlertHazardType` (`FLOOD`, `LANDSLIDE`, `CYCLONE`, `DROUGHT`). Anything else → `400` on `hazardType`. |
+| `districtId` | Optional; `null` or left out for all districts. Must be one of the report's `districts`: malformed → `400` "must be a valid id", any other district → `400` "must be one of the report's districts". |
+| `organisationId` | Optional; `null` or left out for all organisations. An organisation id (§10): malformed → `400` "must be a valid id"; well-formed but unknown → `404 NOT_FOUND`. |
+
+At least one filter must be set; a body with none → `400` on `filters`: "must set at least one filter". The report is the `:id` in the path; one that doesn't exist, or an id that isn't valid, is `404 NOT_FOUND`.
+
+**What each filter narrows**
+
+| Filter | Sections it narrows | How |
+|---|---|---|
+| `hazardType` | `alertTimeline`, `citizensReached` | Only alerts of that hazard type are in the timeline, and only their deliveries count. |
+| `districtId` | all four | The report is compiled for that one district, exactly as if `districtIds` had held only it (14.3): the alerts covering it and their deliveries, its shelters' occupancy, and the distributions to it. The new report keeps the report's `districts`, so the filter can later be changed to another of them; `filters.districtId` names the one its sections cover. |
+| `organisationId` | `resourceDistribution` | Only distribution records of that organisation's supplies. The other sections are compiled as if it weren't set, and the view marks them "Not affected by organisation filter". |
+
+Every section, the gaps and the summary figures are compiled again for the filtered selection, with the same rules as 14.2. A section a filter doesn't narrow comes out exactly as it would without that filter.
+
+The server then works as 14.3 steps 2–5: if **every** requested section is empty for the filters, it answers `404 NO_DATA_FOR_SELECTION` and stores nothing. The view then shows "No data for this selection" with the filter bar still there, so the officer can change the filters (A1, like E2).
+
+**Success — `201 Created`**
+
+```json
+{
+  "success": true,
+  "data": {
+    "report": { "...": "the report object from 14.2, with filters set" }
+  }
+}
+```
+
+The new report has its own `id`, `generatedBy` (the officer who filtered) and `generatedAt`, and its `filters` hold the request's filters, with `null` for each one left out:
+
+```json
+"filters": { "hazardType": null, "districtId": "66f7c1a2b3c4d5e6f7a8b902", "organisationId": "66f7c1a2b3c4d5e6f7a8b9d7" }
+```
+
+It is listed under Recent reports (14.5) like any other report.
+
+**Failure — `400 Bad Request`** (a filter failed its rule)
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "Request validation failed.",
+    "errors": [{ "field": "districtId", "message": "must be one of the report's districts" }]
+  }
+}
+```
+
+| Status | Code | When |
+|---|---|---|
+| `400` | `VALIDATION_ERROR` | A filter failed its rule, or none was set. Carries `errors`, one entry per field. |
+| `401` | `AUTH_HEADER_MISSING`, `AUTH_HEADER_MALFORMED`, `TOKEN_EXPIRED`, `TOKEN_INVALID` | As in 14.6. |
+| `403` | `FORBIDDEN` | The caller isn't a `dmc_officer` or `duty_officer`. |
+| `404` | `NOT_FOUND` | No report has this id, the id isn't valid, or no organisation has `organisationId`. |
+| `404` | `NO_DATA_FOR_SELECTION` | Every requested section is empty for the filters. Nothing is stored. |
+| `500` | `INTERNAL_ERROR` | Unhandled server-side failure. |
+
+Checked by TC-29–TC-32 (DMS-156).
 
 ---
 

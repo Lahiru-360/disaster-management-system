@@ -14,7 +14,8 @@ export class ReportAlertRepository {
   /**
    * Every issued alert (not DRAFT) linked to the report's event or to no
    * event, with a status change inside the range, whose scope covers at least
-   * one selected district. A river basin covers every district it spans.
+   * one selected district. A river basin covers every district it spans. With
+   * a hazard type filter (A1), only alerts of that type.
    *
    * Each comes back as `{ id, referenceNo, hazardType, severity, areas,
    * history }`: areas are `[{ kind, id, name }]`, and history holds the
@@ -28,6 +29,7 @@ export class ReportAlertRepository {
     const docs = await this.#alertModel
       .find({
         status: { $ne: AlertStatus.DRAFT },
+        ...(ctx.filters.hazardType ? { hazardType: ctx.filters.hazardType } : {}),
         $or: [{ event: ctx.event.eventId }, { event: null }],
         statusHistory: {
           $elemMatch: { status: { $ne: AlertStatus.DRAFT }, at: { $gte: start, $lt: end } },

@@ -1,4 +1,5 @@
 import Joi from 'joi';
+import { AlertHazardType } from '../enums/AlertHazardType.js';
 import { ReportSectionKey } from '../enums/ReportSectionKey.js';
 import { SriLankaCalendar } from '../utils/SriLankaCalendar.js';
 
@@ -35,6 +36,18 @@ export class PostEventReportValidator {
       .unique()
       .required()
       .messages({ 'array.min': 'must select at least one section' }),
+  });
+
+  // POST /api/post-event-reports/:id/refine (§14.9). Each filter may be left
+  // out or null; the service checks that one is set and that the district is
+  // one of the report's.
+  static refineSchema = Joi.object({
+    hazardType: Joi.string()
+      .valid(...Object.values(AlertHazardType))
+      .allow(null)
+      .messages({ 'any.only': `must be one of [${Object.values(AlertHazardType).join(', ')}]` }),
+    districtId: PostEventReportValidator.#id.allow(null),
+    organisationId: PostEventReportValidator.#id.allow(null),
   });
 
   // GET /api/post-event-reports?eventId= (§14.5). A well-formed id no report

@@ -10,14 +10,19 @@ export class SupplyDistributionRepository {
   }
 
   /**
-   * The distributions to these districts logged inside the range.
-   * @param {{ districtIds: string[], start: Date, end: Date }} params end excluded
+   * The distributions to these districts logged inside the range, only of one
+   * organisation's supplies when organisationId is given (A1).
+   * @param {{ districtIds: string[], start: Date, end: Date, organisationId?: string|null }} params end excluded
    * @returns {Promise<Array<{ district: string, supplyType: string, organisation: string, quantity: number, distributedAt: Date }>>}
    */
-  async findInRange({ districtIds, start, end }) {
+  async findInRange({ districtIds, start, end, organisationId = null }) {
     const records = await this.#distributionModel
       .find(
-        { district: { $in: districtIds }, distributedAt: { $gte: start, $lt: end } },
+        {
+          district: { $in: districtIds },
+          distributedAt: { $gte: start, $lt: end },
+          ...(organisationId ? { organisation: organisationId } : {}),
+        },
         'district supplyType organisation quantity distributedAt',
       )
       .lean();

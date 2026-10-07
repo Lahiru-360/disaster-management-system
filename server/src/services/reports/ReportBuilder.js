@@ -68,13 +68,14 @@ export class ReportBuilder {
       generatedAt: ctx.clock.now(),
       dateFrom: ctx.dateFrom,
       dateTo: ctx.dateTo,
-      districts: ctx.districtIds,
+      districts: ctx.selectedDistrictIds,
     });
     const summary = { ...ReportBuilder.#EMPTY_SUMMARY };
     let isEmpty = true;
 
     for (const section of this.#sections.filter((s) => sectionKeys.includes(s.key))) {
-      const compiled = await section.compile(ctx);
+      // Each section sees only the A1 filters it honours (DMS-156).
+      const compiled = await section.compile(ctx.withFilters(section.honouredFilters));
       report.addSection({ key: section.key, result: compiled.result, gaps: compiled.gaps });
       Object.assign(summary, section.summarise(compiled.result));
       isEmpty = isEmpty && compiled.isEmpty;

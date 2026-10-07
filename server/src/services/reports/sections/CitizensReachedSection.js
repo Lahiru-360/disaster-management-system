@@ -25,6 +25,10 @@ export class CitizensReachedSection extends ReportSection {
     return ReportSectionKey.CITIZENS_REACHED;
   }
 
+  get honouredFilters() {
+    return ['districtId', 'hazardType'];
+  }
+
   get gapReason() {
     return 'No delivery records';
   }

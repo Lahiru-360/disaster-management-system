@@ -21,6 +21,13 @@ export class PostEventReportController extends BaseController {
     ApiResponse.success(res, { report }, 201);
   }
 
+  // POST /api/post-event-reports/:id/refine - UC04 A1 (§14.9).
+  async refine(req, res) {
+    const report = await this.#reportService.refine(req.user, req.params.id, req.body);
+
+    ApiResponse.success(res, { report }, 201);
+  }
+
   // GET /api/post-event-reports/:id (§14.4).
   async getById(req, res) {
     const report = await this.#reportService.findById(req.params.id);
