@@ -16,6 +16,9 @@ export class HazardAlertPresenter {
    * @returns {Promise<object>}
    */
   static async present(doc) {
+    // The stored ids, kept because populate() turns a reference to a deleted
+    // document (an area removed after the preview, E1) into null.
+    const stored = doc.toObject({ depopulate: true });
     await doc.populate([
       { path: 'targets.area', select: 'name' },
       { path: 'createdBy', select: 'name' },
@@ -25,22 +28,26 @@ export class HazardAlertPresenter {
       { path: 'sourceReport', select: 'referenceNo' },
     ]);
     const json = doc.toJSON();
-    const idAndName = (populated) => HazardAlertPresenter.#idAndFields(populated, ['name']);
+    const idAndName = (populated, storedId) =>
+      HazardAlertPresenter.#idAndFields(populated ?? storedId, ['name']);
 
-    json.targets = json.targets.map(({ kind, area }) => ({
+    json.targets = json.targets.map(({ kind, area }, i) => ({
       kind,
-      id: HazardAlertPresenter.#idOf(area),
+      id: HazardAlertPresenter.#idOf(area ?? stored.targets[i].area),
       name: area?.name ?? null,
     }));
-    json.createdBy = idAndName(json.createdBy);
-    json.issuedBy = idAndName(json.issuedBy);
-    json.event = idAndName(json.event);
-    json.sourceReport = HazardAlertPresenter.#idAndFields(json.sourceReport, ['referenceNo']);
-    json.statusHistory = json.statusHistory.map(({ status, version, at, by }) => ({
+    json.createdBy = idAndName(json.createdBy, stored.createdBy);
+    json.issuedBy = idAndName(json.issuedBy, stored.issuedBy);
+    json.event = idAndName(json.event, stored.event);
+    json.sourceReport = HazardAlertPresenter.#idAndFields(
+      json.sourceReport ?? stored.sourceReport,
+      ['referenceNo'],
+    );
+    json.statusHistory = json.statusHistory.map(({ status, version, at, by }, i) => ({
       status,
       version,
       at,
-      by: idAndName(by),
+      by: idAndName(by, stored.statusHistory[i].by),
     }));
     return json;
   }
@@ -53,7 +60,8 @@ export class HazardAlertPresenter {
     return String(value?.id ?? value?._id ?? value);
   }
 
-  // A populated reference as { id, ...fields }; null when there is none.
+  // A populated reference as { id, ...fields }, or the stored id of a deleted
+  // one with every field null; null when there is no reference.
   static #idAndFields(populated, fields) {
     if (!populated) return null;
     return Object.fromEntries([

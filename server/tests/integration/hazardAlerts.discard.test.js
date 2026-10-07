@@ -57,7 +57,7 @@ const listDrafts = (query = { status: 'draft' }, user = duty) =>
   request(app).get('/api/hazard-alerts').query(query).set(as(user));
 
 describe('DELETE /api/hazard-alerts/:id', () => {
-  it('DMS-125: TC-30 discards a previewed draft: 200, the document removed, 0 notifications', async () => {
+  it('A4: TC-30 discards a previewed draft: 200, the document removed, 0 notifications', async () => {
     const id = await previewedDraft();
 
     const res = await discard(id);
@@ -76,7 +76,7 @@ describe('DELETE /api/hazard-alerts/:id', () => {
     expect(await UserNotification.countDocuments()).toBe(0);
   });
 
-  it('DMS-125: TC-30 a draft that was never previewed can be discarded too', async () => {
+  it('A4: TC-30 a draft that was never previewed can be discarded too', async () => {
     const id = await startDraft();
 
     const res = await discard(id);
@@ -86,7 +86,7 @@ describe('DELETE /api/hazard-alerts/:id', () => {
     expect(await HazardAlert.countDocuments()).toBe(0);
   });
 
-  it('DMS-125: TC-30 a discarded draft is gone: reading or discarding it again is 404', async () => {
+  it('A4: TC-30 a discarded draft is gone: reading or discarding it again is 404', async () => {
     const id = await previewedDraft();
     await discard(id);
 
@@ -98,7 +98,7 @@ describe('DELETE /api/hazard-alerts/:id', () => {
     expect(again.body.error.code).toBe('NOT_FOUND');
   });
 
-  it("DMS-125: any officer may discard a colleague's draft (drafts are shared work)", async () => {
+  it("A4: any officer may discard a colleague's draft (drafts are shared work)", async () => {
     const id = await previewedDraft(duty);
 
     const res = await discard(id, dmc);
@@ -106,7 +106,7 @@ describe('DELETE /api/hazard-alerts/:id', () => {
     expect(res.status).toBe(200);
   });
 
-  it('DMS-125: TC-31 discarding a BROADCAST alert is 409 and leaves it and its deliveries', async () => {
+  it('A4: TC-31 discarding a BROADCAST alert is 409 and leaves it and its deliveries', async () => {
     const id = await broadcastAlert();
     const deliveries = await Notification.countDocuments({ alert: id });
 
@@ -123,7 +123,7 @@ describe('DELETE /api/hazard-alerts/:id', () => {
   });
 
   it.each(['UPDATED', 'CANCELLED'])(
-    'DMS-125: TC-31 discarding an %s alert is 409 too',
+    'A4: TC-31 discarding an %s alert is 409 too',
     async (status) => {
       const id = await broadcastAlert();
       await HazardAlert.updateOne({ _id: id }, { status });
@@ -141,14 +141,14 @@ describe('DELETE /api/hazard-alerts/:id', () => {
   it.each([
     ['an unknown id', () => new mongoose.Types.ObjectId().toString()],
     ['a malformed id', () => 'not-an-id'],
-  ])('DMS-125: %s is 404 NOT_FOUND', async (_case, idFor) => {
+  ])('A4: %s is 404 NOT_FOUND', async (_case, idFor) => {
     const res = await discard(idFor());
 
     expect(res.status).toBe(404);
     expect(res.body.error.code).toBe('NOT_FOUND');
   });
 
-  it('DMS-125: a district_officer is 403 FORBIDDEN, and the draft stays', async () => {
+  it('A4: a district_officer is 403 FORBIDDEN, and the draft stays', async () => {
     const id = await previewedDraft();
     const districtOfficer = await createUser({
       role: Role.DISTRICT_OFFICER,
@@ -162,7 +162,7 @@ describe('DELETE /api/hazard-alerts/:id', () => {
     expect(await HazardAlert.exists({ _id: id })).not.toBeNull();
   });
 
-  it('DMS-125: no token is 401 AUTH_HEADER_MISSING', async () => {
+  it('A4: no token is 401 AUTH_HEADER_MISSING', async () => {
     const id = await startDraft();
 
     const res = await request(app).delete(`/api/hazard-alerts/${id}`);
@@ -173,7 +173,7 @@ describe('DELETE /api/hazard-alerts/:id', () => {
 });
 
 describe('A4 Back from the confirmation', () => {
-  it('DMS-125: backing out sends nothing: the draft keeps its type, severity, scope and edited message', async () => {
+  it('A4: backing out sends nothing: the draft keeps its type, severity, scope and edited message', async () => {
     const id = await previewedDraft();
     await request(app).patch(`/api/hazard-alerts/${id}/draft`).set(as(duty)).send({
       message: MESSAGE,
@@ -196,7 +196,7 @@ describe('A4 Back from the confirmation', () => {
 });
 
 describe('GET /api/hazard-alerts?status=draft', () => {
-  it('DMS-125: lists every DRAFT, whoever started it, most recently changed first', async () => {
+  it('A4: lists every DRAFT, whoever started it, most recently changed first', async () => {
     const older = await previewedDraft(duty);
     const blank = await startDraft(dmc);
     const newest = await previewedDraft(duty);
@@ -219,7 +219,7 @@ describe('GET /api/hazard-alerts?status=draft', () => {
     });
   });
 
-  it('DMS-125: leaves out broadcast and discarded alerts', async () => {
+  it('A4: leaves out broadcast and discarded alerts', async () => {
     const kept = await previewedDraft();
     await broadcastAlert();
     await discard(await previewedDraft());
@@ -229,7 +229,7 @@ describe('GET /api/hazard-alerts?status=draft', () => {
     expect(res.body.data.alerts.map(({ id }) => id)).toEqual([kept]);
   });
 
-  it('DMS-125: no drafts is 200 with []', async () => {
+  it('A4: no drafts is 200 with []', async () => {
     const res = await listDrafts();
 
     expect(res.status).toBe(200);
@@ -239,7 +239,7 @@ describe('GET /api/hazard-alerts?status=draft', () => {
   it.each([
     ['missing', {}, 'is required'],
     ['not draft or active', { status: 'cancelled' }, 'must be one of [draft, active]'],
-  ])('DMS-125: status %s is 400 VALIDATION_ERROR on status', async (_case, query, message) => {
+  ])('A4: status %s is 400 VALIDATION_ERROR on status', async (_case, query, message) => {
     const res = await listDrafts(query);
 
     expect(res.status).toBe(400);
@@ -249,7 +249,7 @@ describe('GET /api/hazard-alerts?status=draft', () => {
     });
   });
 
-  it('DMS-125: a citizen is 403 FORBIDDEN', async () => {
+  it('A4: a citizen is 403 FORBIDDEN', async () => {
     const res = await listDrafts({ status: 'draft' }, await createUser({ role: Role.CITIZEN }));
 
     expect(res.status).toBe(403);

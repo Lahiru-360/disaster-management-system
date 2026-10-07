@@ -70,7 +70,7 @@ describe('Issuing an all-clear (UC01 A3)', () => {
     ].sort();
 
   describe('BroadcastService.allClear', () => {
-    it('DMS-124: TC-26 sets CANCELLED as the next version, with the all-clear message and a history entry', async () => {
+    it('A3: TC-26 sets CANCELLED as the next version, with the all-clear message and a history entry', async () => {
       await citizensIn(areas.colombo, 2);
       const id = await activeWarning();
       clock.set(CLEAR_AT);
@@ -97,7 +97,7 @@ describe('Issuing an all-clear (UC01 A3)', () => {
       });
     });
 
-    it('DMS-124: TC-26 sends kind ALL_CLEAR on every channel to every original recipient', async () => {
+    it('A3: TC-26 sends kind ALL_CLEAR on every channel to every original recipient', async () => {
       const citizens = await citizensIn(areas.colombo, 2);
       const id = await activeWarning();
 
@@ -109,7 +109,7 @@ describe('Issuing an all-clear (UC01 A3)', () => {
       expect(await recipientsOf(id, 2)).toEqual(idsOf(citizens));
     });
 
-    it('DMS-124: TC-27 a citizen who moved district after the broadcast still gets the all-clear', async () => {
+    it('A3: TC-27 a citizen who moved district after the broadcast still gets the all-clear', async () => {
       const [stayed, moved] = await citizensIn(areas.colombo, 2);
       const id = await activeWarning();
       await User.updateOne({ _id: moved._id }, { homeDistrict: areas.kalutara._id });
@@ -122,7 +122,7 @@ describe('Issuing an all-clear (UC01 A3)', () => {
       expect(recipients).not.toContain(movedIn.id);
     });
 
-    it('DMS-124: TC-27 the original recipients include everyone an update reached, not the recalculated scope', async () => {
+    it('A3: TC-27 the original recipients include everyone an update reached, not the recalculated scope', async () => {
       const colombo = await citizensIn(areas.colombo, 1);
       const gampaha = await citizensIn(areas.gampaha, 1);
       await citizensIn(areas.kalutara, 1);
@@ -138,7 +138,7 @@ describe('Issuing an all-clear (UC01 A3)', () => {
       expect(await recipientsOf(id, 3)).toEqual(idsOf([...colombo, ...gampaha]));
     });
 
-    it("DMS-124: puts the all-clear in each original recipient's inbox as LOW", async () => {
+    it("A3: puts the all-clear in each original recipient's inbox as LOW", async () => {
       const [citizen] = await citizensIn(areas.colombo, 1);
       const id = await activeWarning();
 
@@ -154,7 +154,7 @@ describe('Issuing an all-clear (UC01 A3)', () => {
       });
     });
 
-    it("DMS-124: TC-26 resumes at step 14 with the all-clear's delivery summary", async () => {
+    it("A3: TC-26 resumes at step 14 with the all-clear's delivery summary", async () => {
       await citizensIn(areas.colombo, 2);
       const id = await activeWarning();
 
@@ -165,7 +165,7 @@ describe('Issuing an all-clear (UC01 A3)', () => {
       expect(await broadcasts.deliverySummary(id)).toMatchObject({ summary });
     });
 
-    it('DMS-124: an UPDATED warning can be cancelled too', async () => {
+    it('A3: an UPDATED warning can be cancelled too', async () => {
       await citizensIn(areas.colombo, 1);
       const id = await activeWarning();
       await broadcasts.update(id, officer, { severity: 'SEVERE', message: UPDATE_MESSAGE });
@@ -197,7 +197,7 @@ describe('Issuing an all-clear (UC01 A3)', () => {
         },
         'CANCELLED',
       ],
-    ])('DMS-124: TC-28 %s is 409 and nothing changes or is sent', async (_case, make, status) => {
+    ])('A3: TC-28 %s is 409 and nothing changes or is sent', async (_case, make, status) => {
       await citizensIn(areas.colombo, 1);
       const id = await make();
       const before = await HazardAlert.findById(id).lean();
@@ -212,7 +212,7 @@ describe('Issuing an all-clear (UC01 A3)', () => {
       expect(await Notification.countDocuments({ alert: id })).toBe(records);
     });
 
-    it('DMS-124: two officers issuing the all-clear at once: one wins, one 409', async () => {
+    it('A3: two officers issuing the all-clear at once: one wins, one 409', async () => {
       await citizensIn(areas.colombo, 1);
       const id = await activeWarning();
 
@@ -227,7 +227,7 @@ describe('Issuing an all-clear (UC01 A3)', () => {
       expect(await Notification.countDocuments({ alert: id, kind: 'ALL_CLEAR' })).toBe(3);
     });
 
-    it('DMS-124: an update that lands between the read and the write wins, and the all-clear is 409', async () => {
+    it('A3: an update that lands between the read and the write wins, and the all-clear is 409', async () => {
       await citizensIn(areas.colombo, 1);
       const id = await activeWarning();
       const alertModel = {
@@ -246,7 +246,7 @@ describe('Issuing an all-clear (UC01 A3)', () => {
       expect(await Notification.countDocuments({ alert: id, kind: 'ALL_CLEAR' })).toBe(0);
     });
 
-    it('DMS-124: an unknown or malformed alert id is 404', async () => {
+    it('A3: an unknown or malformed alert id is 404', async () => {
       await expect(
         broadcasts.allClear(new mongoose.Types.ObjectId().toString(), officer),
       ).rejects.toMatchObject({ status: 404, code: 'NOT_FOUND' });
@@ -255,7 +255,7 @@ describe('Issuing an all-clear (UC01 A3)', () => {
   });
 
   describe('WarningService.listActive', () => {
-    it('DMS-124: lists BROADCAST and UPDATED alerts, most recently issued first, with their original recipients', async () => {
+    it('A3: lists BROADCAST and UPDATED alerts, most recently issued first, with their original recipients', async () => {
       await citizensIn(areas.colombo, 2);
       await citizensIn(areas.gampaha, 3);
       const first = await activeWarning();
@@ -283,7 +283,7 @@ describe('Issuing an all-clear (UC01 A3)', () => {
       ]);
     });
 
-    it('DMS-124: nothing active is []', async () => {
+    it('A3: nothing active is []', async () => {
       await previewedDraft();
 
       await expect(warnings.listActive()).resolves.toEqual([]);

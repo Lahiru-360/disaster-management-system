@@ -26,7 +26,7 @@ beforeAll(async () => {
 });
 
 describe('Notification model (delivery record)', () => {
-  it('DMS-121: a new record is QUEUED with one attempt and no times', async () => {
+  it('Domain: a new record is QUEUED with one attempt and no times', async () => {
     const record = await Notification.create(fields());
 
     expect(record).toMatchObject({
@@ -38,7 +38,7 @@ describe('Notification model (delivery record)', () => {
     });
   });
 
-  it('DMS-121: requires the alert, version, kind, citizen and channel', async () => {
+  it('Domain: requires the alert, version, kind, citizen and channel', async () => {
     expect(await validationErrorsOf(Notification.create({}))).toEqual([
       'alert',
       'alertVersion',
@@ -48,7 +48,7 @@ describe('Notification model (delivery record)', () => {
     ]);
   });
 
-  it('DMS-121: refuses values outside the delivery enums', async () => {
+  it('Domain: refuses values outside the delivery enums', async () => {
     expect(
       await validationErrorsOf(
         Notification.create(fields({ kind: 'REMINDER', channel: 'EMAIL', status: 'LOST' })),
@@ -56,13 +56,13 @@ describe('Notification model (delivery record)', () => {
     ).toEqual(['channel', 'kind', 'status']);
   });
 
-  it('DMS-121: refuses a version or attempt count below 1', async () => {
+  it('Domain: refuses a version or attempt count below 1', async () => {
     expect(
       await validationErrorsOf(Notification.create(fields({ alertVersion: 0, attempts: 0 }))),
     ).toEqual(['alertVersion', 'attempts']);
   });
 
-  it('DMS-121: one record per alert version, citizen and channel', async () => {
+  it('Domain: one record per alert version, citizen and channel', async () => {
     const first = await Notification.create(fields());
     const same = { alert: first.alert, citizen: first.citizen };
 
@@ -71,7 +71,7 @@ describe('Notification model (delivery record)', () => {
     await expect(Notification.create(fields({ ...same, alertVersion: 2 }))).resolves.toBeDefined();
   });
 
-  it('DMS-121: toJSON exposes id and drops _id and __v', async () => {
+  it('Domain: toJSON exposes id and drops _id and __v', async () => {
     const json = (await Notification.create(fields())).toJSON();
 
     expect(json.id).toBeDefined();
@@ -79,7 +79,7 @@ describe('Notification model (delivery record)', () => {
     expect(json).not.toHaveProperty('__v');
   });
 
-  it('DMS-121: indexes by alert and status for the summary', () => {
+  it('Domain: indexes by alert and status for the summary', () => {
     const indexes = Notification.schema.indexes();
 
     expect(indexes).toContainEqual([
@@ -89,7 +89,7 @@ describe('Notification model (delivery record)', () => {
     expect(indexes.map(([keys]) => keys)).toContainEqual({ alert: 1, status: 1 });
   });
 
-  it("DMS-124: indexes by alert and citizen for the all-clear's original recipients", () => {
+  it("A3: indexes by alert and citizen for the all-clear's original recipients", () => {
     expect(Notification.schema.indexes().map(([keys]) => keys)).toContainEqual({
       alert: 1,
       citizen: 1,

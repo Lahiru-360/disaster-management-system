@@ -51,7 +51,7 @@ const escalate = (sourceReportId, user = duty) =>
   request(app).post('/api/hazard-alerts').set(as(user)).send({ sourceReportId });
 
 describe('POST /api/hazard-alerts with sourceReportId', () => {
-  it('DMS-122: TC-16 a confirmed report escalates to a linked DRAFT with the pre-fill', async () => {
+  it('A1: TC-16 a confirmed report escalates to a linked DRAFT with the pre-fill', async () => {
     const report = await createPendingReport();
     expect((await confirm(report)).status).toBe(200);
     expect(await HazardAlert.countDocuments()).toBe(0);
@@ -78,7 +78,7 @@ describe('POST /api/hazard-alerts with sourceReportId', () => {
     expect(reread.body.data.alert.sourceReport).toEqual({ id: report.id, referenceNo: 'GR-2481' });
   });
 
-  it('DMS-122: TC-16 a DMC officer outside the report district can escalate it too', async () => {
+  it('A1: TC-16 a DMC officer outside the report district can escalate it too', async () => {
     const report = await createPendingReport({ hazardType: 'LANDSLIDE' });
     await confirm(report);
 
@@ -88,7 +88,7 @@ describe('POST /api/hazard-alerts with sourceReportId', () => {
     expect(res.body.data.prefill.hazardType).toBe('LANDSLIDE');
   });
 
-  it('DMS-122: TC-17 a confirmed BLOCKED_ROAD report leaves the hazard type empty', async () => {
+  it('A1: TC-17 a confirmed BLOCKED_ROAD report leaves the hazard type empty', async () => {
     const report = await createPendingReport({ hazardType: 'BLOCKED_ROAD' });
     await confirm(report);
 
@@ -98,7 +98,7 @@ describe('POST /api/hazard-alerts with sourceReportId', () => {
     expect(res.body.data.prefill).toMatchObject({ hazardType: null, districtId: areas.colombo.id });
   });
 
-  it('DMS-122: TC-18 a PENDING report is 409 REPORT_NOT_ESCALATABLE and no draft is created', async () => {
+  it('A1: TC-18 a PENDING report is 409 REPORT_NOT_ESCALATABLE and no draft is created', async () => {
     const report = await createPendingReport();
 
     const res = await escalate(report.id);
@@ -114,7 +114,7 @@ describe('POST /api/hazard-alerts with sourceReportId', () => {
     expect(await HazardAlert.countDocuments()).toBe(0);
   });
 
-  it('DMS-122: TC-18 a DISMISSED report is 409 REPORT_NOT_ESCALATABLE', async () => {
+  it('A1: TC-18 a DISMISSED report is 409 REPORT_NOT_ESCALATABLE', async () => {
     const report = await createPendingReport();
     await request(app)
       .post(`/api/hazard-reports/${report.id}/dismiss`)
@@ -131,7 +131,7 @@ describe('POST /api/hazard-alerts with sourceReportId', () => {
   it.each([
     ['an unknown id', new mongoose.Types.ObjectId().toString()],
     ['a malformed id', 'not-an-id'],
-  ])('DMS-122: TC-19 %s is 404 NOT_FOUND', async (_label, id) => {
+  ])('A1: TC-19 %s is 404 NOT_FOUND', async (_label, id) => {
     const res = await escalate(id);
 
     expect(res.status).toBe(404);
@@ -142,7 +142,7 @@ describe('POST /api/hazard-alerts with sourceReportId', () => {
   it.each([
     ['a number', 42],
     ['an empty string', ''],
-  ])('DMS-122: sourceReportId as %s is 400 VALIDATION_ERROR', async (_label, value) => {
+  ])('A1: sourceReportId as %s is 400 VALIDATION_ERROR', async (_label, value) => {
     const res = await escalate(value);
 
     expect(res.status).toBe(400);
@@ -152,7 +152,7 @@ describe('POST /api/hazard-alerts with sourceReportId', () => {
     ]);
   });
 
-  it('DMS-122: a plain start has no prefill', async () => {
+  it('A1: a plain start has no prefill', async () => {
     const res = await request(app).post('/api/hazard-alerts').set(as(duty)).send({});
 
     expect(res.status).toBe(201);
@@ -160,17 +160,14 @@ describe('POST /api/hazard-alerts with sourceReportId', () => {
     expect(res.body.data.alert.sourceReport).toBeNull();
   });
 
-  it.each([Role.DISTRICT_OFFICER, Role.CITIZEN])(
-    'DMS-122: a %s cannot escalate (403)',
-    async (role) => {
-      const report = await createPendingReport();
-      await confirm(report);
-      const user = await createUser({ role, homeDistrict: areas.colombo });
+  it.each([Role.DISTRICT_OFFICER, Role.CITIZEN])('A1: a %s cannot escalate (403)', async (role) => {
+    const report = await createPendingReport();
+    await confirm(report);
+    const user = await createUser({ role, homeDistrict: areas.colombo });
 
-      const res = await escalate(report.id, user);
+    const res = await escalate(report.id, user);
 
-      expect(res.status).toBe(403);
-      expect(res.body.error.code).toBe('FORBIDDEN');
-    },
-  );
+    expect(res.status).toBe(403);
+    expect(res.body.error.code).toBe('FORBIDDEN');
+  });
 });

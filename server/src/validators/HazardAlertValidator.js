@@ -8,6 +8,8 @@ import { SeverityLevel } from '../enums/SeverityLevel.js';
 export class HazardAlertValidator {
   static MESSAGE_MAX_LENGTH = 160;
 
+  static UNREACHED_MAX_LIMIT = 50;
+
   static #oneOf = (values) => ({ 'any.only': `must be one of [${values.join(', ')}]` });
 
   static #severity = Joi.any()
@@ -61,6 +63,21 @@ export class HazardAlertValidator {
         'any.required': 'is required',
         ...HazardAlertValidator.#oneOf(['draft', 'active']),
       }),
+  });
+
+  // GET /api/hazard-alerts/:id/unreached (§12.16), paged as the inbox (§11.2).
+  static #pageNumber = Joi.number().integer().min(1).messages({
+    'number.base': 'must be a number',
+    'number.integer': 'must be an integer',
+    'number.min': 'must be greater than or equal to {#limit}',
+    'number.max': 'must be less than or equal to {#limit}',
+  });
+
+  static unreachedQuery = Joi.object({
+    page: HazardAlertValidator.#pageNumber.default(1),
+    limit: HazardAlertValidator.#pageNumber
+      .max(HazardAlertValidator.UNREACHED_MAX_LIMIT)
+      .default(20),
   });
 
   // POST /api/hazard-alerts/:id/preview (§12.3).

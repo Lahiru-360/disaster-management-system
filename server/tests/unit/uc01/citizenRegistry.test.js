@@ -35,7 +35,7 @@ describe('CitizenRegistry', () => {
     ({ colombo, gampaha, kalutara } = await seedAreas());
   });
 
-  it('DMS-120: TC-04 counts the citizens of every district in scope', async () => {
+  it('Main 7: TC-04 counts the citizens of every district in scope', async () => {
     await createUser({ homeDistrict: colombo });
     await createUser({ homeDistrict: colombo });
     await createUser({ homeDistrict: gampaha });
@@ -44,7 +44,7 @@ describe('CitizenRegistry', () => {
     await expect(citizenRegistry.countRecipients([colombo.id, gampaha.id])).resolves.toBe(3);
   });
 
-  it('DMS-120: TC-05 a district given twice still counts each citizen once', async () => {
+  it('Main 7: TC-05 a district given twice still counts each citizen once', async () => {
     await createUser({ homeDistrict: colombo });
 
     await expect(
@@ -52,7 +52,7 @@ describe('CitizenRegistry', () => {
     ).resolves.toBe(1);
   });
 
-  it('DMS-120: community volunteers are citizens; officers and team leads are not', async () => {
+  it('Main 7: community volunteers are citizens; officers and team leads are not', async () => {
     const residents = [
       await createUser({ homeDistrict: colombo }),
       await createUser({ role: Role.COMMUNITY_VOLUNTEER, homeDistrict: colombo }),
@@ -67,14 +67,14 @@ describe('CitizenRegistry', () => {
     );
   });
 
-  it('DMS-120: deactivated accounts and citizens with no home district are left out', async () => {
+  it('Main 7: deactivated accounts and citizens with no home district are left out', async () => {
     await createUser({ homeDistrict: colombo, isActive: false });
     await createUser();
 
     await expect(citizenRegistry.countRecipients([colombo.id])).resolves.toBe(0);
   });
 
-  it('DMS-120: findRecipients returns each citizen once with name, phone and home district', async () => {
+  it('Main 7: findRecipients returns each citizen once with name, phone and home district', async () => {
     const withPhone = await createUser({ homeDistrict: colombo, phone: '+94771234567' });
     const withoutPhone = await createUser({ homeDistrict: gampaha });
 
@@ -98,7 +98,7 @@ describe('CitizenRegistry', () => {
     ['no districts', []],
     ['only malformed ids', ['not-an-id']],
     ['nothing at all', undefined],
-  ])('DMS-120: %s is nobody, without querying', async (_case, ids) => {
+  ])('Main 7: %s is nobody, without querying', async (_case, ids) => {
     await createUser({ homeDistrict: colombo });
     const userModel = { countDocuments: () => Promise.reject(new Error('queried')) };
     const registry = new CitizenRegistry({ userModel });
@@ -107,7 +107,7 @@ describe('CitizenRegistry', () => {
     await expect(registry.findRecipients(ids)).resolves.toEqual([]);
   });
 
-  it('DMS-120: a district with nobody registered counts 0', async () => {
+  it('Main 7: a district with nobody registered counts 0', async () => {
     await createUser({ homeDistrict: gampaha });
 
     await expect(citizenRegistry.countRecipients([kalutara.id])).resolves.toBe(0);
@@ -117,7 +117,7 @@ describe('CitizenRegistry', () => {
   describe('original recipients (DMS-124, A3)', () => {
     const alertId = () => new mongoose.Types.ObjectId();
 
-    it('DMS-124: TC-27 are everyone the alert was sent to, wherever they live now', async () => {
+    it('A3: TC-27 are everyone the alert was sent to, wherever they live now', async () => {
       const alert = alertId();
       const stayed = await createUser({ homeDistrict: colombo, phone: '+94771234567' });
       const moved = await createUser({ homeDistrict: colombo });
@@ -138,7 +138,7 @@ describe('CitizenRegistry', () => {
       });
     });
 
-    it("DMS-124: leave out other alerts' recipients", async () => {
+    it("A3: leave out other alerts' recipients", async () => {
       const alert = alertId();
       const mine = await createUser({ homeDistrict: colombo });
       const theirs = await createUser({ homeDistrict: colombo });
@@ -150,12 +150,12 @@ describe('CitizenRegistry', () => {
       ]);
     });
 
-    it('DMS-124: an alert that sent nothing, or a malformed id, has none', async () => {
+    it('A3: an alert that sent nothing, or a malformed id, has none', async () => {
       await expect(citizenRegistry.findOriginalRecipients(String(alertId()))).resolves.toEqual([]);
       await expect(citizenRegistry.findOriginalRecipients('not-an-id')).resolves.toEqual([]);
     });
 
-    it('DMS-124: are counted once each, per alert, across versions and channels', async () => {
+    it('A3: are counted once each, per alert, across versions and channels', async () => {
       const first = alertId();
       const second = alertId();
       const [a, b, c] = [
@@ -179,7 +179,7 @@ describe('CitizenRegistry', () => {
       expect(counts.get(String(second))).toBe(1);
     });
 
-    it('DMS-124: counting no alerts is an empty map, without querying', async () => {
+    it('A3: counting no alerts is an empty map, without querying', async () => {
       const notificationModel = { aggregate: () => Promise.reject(new Error('queried')) };
       const registry = new CitizenRegistry({ notificationModel });
 
