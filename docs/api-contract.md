@@ -4150,7 +4150,7 @@ Until they exist, every timeline entry shows the alert's current severity and ar
 
 UC04 A1 (DMS-156). The report view has a filter bar: *All hazards ▾*, *All districts ▾* and *All organisations ▾*. Changing a filter recompiles the report with the filters and stores the result as a **new** report, so an export of it (14.8) always matches what is on screen. The report it came from is never changed.
 
-The filters apply to the report's own selection: the same event, range, districts and sections (14.3). Refining a report that is already filtered **replaces** its filters; it doesn't add to them. Clearing every filter in the view reopens the original, unfiltered report (14.4); no request is sent and nothing is stored.
+The filters apply to the report's own selection: the same event, range, districts and sections (14.3). Refining a report that is already filtered **replaces** its filters; it doesn't add to them. Clearing every filter in the view reopens the original, unfiltered report (14.4); no request is sent and nothing is stored. The view keeps the original's id in its URL (`/reports/<id>?original=<originalId>`); a filtered report opened without it (e.g. from Recent reports) generates its selection again instead (14.3).
 
 Admits `dmc_officer` and `duty_officer`, like every endpoint in §14.
 
