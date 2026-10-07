@@ -15,10 +15,10 @@ const ALL = ['alertTimeline', 'citizensReached', 'occupancyOverTime', 'resourceD
 
 // A section that records the contexts it was compiled with.
 class FakeSection extends ReportSection {
-  constructor(key, { result = { key }, gaps = [], summary = {} } = {}) {
+  constructor(key, { result = { key }, gaps = [], summary = {}, isEmpty = false } = {}) {
     super();
     this.fakeKey = key;
-    this.output = { result, isEmpty: false, gaps };
+    this.output = { result, isEmpty, gaps };
     this.summary = summary;
     this.contexts = [];
   }
@@ -258,6 +258,68 @@ describe('ReportBuilder', () => {
       }),
     ).rejects.toThrow('No report section registered for: weatherConditions');
     expect(compile).not.toHaveBeenCalled();
+  });
+});
+
+describe('ReportBuilder all-empty detection (E2)', () => {
+  const build = (sections) =>
+    new ReportBuilder({ sections }).build(kelaniContext(), {
+      sectionKeys: sections.map((section) => section.key),
+      generatedBy: 'u',
+    });
+
+  it('DMS-160.1: a report is empty when every compiled section found no records', async () => {
+    const { isEmpty } = await build(ALL.map((key) => new FakeSection(key, { isEmpty: true })));
+
+    expect(isEmpty).toBe(true);
+  });
+
+  it('DMS-160.1: one section with records makes the report not empty', async () => {
+    const sections = ALL.map(
+      (key) => new FakeSection(key, { isEmpty: key !== 'resourceDistribution' }),
+    );
+
+    const { isEmpty } = await build(sections);
+
+    expect(isEmpty).toBe(false);
+  });
+
+  it('DMS-160.1: only the requested sections count: an empty one alone is an empty report', async () => {
+    const sections = [
+      new FakeSection('alertTimeline', { isEmpty: false }),
+      new FakeSection('occupancyOverTime', { isEmpty: true }),
+    ];
+
+    const { isEmpty } = await new ReportBuilder({ sections }).build(kelaniContext(), {
+      sectionKeys: ['occupancyOverTime'],
+      generatedBy: 'u',
+    });
+
+    expect(isEmpty).toBe(true);
+  });
+
+  it('DMS-160.1: the real sections over no data at all make an empty report', async () => {
+    const nothing = async () => [];
+    const sections = [
+      new AlertTimelineSection({ alerts: { findForReport: nothing } }),
+      new CitizensReachedSection({
+        alerts: { findForReport: nothing },
+        deliveries: { findSent: nothing },
+      }),
+      new OccupancyOverTimeSection({
+        names: fakeNames(),
+        occupancy: { findLatestBefore: nothing, findInRange: nothing },
+      }),
+      new ResourceDistributionSection({
+        names: fakeNames(),
+        distributions: { findInRange: nothing },
+      }),
+    ];
+
+    const { isEmpty, report } = await build(sections);
+
+    expect(isEmpty).toBe(true);
+    expect(report.sections).toHaveLength(4);
   });
 });
 
