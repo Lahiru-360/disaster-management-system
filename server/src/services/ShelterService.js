@@ -4,6 +4,7 @@ import { District as DistrictModel } from '../models/District.js';
 import { OccupancyRecord as OccupancyRecordModel } from '../models/OccupancyRecord.js';
 import { Shelter as ShelterModel } from '../models/Shelter.js';
 import { ApiError } from '../utils/ApiError.js';
+import { GeoDistance } from '../utils/GeoDistance.js';
 import { systemClock } from '../utils/SystemClock.js';
 import { activeIncident as defaultActiveIncident } from './ActiveIncident.js';
 import { CoordinationPresenter } from './CoordinationPresenter.js';
@@ -125,14 +126,55 @@ export class ShelterService {
     });
 
     const presented = CoordinationPresenter.shelter(doc);
+    const flagged = [ShelterStatus.NEAR_CAPACITY, ShelterStatus.FULL].includes(presented.status);
     return {
       shelter: presented,
       rate: presented.rate,
       status: presented.status,
-      flagged: [ShelterStatus.NEAR_CAPACITY, ShelterStatus.FULL].includes(presented.status),
-      // Filled in by A2 (DMS-145) and E2 (DMS-148).
-      alternateShelter: null,
+      flagged,
+      // A2: the nearest shelter that can still take people, if there is one.
+      alternateShelter: flagged
+        ? await this.findNearestWithSpace({
+            location: doc.location,
+            district: doc.district._id,
+            excludeShelterId: doc._id,
+          })
+        : null,
+      // Filled in by E2 (DMS-148).
       dmcAlerted: false,
+    };
+  }
+
+  /**
+   * UC03 A2.2 (findNearestWithSpace in sequence diagram (a), contract §13.4.2):
+   * the shelter in the district nearest to `location` that still has spare
+   * capacity (AVAILABLE or FILLING_UP, below 90%), never the one being asked
+   * about. Nearest is by straight-line distance, a tie going to the name that
+   * sorts first. Null when none has space (E2).
+   * @param {{ location: { lat: number, lng: number }, district: object|string, excludeShelterId?: object|string }} query
+   * @returns {Promise<{ id: string, name: string, rate: number, status: string, distanceKm: number }|null>}
+   */
+  async findNearestWithSpace({ location, district, excludeShelterId }) {
+    const filter = { district };
+    if (excludeShelterId) filter._id = { $ne: excludeShelterId };
+    const docs = await this.#shelterModel.find(filter);
+
+    const [nearest] = docs
+      .map((doc) => ({ doc, shelter: Shelter.fromDocument(doc) }))
+      .filter(({ shelter }) => shelter.hasSpareCapacity())
+      .map((candidate) => ({
+        ...candidate,
+        metres: GeoDistance.haversineMetres(location, candidate.doc.location),
+      }))
+      .sort((a, b) => a.metres - b.metres || a.doc.name.localeCompare(b.doc.name));
+    if (!nearest) return null;
+
+    return {
+      id: String(nearest.doc._id),
+      name: nearest.doc.name,
+      rate: nearest.shelter.occupancyRate(),
+      status: nearest.shelter.status(),
+      distanceKm: Math.round(nearest.metres / 100) / 10,
     };
   }
 
