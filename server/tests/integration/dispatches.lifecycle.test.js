@@ -81,6 +81,31 @@ describe('GET /api/rescue-teams/available', () => {
     expect(res.body.data.teams[0].distanceKm).toBeLessThan(res.body.data.teams[1].distanceKm);
   });
 
+  it('TC-16: Main 7 equidistant teams are listed in name order, every time', async () => {
+    const spot = { lat: 7.0, lng: 80.0 };
+    const army = await Organisation.findOne({ name: 'SL Army' });
+    for (const name of ['Team Zulu', 'Team Bravo']) {
+      await RescueTeam.create({
+        name,
+        organisation: army._id,
+        district: areas.gampaha._id,
+        memberCount: 4,
+        baseLocation: spot,
+        currentLocation: spot,
+      });
+    }
+    const query = `lat=${spot.lat}&lng=${spot.lng}`;
+
+    const first = await available(query);
+    const second = await available(query);
+
+    const names = first.body.data.teams.slice(0, 2).map((t) => t.name);
+    expect(names).toEqual(['Team Bravo', 'Team Zulu']);
+    expect(second.body.data.teams.map((t) => t.name)).toEqual(
+      first.body.data.teams.map((t) => t.name),
+    );
+  });
+
   it('TC-17: Main 7 a dispatched team is no longer listed', async () => {
     await dispatchAlpha();
 
