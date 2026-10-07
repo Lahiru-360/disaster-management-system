@@ -406,3 +406,144 @@ describe('DispatchService.currentTasksFor', () => {
     expect((await service.currentTasksFor([alpha._id])).size).toBe(0);
   });
 });
+
+describe('DispatchService.queueUnassigned and assign (E3)', () => {
+  const queue = (fields = {}) =>
+    service.queueUnassigned(officer, {
+      incidentLocation: INCIDENT,
+      priority: Priority.HIGH,
+      ...fields,
+    });
+
+  beforeEach(() => {
+    notifications.notifyRole = jest.fn().mockResolvedValue([]);
+  });
+
+  it('TC-51: E3.2 queues an UNASSIGNED dispatch stamped from the clock, with no team or deadline', async () => {
+    const dispatch = await queue();
+
+    expect(dispatch).toMatchObject({
+      status: DispatchStatus.UNASSIGNED,
+      team: null,
+      ackDeadline: null,
+      supportRequested: true,
+      createdAt: new Date(NOW),
+    });
+    expect(dispatch.statusHistory).toEqual([
+      {
+        status: DispatchStatus.UNASSIGNED,
+        at: new Date(NOW),
+        by: { id: officer.id, name: officer.name },
+      },
+    ]);
+    expect(notifications.notifyUser).not.toHaveBeenCalled();
+  });
+
+  it('TC-51: E3.2 asks every DMC officer for support, with the contract text and a link to the dispatch', async () => {
+    const dispatch = await queue();
+
+    expect(notifications.notifyRole).toHaveBeenCalledTimes(1);
+    expect(notifications.notifyRole).toHaveBeenCalledWith(
+      Role.DMC_OFFICER,
+      {},
+      {
+        type: NotificationType.SUPPORT_REQUEST,
+        title: 'Gampaha requests rescue support',
+        body: 'Gampaha requests rescue support – Biyagama – flooded road, HIGH',
+        link: `/shelter-resources?dispatch=${dispatch.id}`,
+      },
+    );
+  });
+
+  it('E3.2: describes an unlabelled incident as the incident location on the map', async () => {
+    await queue({ incidentLocation: { lat: INCIDENT.lat, lng: INCIDENT.lng } });
+
+    expect(notifications.notifyRole.mock.calls[0][2].body).toBe(
+      'Gampaha requests rescue support – incident location on the map, HIGH',
+    );
+  });
+
+  it('E3.2: sends nothing when the officer does not ask for support', async () => {
+    const dispatch = await queue({ supportRequested: false });
+
+    expect(dispatch.supportRequested).toBe(false);
+    expect(notifications.notifyRole).not.toHaveBeenCalled();
+  });
+
+  it('E3.2: a failed DMC notification never fails the request', async () => {
+    notifications.notifyRole.mockRejectedValue(new Error('inbox down'));
+    const error = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    const dispatch = await queue();
+
+    expect(dispatch.status).toBe(DispatchStatus.UNASSIGNED);
+    expect(error).toHaveBeenCalledWith(expect.stringContaining('Gampaha'), 'inbox down');
+    error.mockRestore();
+  });
+
+  it('E3.2: refuses with 409 NO_ACTIVE_INCIDENT and stores nothing when no incident is active', async () => {
+    await HazardEvent.updateMany({}, { status: EventStatus.CLOSED });
+
+    await expect(queue()).rejects.toMatchObject({ status: 409, code: 'NO_ACTIVE_INCIDENT' });
+    expect(await Dispatch.countDocuments({})).toBe(0);
+    expect(notifications.notifyRole).not.toHaveBeenCalled();
+  });
+
+  it('TC-52: E3 assign counts the new deadline from now, not from when it was queued', async () => {
+    const queued = await queue();
+    clock.advance(20 * 60 * 1000);
+
+    const assigned = await service.assign(officer, queued.id, { teamId: alpha.id });
+
+    expect(assigned.createdAt).toEqual(new Date(NOW));
+    expect(new Date(assigned.ackDeadline)).toEqual(new Date(clock.now().getTime() + 5 * 60 * 1000));
+    expect(assigned.statusHistory.map((entry) => entry.status)).toEqual([
+      DispatchStatus.UNASSIGNED,
+      DispatchStatus.ASSIGNED,
+    ]);
+    expect(assigned.statusHistory[1].at).toEqual(clock.now());
+  });
+
+  it("TC-52: E3 assign tells the team's lead, and a failed notification never fails it", async () => {
+    const queued = await queue();
+    notifications.notifyUser.mockRejectedValue(new Error('inbox down'));
+    const error = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    const assigned = await service.assign(officer, queued.id, { teamId: alpha.id });
+
+    expect(assigned.status).toBe(DispatchStatus.ASSIGNED);
+    expect(notifications.notifyUser).toHaveBeenCalledWith(
+      lead.id,
+      expect.objectContaining({ type: NotificationType.ASSIGNMENT }),
+    );
+    error.mockRestore();
+  });
+
+  it('TC-53: E3 a team that is no longer AVAILABLE is refused and the incident stays queued', async () => {
+    const queued = await queue();
+    await RescueTeam.updateOne({ _id: alpha._id }, { status: TeamStatus.DISPATCHED });
+
+    await expect(service.assign(officer, queued.id, { teamId: alpha.id })).rejects.toMatchObject({
+      status: 409,
+      code: 'TEAM_NOT_AVAILABLE',
+    });
+    expect((await Dispatch.findById(queued.id)).status).toBe(DispatchStatus.UNASSIGNED);
+  });
+
+  it('E3: a dispatch taken while the team was being claimed frees the team again', async () => {
+    const queued = await queue();
+    // Another officer assigns it between this officer's read and write.
+    const otherOfficer = await createUser({ role: Role.DISTRICT_OFFICER, district: areas.gampaha });
+    const original = Dispatch.findOneAndUpdate.bind(Dispatch);
+    const spy = jest.spyOn(Dispatch, 'findOneAndUpdate').mockImplementationOnce(async (...args) => {
+      await Dispatch.updateOne({ _id: queued.id }, { status: DispatchStatus.ASSIGNED });
+      return original(...args);
+    });
+
+    await expect(
+      service.assign(otherOfficer, queued.id, { teamId: echo.id }),
+    ).rejects.toMatchObject({ status: 409, code: 'INVALID_DISPATCH_TRANSITION' });
+    expect((await RescueTeam.findById(echo._id)).status).toBe(TeamStatus.AVAILABLE);
+    spy.mockRestore();
+  });
+});

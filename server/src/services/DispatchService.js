@@ -2,6 +2,7 @@ import { Dispatch } from '../domain/coordination/Dispatch.js';
 import { env } from '../config/Config.js';
 import { DispatchStatus } from '../enums/DispatchStatus.js';
 import { NotificationType } from '../enums/NotificationType.js';
+import { Role } from '../enums/Role.js';
 import { TeamStatus } from '../enums/TeamStatus.js';
 import { Dispatch as DispatchModel } from '../models/Dispatch.js';
 import { RescueTeam as RescueTeamModel } from '../models/RescueTeam.js';
@@ -140,6 +141,106 @@ export class DispatchService {
   }
 
   /**
+   * UC03 E3 (contract §13.9.1): no team is available, so the incident waits
+   * in the district's unassigned queue - an UNASSIGNED dispatch with no team
+   * and no deadline. Unless the officer opted out, every DMC officer is told
+   * support is wanted; a failed notification never fails the request.
+   * @param {object} user The signed-in district officer.
+   * @param {{ incidentLocation: { lat: number, lng: number, label?: string }, priority: string, supportRequested?: boolean }} input
+   * @returns {Promise<object>} The dispatch object (§13.2).
+   * @throws {ApiError} 403 FORBIDDEN or 409 NO_ACTIVE_INCIDENT.
+   */
+  async queueUnassigned(user, { incidentLocation, priority, supportRequested = true }) {
+    const district = this.#districtScope.ownDistrict(user);
+    const incident = await this.#activeIncident.require(district);
+
+    const createdAt = this.#clock.now();
+    const doc = await this.#dispatchModel.create({
+      team: null,
+      district,
+      incident: incident._id,
+      incidentLocation,
+      priority,
+      status: DispatchStatus.UNASSIGNED,
+      supportRequested,
+      createdBy: user._id,
+      createdAt,
+      ackDeadline: null,
+      statusHistory: [{ status: DispatchStatus.UNASSIGNED, at: createdAt, by: user._id }],
+    });
+
+    const dispatch = await this.#present(doc);
+    if (supportRequested) await this.#notifyDmc(dispatch);
+    return dispatch;
+  }
+
+  /**
+   * UC03 E3 (contract §13.9.2): a team is free, so a queued incident gets it.
+   * The team moves to DISPATCHED - only if it is still AVAILABLE - and the
+   * UNASSIGNED dispatch becomes ASSIGNED with a deadline counted from now.
+   * The team's lead is notified, as in step 9.
+   * @param {object} user The signed-in district officer.
+   * @param {string} dispatchId
+   * @param {{ teamId: string }} input Validated by the route.
+   * @returns {Promise<object>} The dispatch object (§13.2).
+   * @throws {ApiError} 404 NOT_FOUND, 403 FORBIDDEN, 409 NO_ACTIVE_INCIDENT,
+   *   409 INVALID_DISPATCH_TRANSITION or 409 TEAM_NOT_AVAILABLE.
+   */
+  async assign(user, dispatchId, { teamId }) {
+    const doc = await this.#findDispatch(dispatchId);
+    this.#districtScope.assertOwnDistrict(user, doc.district);
+    const team = await this.#findTeam(teamId);
+    this.#districtScope.assertOwnDistrict(user, team.district);
+    await this.#activeIncident.require(doc.district);
+
+    // The domain class refuses a dispatch that isn't UNASSIGNED before any team is claimed.
+    const now = this.#clock.now();
+    const ackDeadline = new Date(now.getTime() + this.#ackTimeoutMinutes * 60 * 1000);
+    const dispatch = Dispatch.fromDocument(doc);
+    dispatch.assign(team._id, ackDeadline, user._id, now);
+    const [entry] = dispatch.statusHistory.slice(-1);
+
+    const claimed = await this.#rescueTeamModel.findOneAndUpdate(
+      { _id: team._id, status: TeamStatus.AVAILABLE },
+      { $set: { status: TeamStatus.DISPATCHED } },
+      { returnDocument: 'after' },
+    );
+    if (!claimed) {
+      const current = await this.#rescueTeamModel.findById(team._id);
+      throw new ApiError(
+        409,
+        'TEAM_NOT_AVAILABLE',
+        `${team.name} is ${current?.status ?? team.status} and can't take a new dispatch.`,
+      );
+    }
+
+    const updated = await this.#dispatchModel.findOneAndUpdate(
+      { _id: doc._id, status: DispatchStatus.UNASSIGNED },
+      {
+        $set: { team: team._id, status: dispatch.status, ackDeadline },
+        $push: { statusHistory: entry },
+      },
+      { returnDocument: 'after' },
+    );
+    if (!updated) {
+      // Someone else moved it first; nothing was dispatched, so the team is free again.
+      await this.#rescueTeamModel.updateOne(
+        { _id: team._id },
+        { $set: { status: TeamStatus.AVAILABLE } },
+      );
+      const current = await this.#dispatchModel.findById(doc._id);
+      throw new ApiError(
+        409,
+        'INVALID_DISPATCH_TRANSITION',
+        `This dispatch is ${current.status} and can't be assigned a team.`,
+      );
+    }
+
+    await this.#notifyLead(team, updated);
+    return this.#present(updated);
+  }
+
+  /**
    * The officer console's dispatch list (contract §13.7.3): the dispatches of
    * the district the caller may see, optionally only some statuses, newest
    * first, at most 100. The console polls it for declined or unresponsive
@@ -150,6 +251,7 @@ export class DispatchService {
    */
   async list(user, { districtId, status = [] } = {}) {
     const district = await this.#districtScope.readableDistrict(user, districtId);
+    await this.markOverdueUnresponsive({ district });
     const filter = { district };
     if (status.length > 0) filter.status = { $in: status };
 
@@ -169,10 +271,14 @@ export class DispatchService {
    * @returns {Promise<{ team: object|null, dispatches: object[] }>}
    */
   async listMine(user) {
+    const own = await this.#rescueTeamModel.exists({ lead: user._id });
+    if (!own) return { team: null, dispatches: [] };
+    // An unanswered assignment shows as expired now, not at the next job tick,
+    // and the team is read after, so its status agrees.
+    await this.markOverdueUnresponsive({ team: own._id });
     const team = await this.#rescueTeamModel
-      .findOne({ lead: user._id })
+      .findById(own._id)
       .populate(CoordinationPresenter.TEAM_POPULATE);
-    if (!team) return { team: null, dispatches: [] };
 
     const [open, lastClosed] = await Promise.all([
       this.#dispatchModel
@@ -277,11 +383,14 @@ export class DispatchService {
   // domain class checks the move; the update only applies if the status is
   // still the one the move started from, so two taps can't both win.
   async #leadMoves(user, dispatchId, action, ...args) {
-    const doc = await this.#findDispatch(dispatchId);
+    let doc = await this.#findDispatch(dispatchId);
     const team = await this.#rescueTeamModel.findById(doc.team);
     if (!team || String(team.lead) !== String(user._id)) {
       throw new ApiError(403, 'FORBIDDEN', 'Only the lead of the assigned team can do this.');
     }
+    // Past its deadline the dispatch is UNRESPONSIVE before the move is tried,
+    // so a late answer is refused even if the timeout job hasn't run yet.
+    if (await this.#markUnresponsive(doc)) doc = await this.#findDispatch(dispatchId);
 
     const dispatch = Dispatch.fromDocument(doc);
     const from = dispatch.status;
@@ -312,6 +421,59 @@ export class DispatchService {
       await this.#rescueTeamModel.updateOne({ _id: team._id }, { $set: teamUpdate });
     }
     return { updated, team };
+  }
+
+  /**
+   * UC03 E4.1 (contract §13.10): marks every ASSIGNED dispatch in `scope`
+   * whose acknowledgement deadline has passed as UNRESPONSIVE, sets its team
+   * UNAVAILABLE and tells the officer who created it. Run by the timeout job
+   * over everything (`scope` empty), and lazily by reads and actions over
+   * the part they touch - a district, a team - so the state is right between
+   * job ticks.
+   * @param {object} [scope] A filter on Dispatch, e.g. `{ district }` or `{ team }`.
+   * @returns {Promise<number>} How many this call marked.
+   */
+  async markOverdueUnresponsive(scope = {}) {
+    const overdue = await this.#dispatchModel.find({
+      ...scope,
+      status: DispatchStatus.ASSIGNED,
+      ackDeadline: { $lt: this.#clock.now() },
+    });
+    let marked = 0;
+    for (const doc of overdue) {
+      if (await this.#markUnresponsive(doc)) marked += 1;
+    }
+    return marked;
+  }
+
+  // One overdue dispatch. The update only applies while it is still ASSIGNED,
+  // so when the job and a request race, or the lead answers at the last
+  // moment, exactly one of them moves it and only that one notifies.
+  async #markUnresponsive(doc) {
+    const dispatch = Dispatch.fromDocument(doc);
+    const now = this.#clock.now();
+    if (!dispatch.isOverdue(now)) return false;
+
+    const { teamStatus } = dispatch.markUnresponsive(now);
+    const [entry] = dispatch.statusHistory.slice(-1);
+    const updated = await this.#dispatchModel.findOneAndUpdate(
+      { _id: doc._id, status: DispatchStatus.ASSIGNED },
+      { $set: { status: dispatch.status }, $push: { statusHistory: entry } },
+      { returnDocument: 'after' },
+    );
+    if (!updated) return false;
+
+    const team = await this.#rescueTeamModel.findByIdAndUpdate(
+      doc.team,
+      { $set: { status: teamStatus } },
+      { returnDocument: 'after' },
+    );
+    await this.#notifyCreator(updated, {
+      type: NotificationType.DISPATCH_UNRESPONSIVE,
+      title: `No response from ${team?.name ?? 'the team'}`,
+      body: `No response from ${team?.name ?? 'the team'} – reassign`,
+    });
+    return true;
   }
 
   async #findTeam(teamId) {
@@ -359,6 +521,27 @@ export class DispatchService {
       });
     } catch (error) {
       console.error(`Could not notify the officer about dispatch ${doc.id}:`, error.message);
+    }
+  }
+
+  // E3: asks the DMC for rescue support. The contract's text is
+  // "Gampaha requests rescue support – Biyagama – flooded road, HIGH".
+  async #notifyDmc(dispatch) {
+    const district = dispatch.district.name;
+    const where = dispatch.incidentLocation.label ?? 'incident location on the map';
+    try {
+      await this.#notifications.notifyRole(
+        Role.DMC_OFFICER,
+        {},
+        {
+          type: NotificationType.SUPPORT_REQUEST,
+          title: `${district} requests rescue support`,
+          body: `${district} requests rescue support – ${where}, ${dispatch.priority}`,
+          link: `/shelter-resources?dispatch=${dispatch.id}`,
+        },
+      );
+    } catch (error) {
+      console.error(`Could not ask the DMC to support ${district}:`, error.message);
     }
   }
 
