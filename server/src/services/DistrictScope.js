@@ -50,6 +50,20 @@ export class DistrictScope {
   }
 
   /**
+   * The district a district officer's write goes into: always their own.
+   * @param {object} user The signed-in User.
+   * @returns {string} The district id.
+   * @throws {ApiError} 403 FORBIDDEN, if the caller isn't a district officer or has no district.
+   */
+  ownDistrict(user) {
+    const person = PersonFactory.fromUser(user);
+    if (!(person instanceof DistrictOfficer)) {
+      throw new ApiError(403, 'FORBIDDEN', 'You do not have permission to perform this action.');
+    }
+    return DistrictScope.#ownDistrict(person);
+  }
+
+  /**
    * Refuses a district officer acting on a record outside their district.
    * @param {object} user The signed-in User (a district officer).
    * @param {object|string} districtId The record's district.

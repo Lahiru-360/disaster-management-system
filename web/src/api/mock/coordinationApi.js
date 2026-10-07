@@ -248,6 +248,73 @@ async function listShelters({ districtId } = {}) {
   return inDistrict(districtId) ? shelters.map(presentShelter) : [];
 }
 
+// A1. Mirrors the server: the name (1-100 characters), a point inside the
+// world's range and a whole-number capacity of 1 or more are checked, each
+// problem reported on its field (a location one on `location`); a name the
+// district already uses, ignoring case and surrounding spaces, is 409
+// SHELTER_NAME_TAKEN. The new shelter is empty, so AVAILABLE.
+async function registerShelter({ name, location, capacity }) {
+  await delay();
+  takeFailure();
+  const errors = [];
+  const trimmed = typeof name === 'string' ? name.trim() : '';
+  if (typeof name !== 'string' && name !== undefined) {
+    errors.push({ field: 'name', message: 'must be text' });
+  } else if (!trimmed) {
+    errors.push({ field: 'name', message: 'is required' });
+  } else if (trimmed.length > 100) {
+    errors.push({ field: 'name', message: 'must be at most 100 characters' });
+  }
+  const point = location ?? {};
+  const label = typeof point.label === 'string' ? point.label.trim() : null;
+  if (!location) {
+    errors.push({ field: 'location', message: 'is required' });
+  } else if (
+    !(point.lat >= -90 && point.lat <= 90 && point.lng >= -180 && point.lng <= 180) ||
+    typeof point.lat !== 'number' ||
+    typeof point.lng !== 'number'
+  ) {
+    errors.push({
+      field: 'location',
+      message: 'must have a lat from -90 to 90 and a lng from -180 to 180',
+    });
+  } else if (point.label != null && (label === null || label.length > 200)) {
+    errors.push({ field: 'location', message: 'label must be text of at most 200 characters' });
+  }
+  if (capacity === undefined || capacity === null) {
+    errors.push({ field: 'capacity', message: 'is required' });
+  } else if (!Number.isInteger(capacity) || capacity < 1) {
+    errors.push({ field: 'capacity', message: 'must be a whole number, 1 or more' });
+  }
+  if (errors.length > 0) {
+    const error = apiError(400, 'VALIDATION_ERROR', 'Request validation failed.');
+    error.response.data.error.errors = errors;
+    throw error;
+  }
+  if (shelters.some((s) => s.name.trim().toLowerCase() === trimmed.toLowerCase())) {
+    throw apiError(
+      409,
+      'SHELTER_NAME_TAKEN',
+      `A shelter named "${trimmed}" already exists in ${GAMPAHA.name}.`,
+    );
+  }
+
+  const now = new Date().toISOString();
+  const record = {
+    id: `66fb0a1b2c3d4e5f6a7b8c${String(shelters.length + 1).padStart(2, '0')}`,
+    name: trimmed,
+    district: GAMPAHA,
+    location: { lat: point.lat, lng: point.lng, label: label || null },
+    capacity,
+    currentOccupancy: 0,
+    redirectingTo: null,
+    createdAt: now,
+    updatedAt: now,
+  };
+  shelters.push(record);
+  return presentShelter(record);
+}
+
 // Steps 3-5. Mirrors the server: a whole number, 0 or more, is valid (0 is an
 // empty shelter, more than capacity shows as FULL); anything else is a 400 on
 // `occupants` and changes nothing (E1). A2's suggestion and E2's DMC alert
@@ -471,6 +538,7 @@ export const mockControls = {
 export default {
   getOperationalPicture,
   listShelters,
+  registerShelter,
   updateOccupancy,
   listStock,
   logDistribution,
