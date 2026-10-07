@@ -547,3 +547,85 @@ describe('DispatchService.queueUnassigned and assign (E3)', () => {
     spy.mockRestore();
   });
 });
+
+describe('DispatchService edge cases', () => {
+  it('Main 9: a dispatch with no place name tells the lead the incident location on the map', async () => {
+    await dispatchAlpha({ incidentLocation: { lat: INCIDENT.lat, lng: INCIDENT.lng } });
+
+    expect(notifications.notifyUser.mock.calls[0][1].body).toBe(
+      'New assignment – incident location on the map (HIGH). Respond within 5 min.',
+    );
+  });
+
+  it('Main 9: a team that vanished while being claimed is still refused as not available', async () => {
+    const claim = jest.spyOn(RescueTeam, 'findOneAndUpdate').mockImplementationOnce(async () => {
+      await RescueTeam.deleteOne({ _id: alpha._id });
+      return null;
+    });
+
+    await expect(dispatchAlpha()).rejects.toMatchObject({
+      status: 409,
+      code: 'TEAM_NOT_AVAILABLE',
+      message: "Team Alpha is AVAILABLE and can't take a new dispatch.",
+    });
+    claim.mockRestore();
+  });
+
+  it('E3: a team that vanished while being assigned is still refused as not available', async () => {
+    const queued = await service.queueUnassigned(officer, {
+      incidentLocation: INCIDENT,
+      priority: Priority.HIGH,
+    });
+    const claim = jest.spyOn(RescueTeam, 'findOneAndUpdate').mockImplementationOnce(async () => {
+      await RescueTeam.deleteOne({ _id: alpha._id });
+      return null;
+    });
+
+    await expect(service.assign(officer, queued.id, { teamId: alpha.id })).rejects.toMatchObject({
+      status: 409,
+      code: 'TEAM_NOT_AVAILABLE',
+    });
+    expect((await Dispatch.findById(queued.id)).status).toBe(DispatchStatus.UNASSIGNED);
+    claim.mockRestore();
+  });
+
+  it('E4: a team deleted before the timeout is reported as "the team" to the officer', async () => {
+    const dispatch = await dispatchAlpha();
+    await RescueTeam.deleteOne({ _id: alpha._id });
+    clock.advance(5 * 60 * 1000 + 1);
+
+    expect(await service.markOverdueUnresponsive()).toBe(1);
+
+    expect((await Dispatch.findById(dispatch.id)).status).toBe(DispatchStatus.UNRESPONSIVE);
+    expect(notifications.notifyUser).toHaveBeenLastCalledWith(
+      officer.id,
+      expect.objectContaining({ body: 'No response from the team – reassign' }),
+    );
+  });
+
+  it('Main 14: listing with no query reads the officer’s own district', async () => {
+    await dispatchAlpha();
+
+    const listed = await service.list(officer);
+
+    expect(listed).toHaveLength(1);
+    expect(listed[0].district.id).toBe(areas.gampaha.id);
+  });
+
+  it('E3: the unassigned queue is listed under UNASSIGNED, newest first', async () => {
+    const first = await service.queueUnassigned(officer, {
+      incidentLocation: INCIDENT,
+      priority: Priority.LOW,
+    });
+    clock.advance(FakeClock.MINUTE);
+    const second = await service.queueUnassigned(officer, {
+      incidentLocation: INCIDENT,
+      priority: Priority.CRITICAL,
+    });
+    await dispatchAlpha();
+
+    const listed = await service.list(officer, { status: [DispatchStatus.UNASSIGNED] });
+
+    expect(listed.map((d) => d.id)).toEqual([second.id, first.id]);
+  });
+});

@@ -8,6 +8,7 @@ import { HazardEvent } from '../../src/models/HazardEvent.js';
 import { Organisation } from '../../src/models/Organisation.js';
 import { RescueTeam } from '../../src/models/RescueTeam.js';
 import { UserNotification } from '../../src/models/UserNotification.js';
+import { DispatchTimeoutJob } from '../../src/jobs/DispatchTimeoutJob.js';
 import { dispatchService } from '../../src/services/DispatchService.js';
 import { seedAreas } from '../helpers/areaFixtures.js';
 import { bearerFor } from '../helpers/authHelper.js';
@@ -218,6 +219,30 @@ describe('reading after the deadline', () => {
     expect(stored.status).toBe('UNRESPONSIVE');
     expect(stored.statusHistory.filter((e) => e.status === 'UNRESPONSIVE')).toHaveLength(1);
     expect(await inbox()).toHaveLength(1);
+  });
+});
+
+describe('DispatchTimeoutJob end to end', () => {
+  it('TC-56: E4.1 a check marks it UNRESPONSIVE, the team UNAVAILABLE, and the officer sees it in their inbox and dispatch list', async () => {
+    await passDeadline();
+
+    expect(await new DispatchTimeoutJob({ dispatchService }).tick()).toBe(1);
+
+    const list = await as(officer).get('/api/dispatches?status=UNRESPONSIVE');
+    expect(list.body.data.dispatches.map((d) => d.id)).toEqual([dispatchId]);
+    const teams = await as(officer).get('/api/rescue-teams');
+    expect(teams.body.data.teams.find((t) => t.id === alpha.id).status).toBe('UNAVAILABLE');
+    const mine = await as(officer).get('/api/notifications/me');
+    expect(mine.body.data.notifications[0]).toMatchObject({
+      type: 'DISPATCH_UNRESPONSIVE',
+      body: 'No response from Team Alpha – reassign',
+    });
+  });
+
+  it('TC-58: E4 a check before the deadline marks nothing', async () => {
+    expect(await new DispatchTimeoutJob({ dispatchService }).tick()).toBe(0);
+
+    expect((await Dispatch.findById(dispatchId)).status).toBe('ASSIGNED');
   });
 });
 
