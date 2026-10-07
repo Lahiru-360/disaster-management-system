@@ -352,8 +352,8 @@ async function registerShelter({ name, location, capacity }) {
 // Steps 3-5. Mirrors the server: a whole number, 0 or more, is valid (0 is an
 // empty shelter, more than capacity shows as FULL); anything else is a 400 on
 // `occupants` and changes nothing (E1). A NEAR_CAPACITY or FULL result is
-// flagged with the nearest shelter that has space (A2); E2's DMC alert is not
-// simulated here yet, so `dmcAlerted` stays false.
+// flagged with the nearest shelter that has space (A2); with none (E2) the DMC
+// counts as alerted. The once-an-hour window is the server's, not simulated.
 async function updateOccupancy(shelterId, occupants) {
   await delay();
   takeFailure();
@@ -370,13 +370,15 @@ async function updateOccupancy(shelterId, occupants) {
   record.currentOccupancy = occupants;
   record.updatedAt = new Date().toISOString();
   const saved = presentShelter(record);
+  const flagged = FLAGGED.includes(saved.status);
+  const alternateShelter = flagged ? nearestWithSpace(record) : null;
   return {
     shelter: saved,
     rate: saved.rate,
     status: saved.status,
-    flagged: FLAGGED.includes(saved.status),
-    alternateShelter: FLAGGED.includes(saved.status) ? nearestWithSpace(record) : null,
-    dmcAlerted: false,
+    flagged,
+    alternateShelter,
+    dmcAlerted: flagged && alternateShelter === null,
   };
 }
 
