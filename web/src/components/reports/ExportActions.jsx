@@ -1,7 +1,8 @@
 import Button from '../ui/Button';
 
-// UC04 steps 12-13 (the §5.2 wireframe's action row): Export PDF and Export
-// CSV, then "Export ready – Download" for the file just made. Presentational:
+// UC04 steps 12-13 (the §5.2 wireframe's action row): Export PDF, Export CSV
+// and Share… (steps 14-15, DMS-155.5: `onShare` opens the Share report dialog,
+// and `shared` is the confirmation to show once it has shared), then "Export ready – Download" for the file just made. Presentational:
 // the screen exports and passes the state in. `exporting` is the format being
 // written, `ready` the last export ({ format, fileUrl, fileName }), and
 // `failure` the last failed one ({ format, message, retryable }): E3 (DMS-161)
@@ -14,6 +15,8 @@ const FORMATS = [
 
 export default function ExportActions({
   onExport,
+  onShare,
+  shared = null,
   exporting = null,
   ready = null,
   failure = null,
@@ -33,6 +36,9 @@ export default function ExportActions({
             {label}
           </Button>
         ))}
+        <Button variant="outline" fullWidth={false} onClick={onShare}>
+          Share…
+        </Button>
       </div>
 
       {ready ? (
@@ -47,6 +53,12 @@ export default function ExportActions({
           >
             Download
           </a>
+        </p>
+      ) : null}
+
+      {shared ? (
+        <p role="status" className="text-[13px] font-semibold text-success-ink">
+          {shared}
         </p>
       ) : null}
 

@@ -9,6 +9,8 @@ import ExportActions from '../../components/reports/ExportActions';
 import IncompleteDataBanner from '../../components/reports/IncompleteDataBanner';
 import OccupancyChart from '../../components/reports/OccupancyChart';
 import ReportSectionCard from '../../components/reports/ReportSectionCard';
+import ShareDialog from '../../components/reports/ShareDialog';
+import SharesList from '../../components/reports/SharesList';
 import SummaryFigures from '../../components/reports/SummaryFigures';
 import Button from '../../components/ui/Button';
 import Loader from '../../components/ui/Loader';
@@ -63,7 +65,10 @@ function startDownload({ fileUrl, fileName }) {
 // the incomplete-data banner and the four sections with their charts. Opened
 // straight after generating (the report comes with the navigation) or later
 // by its URL, when it is read back from the server (§14.4). Steps 12-13
-// (DMS-154.5): Export PDF / Export CSV, then "Export ready – Download".
+// (DMS-154.5): Export PDF / Export CSV, then "Export ready – Download". Steps
+// 14-15 (DMS-155.5): Share… opens the Share report dialog, the confirmation
+// "Shared with UNICEF Sri Lanka (liaison@example.org)" follows, and the
+// report's shares are listed under the actions.
 export default function ReportViewScreen() {
   const { reportId } = useParams();
   const passed = useLocation().state?.report;
@@ -79,6 +84,11 @@ export default function ReportViewScreen() {
   const [exporting, setExporting] = useState(null);
   const [exported, setExported] = useState(null);
   const [exportError, setExportError] = useState(null);
+  // The report's shares (§14.10) and the last confirmation, each kept with the
+  // report they belong to; shareOpen is whether the Share dialog is showing.
+  const [shareList, setShareList] = useState(null);
+  const [shareNotice, setShareNotice] = useState(null);
+  const [shareOpen, setShareOpen] = useState(false);
 
   useEffect(() => {
     if (!canReport || fromNavigation) return undefined;
@@ -102,6 +112,22 @@ export default function ReportViewScreen() {
   }, [canReport, fromNavigation, reportId]);
 
   const report = fromNavigation ?? (loaded?.id === reportId ? loaded : null);
+  const reportKey = report?.id;
+
+  useEffect(() => {
+    if (!canReport || !reportKey) return undefined;
+    let cancelled = false;
+    reportsApi.listShares(reportKey).then(
+      (items) => {
+        if (!cancelled) setShareList({ reportId: reportKey, items });
+      },
+      // The list is secondary: without it the report is still shown.
+      () => {},
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [canReport, reportKey]);
 
   const exportAs = (format) => {
     const forReport = report.id;
@@ -127,6 +153,17 @@ export default function ReportViewScreen() {
         setExporting(null);
       },
     );
+  };
+  const handleShared = (share) => {
+    setShareOpen(false);
+    setShareNotice({
+      reportId: report.id,
+      text: `Shared with ${share.organisation.name} (${share.recipientEmail})`,
+    });
+    setShareList((current) => ({
+      reportId: report.id,
+      items: [share, ...(current?.reportId === report.id ? current.items : [])],
+    }));
   };
   const newReport = (
     <Button variant="outline" fullWidth={false} onClick={() => navigate('/reports')}>
@@ -197,11 +234,21 @@ export default function ReportViewScreen() {
         })}
         <ExportActions
           onExport={exportAs}
+          onShare={() => setShareOpen(true)}
+          shared={shareNotice?.reportId === report.id ? shareNotice.text : null}
           exporting={exporting}
           ready={exported?.reportId === report.id ? exported : null}
           failure={exportError?.reportId === report.id ? exportError : null}
         />
+        <SharesList shares={shareList?.reportId === report.id ? shareList.items : []} />
       </div>
+      {shareOpen ? (
+        <ShareDialog
+          reportId={report.id}
+          onClose={() => setShareOpen(false)}
+          onShared={handleShared}
+        />
+      ) : null}
     </Screen>
   );
 }
