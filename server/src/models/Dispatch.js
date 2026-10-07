@@ -25,11 +25,15 @@ const statusEntrySchema = new mongoose.Schema(
 
 const dispatchSchema = new mongoose.Schema(
   {
-    // The RescueTeam the dispatch is assigned to (UC03 class diagram).
+    // The RescueTeam the dispatch is assigned to (UC03 class diagram). Empty
+    // only while UNASSIGNED (E3), when no team could take the incident yet.
     team: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'RescueTeam',
-      required: true,
+      default: null,
+      required() {
+        return this.status !== DispatchStatus.UNASSIGNED;
+      },
     },
     district: {
       type: mongoose.Schema.Types.ObjectId,
@@ -57,6 +61,11 @@ const dispatchSchema = new mongoose.Schema(
       enum: Object.values(DispatchStatus),
       required: true,
       default: DispatchStatus.ASSIGNED,
+    },
+    // E3: the officer asked the DMC for support when queueing the incident.
+    supportRequested: {
+      type: Boolean,
+      default: false,
     },
     // The DistrictOfficer who creates it (UC03 class diagram).
     createdBy: {

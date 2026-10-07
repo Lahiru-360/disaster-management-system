@@ -31,6 +31,14 @@ export class RescueTeamRoutes extends BaseRoutes {
       RequestValidator.query(CoordinationValidator.availableQuery),
       dispatchController.findAvailableTeams,
     );
+
+    // UC03 E4: a team that missed its deadline is put back in the list by hand.
+    router.post(
+      '/:id/availability',
+      authMiddleware.requireAuth,
+      authMiddleware.requireRole(Role.DISTRICT_OFFICER),
+      rescueTeamController.markAvailable,
+    );
   }
 }
 
