@@ -23,6 +23,24 @@ export class DispatchRoutes extends BaseRoutes {
       dispatchController.dispatch,
     );
 
+    // Officer: no team is free, so queue the incident and ask the DMC (E3).
+    router.post(
+      '/unassigned',
+      authMiddleware.requireAuth,
+      authMiddleware.requireRole(Role.DISTRICT_OFFICER),
+      RequestValidator.body(CoordinationValidator.unassignedBody),
+      dispatchController.queueUnassigned,
+    );
+
+    // Officer: a team is free, so a queued incident gets it (E3).
+    router.post(
+      '/:id/assign',
+      authMiddleware.requireAuth,
+      authMiddleware.requireRole(Role.DISTRICT_OFFICER),
+      RequestValidator.body(CoordinationValidator.assignBody),
+      dispatchController.assign,
+    );
+
     // Console: the district's dispatches, e.g. the declined ones to reassign.
     // requireRole admits duty officers too, since a duty officer is a DMC
     // officer; which district each may read is the service's check.
