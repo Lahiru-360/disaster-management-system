@@ -7,4 +7,7 @@ export const DispatchStatus = Object.freeze({
   COMPLETED: 'COMPLETED',
   DECLINED: 'DECLINED',
   UNRESPONSIVE: 'UNRESPONSIVE',
+  // E3: an incident no team could take yet, waiting in the district's queue.
+  // An addition to the class diagram (deviation log, DMS-149.1).
+  UNASSIGNED: 'UNASSIGNED',
 });

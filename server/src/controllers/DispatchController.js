@@ -24,6 +24,18 @@ export class DispatchController extends BaseController {
     ApiResponse.success(res, { dispatch }, 201);
   }
 
+  async queueUnassigned(req, res) {
+    const dispatch = await this.#dispatchService.queueUnassigned(req.user, req.body);
+
+    ApiResponse.success(res, { dispatch }, 201);
+  }
+
+  async assign(req, res) {
+    const dispatch = await this.#dispatchService.assign(req.user, req.params.id, req.body);
+
+    ApiResponse.success(res, { dispatch }, 200);
+  }
+
   async list(req, res) {
     const dispatches = await this.#dispatchService.list(req.user, req.query);
 
