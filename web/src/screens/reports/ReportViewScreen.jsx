@@ -115,12 +115,14 @@ export default function ReportViewScreen() {
         startDownload(file);
       },
       (exportFailure) => {
+        // E3: the file couldn't be written (500) or stored (502), or the call
+        // never got an answer; all are safe to retry. A missing report isn't.
+        const status = exportFailure?.response?.status;
         setExportError({
           reportId: forReport,
-          message: apiErrorMessage(
-            exportFailure,
-            'The export could not be made. Please try again.',
-          ),
+          format,
+          message: apiErrorMessage(exportFailure, 'The connection was lost.'),
+          retryable: status !== 404 && status !== 400,
         });
         setExporting(null);
       },
@@ -197,11 +199,8 @@ export default function ReportViewScreen() {
           onExport={exportAs}
           exporting={exporting}
           ready={exported?.reportId === report.id ? exported : null}
-        >
-          {exportError?.reportId === report.id ? (
-            <Notice variant="error">{exportError.message}</Notice>
-          ) : null}
-        </ExportActions>
+          failure={exportError?.reportId === report.id ? exportError : null}
+        />
       </div>
     </Screen>
   );
