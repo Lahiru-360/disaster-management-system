@@ -2963,7 +2963,35 @@ UC03 A1 (DMS-144). Opens a new shelter in the officer's own district, empty and 
 }
 ```
 
-**Success — `201 Created`**: `{ "shelter": { ... } }`, the new shelter object with `currentOccupancy: 0`, `rate: 0` and `status: "AVAILABLE"`.
+**Behaviour** (UC03 A1, from step 2)
+1. The officer's own district is used; a `district` in the body is ignored.
+2. The district must have an `ACTIVE` incident (13.1), as for every officer write.
+3. The name is compared **ignoring case and surrounding spaces**, so `"Ja-Ela Central College"`, `"ja-ela central college"` and `" Ja-Ela Central College "` are the same name. A second shelter with it in the same district is refused; the same name in another district is allowed. The database enforces this with a unique index on the district and the name compared that way, so two requests at the same moment can't both succeed.
+4. The shelter is created with `currentOccupancy: 0`, which makes it `AVAILABLE`, and its name is stored trimmed. No occupancy record is created: a record is written only by an occupancy update (13.4.2).
+5. The shelter shows in the dashboard table and on the map (13.3) from then on. `redirectingTo` is `null`.
+
+**Success — `201 Created`**: `{ "shelter": { ... } }`, the new shelter object (13.2) with `currentOccupancy: 0`, `rate: 0` and `status: "AVAILABLE"`.
+
+```json
+{
+  "success": true,
+  "data": {
+    "shelter": {
+      "id": "66fb0a1b2c3d4e5f6a7b8c06",
+      "name": "Ja-Ela Central College",
+      "district": { "id": "66f7c1a2b3c4d5e6f7a8b902", "name": "Gampaha" },
+      "location": { "lat": 7.0744, "lng": 79.8919, "label": "Ja-Ela" },
+      "capacity": 300,
+      "currentOccupancy": 0,
+      "rate": 0,
+      "status": "AVAILABLE",
+      "redirectingTo": null,
+      "createdAt": "2026-10-03T10:00:00.000Z",
+      "updatedAt": "2026-10-03T10:00:00.000Z"
+    }
+  }
+}
+```
 
 **Failure — `409 Conflict`** (the name is taken in this district)
 
@@ -2977,7 +3005,26 @@ UC03 A1 (DMS-144). Opens a new shelter in the officer's own district, empty and 
 }
 ```
 
-Also `400 VALIDATION_ERROR` (e.g. `capacity` 0, −5 or 10.5; `name` or `location` missing) and `409 NO_ACTIVE_INCIDENT`.
+**Failure — `400 Bad Request`** (e.g. `capacity` 0). Nothing is created.
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "Request validation failed.",
+    "errors": [{ "field": "capacity", "message": "must be a whole number, 1 or more" }]
+  }
+}
+```
+
+| Status | Code | When |
+|---|---|---|
+| `400` | `VALIDATION_ERROR` | `name` or `location` missing, `name` empty after trimming or over 100 characters, `lat` / `lng` out of range or not numbers, `label` over 200 characters, or `capacity` missing, 0 or less, not a whole number (e.g. `10.5`) or not a number. Carries `errors`, one entry per field; any problem with the point or its label is reported on `location`, never on `location.lat`. Any other field in the body, such as `district` or `currentOccupancy`, is ignored. |
+| `401` | `AUTH_HEADER_MISSING`, `AUTH_HEADER_MALFORMED`, `TOKEN_EXPIRED`, `TOKEN_INVALID` | As in 13.13. |
+| `403` | `FORBIDDEN` | The caller isn't a `district_officer`, or has no district on their account. |
+| `409` | `NO_ACTIVE_INCIDENT` | The officer's district has no `ACTIVE` hazard event. |
+| `409` | `SHELTER_NAME_TAKEN` | The name, ignoring case and surrounding spaces, is already used in the district. |
 
 #### 13.4.4 Redirect new arrivals — `POST /api/shelters/:id/redirects`
 

@@ -1,5 +1,6 @@
 import { Shelter } from '../domain/coordination/Shelter.js';
 import { ShelterStatus } from '../enums/ShelterStatus.js';
+import { District as DistrictModel } from '../models/District.js';
 import { OccupancyRecord as OccupancyRecordModel } from '../models/OccupancyRecord.js';
 import { Shelter as ShelterModel } from '../models/Shelter.js';
 import { ApiError } from '../utils/ApiError.js';
@@ -13,6 +14,7 @@ import { districtScope as defaultDistrictScope } from './DistrictScope.js';
 export class ShelterService {
   #shelterModel;
   #occupancyRecordModel;
+  #districtModel;
   #districtScope;
   #activeIncident;
   #clock;
@@ -20,12 +22,14 @@ export class ShelterService {
   constructor({
     shelterModel = ShelterModel,
     occupancyRecordModel = OccupancyRecordModel,
+    districtModel = DistrictModel,
     districtScope = defaultDistrictScope,
     activeIncident = defaultActiveIncident,
     clock = systemClock,
   } = {}) {
     this.#shelterModel = shelterModel;
     this.#occupancyRecordModel = occupancyRecordModel;
+    this.#districtModel = districtModel;
     this.#districtScope = districtScope;
     this.#activeIncident = activeIncident;
     this.#clock = clock;
@@ -45,6 +49,48 @@ export class ShelterService {
       .sort({ name: 1 })
       .populate(CoordinationPresenter.SHELTER_POPULATE);
     return docs.map((doc) => CoordinationPresenter.shelter(doc));
+  }
+
+  /**
+   * UC03 A1 (contract §13.4.3): registers a new shelter in the officer's own
+   * district during its active incident. It starts empty, so AVAILABLE. A name
+   * already used in the district, ignoring case and surrounding spaces, is
+   * refused; the Shelter model's unique index decides that, so two requests at
+   * once can't both succeed.
+   * @param {object} user The signed-in district officer.
+   * @param {{ name: string, location: { lat: number, lng: number, label?: string }, capacity: number }} input Validated by the route.
+   * @returns {Promise<{ shelter: object }>}
+   * @throws {ApiError} 403 FORBIDDEN, 409 NO_ACTIVE_INCIDENT or 409 SHELTER_NAME_TAKEN.
+   */
+  async create(user, { name, location, capacity }) {
+    const districtId = this.#districtScope.ownDistrict(user);
+    await this.#activeIncident.require(districtId);
+
+    let doc;
+    try {
+      doc = await this.#shelterModel.create({
+        district: districtId,
+        name,
+        location,
+        capacity,
+        currentOccupancy: 0,
+      });
+    } catch (error) {
+      if (error?.code === 11000) throw await this.#nameTaken(name, districtId);
+      throw error;
+    }
+
+    await doc.populate(CoordinationPresenter.SHELTER_POPULATE);
+    return { shelter: CoordinationPresenter.shelter(doc) };
+  }
+
+  async #nameTaken(name, districtId) {
+    const district = await this.#districtModel.findById(districtId).select('name');
+    return new ApiError(
+      409,
+      'SHELTER_NAME_TAKEN',
+      `A shelter named "${name}" already exists in ${district?.name ?? 'this district'}.`,
+    );
   }
 
   /**
