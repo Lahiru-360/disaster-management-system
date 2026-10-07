@@ -90,8 +90,9 @@ export default function ShelterResourcesScreen() {
     loadPicture();
   }, [ready, loadPicture]);
 
-  const handleOccupancyUpdated = () => {
-    setOccupancyShelterId(null);
+  // A flagged update keeps its dialog open on the suggestion (A2); anything else is done.
+  const handleOccupancyUpdated = (result) => {
+    if (!result.flagged) setOccupancyShelterId(null);
     loadPicture();
   };
 
@@ -267,6 +268,7 @@ export default function ShelterResourcesScreen() {
           initialShelterId={occupancyShelterId}
           onClose={() => setOccupancyShelterId(null)}
           onUpdated={handleOccupancyUpdated}
+          onRedirected={loadPicture}
         />
       ) : null}
 

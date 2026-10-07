@@ -9,6 +9,7 @@ import {
   shelterStatusFor,
 } from '../../utils/shelterStatus';
 import Button from '../ui/Button';
+import AlternateShelterPanel from './AlternateShelterPanel';
 import Modal from '../ui/Modal';
 import Notice from '../ui/Notice';
 import Select from '../ui/Select';
@@ -33,8 +34,18 @@ function parseOccupants(text) {
 // server's `{ shelter, rate, status }` answer is what `onUpdated` receives.
 // E1 (DMS-147): when the server refuses the number (negative, not whole, ...),
 // its message shows under the field, the typed value stays for correction and
-// nothing was saved - the flow resumes at step 3. Mounted only while open, so each opening starts fresh.
-export default function UpdateOccupancyDialog({ shelters, initialShelterId, onClose, onUpdated }) {
+// nothing was saved - the flow resumes at step 3.
+// A2 (DMS-145): when the update leaves the shelter NEAR_CAPACITY or FULL, the
+// dialog stays open on the result: the flag, the nearest shelter with space
+// and "Redirect arrivals here" (`onRedirected` follows a redirect). Otherwise
+// `onUpdated` is the end of it. Mounted only while open, so each opening starts fresh.
+export default function UpdateOccupancyDialog({
+  shelters,
+  initialShelterId,
+  onClose,
+  onUpdated,
+  onRedirected,
+}) {
   const titleId = useId();
   const startAt = shelters.find((s) => s.id === initialShelterId) ?? shelters[0];
 
@@ -44,6 +55,11 @@ export default function UpdateOccupancyDialog({ shelters, initialShelterId, onCl
   const [error, setError] = useState(null);
   const [occupantsError, setOccupantsError] = useState(null);
   const occupantsRef = useRef(null);
+  // The server's answer to a flagged update, and how redirecting from it went.
+  const [flagged, setFlagged] = useState(null);
+  const [redirecting, setRedirecting] = useState(false);
+  const [redirected, setRedirected] = useState(null);
+  const [redirectError, setRedirectError] = useState(null);
 
   const shelter = shelters.find((s) => s.id === shelterId);
   const occupants = parseOccupants(occupantsText);
@@ -68,6 +84,10 @@ export default function UpdateOccupancyDialog({ shelters, initialShelterId, onCl
       // Sent as typed, not pre-checked here: the server owns E1's validation.
       const result = await coordinationApi.updateOccupancy(shelter.id, Number(occupantsText));
       onUpdated(result);
+      if (result.flagged) {
+        setFlagged({ shelterName: shelter.name, shelterId: shelter.id, result });
+        setSubmitting(false);
+      }
     } catch (failure) {
       const { byField, others } = mapFieldErrors(failure, ['occupants']);
       const fieldMessage = byField.occupants ?? null;
@@ -83,6 +103,50 @@ export default function UpdateOccupancyDialog({ shelters, initialShelterId, onCl
       if (fieldMessage) setTimeout(() => occupantsRef.current?.focus(), 0);
     }
   };
+
+  // A2.3: send new arrivals to the suggested shelter. A target that filled up
+  // meanwhile is refused with its message (409 SHELTER_NO_SPACE) and nothing
+  // changes.
+  const handleRedirect = async () => {
+    setRedirecting(true);
+    setRedirectError(null);
+    try {
+      const redirect = await coordinationApi.redirectArrivals(
+        flagged.shelterId,
+        flagged.result.alternateShelter.id,
+      );
+      setRedirected(redirect);
+      onRedirected?.(redirect);
+    } catch (failure) {
+      setRedirectError(apiErrorMessage(failure, 'Arrivals could not be redirected. Try again.'));
+    }
+    setRedirecting(false);
+  };
+
+  if (flagged) {
+    return (
+      <Modal open onClose={onClose} labelledBy={titleId}>
+        <h2 id={titleId} className="text-lg font-semibold text-ink">
+          Update Shelter Occupancy
+        </h2>
+        <div className="mt-4">
+          <AlternateShelterPanel
+            shelterName={flagged.shelterName}
+            result={flagged.result}
+            redirected={redirected}
+            redirecting={redirecting}
+            error={redirectError}
+            onRedirect={handleRedirect}
+          />
+        </div>
+        <div className="mt-6 flex justify-end">
+          <Button fullWidth={false} onClick={onClose}>
+            Done
+          </Button>
+        </div>
+      </Modal>
+    );
+  }
 
   return (
     <Modal open onClose={onClose} dismissable={!submitting} labelledBy={titleId}>
