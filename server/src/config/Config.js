@@ -27,6 +27,10 @@ export class Config {
       process.env.PASSWORD_RESET_URL_BASE || 'https://example.com/reset-password';
     // UC03: how long a rescue team lead has to acknowledge a dispatch.
     this.dispatchAckTimeoutMinutes = Config.#wholeMinutes('DISPATCH_ACK_TIMEOUT_MINUTES', 5);
+    // UC01's mocked alert channels fail this share of sends (0-1), to demo E3.
+    this.demoFailPushRate = Config.#rate('DEMO_FAIL_PUSH_RATE');
+    this.demoFailSmsRate = Config.#rate('DEMO_FAIL_SMS_RATE');
+    this.demoFailAudibleRate = Config.#rate('DEMO_FAIL_AUDIBLE_RATE');
   }
 
   // A whole number of minutes, 1 or more; unset means the default. Anything
@@ -41,6 +45,17 @@ export class Config {
       throw new Error(`${key} must be a whole number of minutes, 1 or more (got "${raw}")`);
     }
     return minutes;
+  }
+
+  // A share from 0 to 1; 0 when unset. Anything else throws at startup.
+  static #rate(key) {
+    const value = process.env[key];
+    if (value === undefined || value === '') return 0;
+    const rate = Number(value);
+    if (!Number.isFinite(rate) || rate < 0 || rate > 1) {
+      throw new Error(`${key} must be a number from 0 to 1`);
+    }
+    return rate;
   }
 
   static #required(key) {
