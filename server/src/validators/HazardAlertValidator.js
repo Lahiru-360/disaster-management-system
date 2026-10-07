@@ -8,6 +8,8 @@ import { SeverityLevel } from '../enums/SeverityLevel.js';
 export class HazardAlertValidator {
   static MESSAGE_MAX_LENGTH = 160;
 
+  static UNREACHED_MAX_LIMIT = 50;
+
   static #oneOf = (values) => ({ 'any.only': `must be one of [${values.join(', ')}]` });
 
   static #severity = Joi.any()
@@ -52,16 +54,30 @@ export class HazardAlertValidator {
     }),
   });
 
-  // GET /api/hazard-alerts (§12.11): only the drafts for now (A4); DMS-124
-  // adds the active warnings.
+  // GET /api/hazard-alerts (§12.11): the drafts (A4) or the active warnings (A3).
   static listQuery = Joi.object({
     status: Joi.string()
-      .valid('draft')
+      .valid('draft', 'active')
       .required()
       .messages({
         'any.required': 'is required',
-        ...HazardAlertValidator.#oneOf(['draft']),
+        ...HazardAlertValidator.#oneOf(['draft', 'active']),
       }),
+  });
+
+  // GET /api/hazard-alerts/:id/unreached (§12.16), paged as the inbox (§11.2).
+  static #pageNumber = Joi.number().integer().min(1).messages({
+    'number.base': 'must be a number',
+    'number.integer': 'must be an integer',
+    'number.min': 'must be greater than or equal to {#limit}',
+    'number.max': 'must be less than or equal to {#limit}',
+  });
+
+  static unreachedQuery = Joi.object({
+    page: HazardAlertValidator.#pageNumber.default(1),
+    limit: HazardAlertValidator.#pageNumber
+      .max(HazardAlertValidator.UNREACHED_MAX_LIMIT)
+      .default(20),
   });
 
   // POST /api/hazard-alerts/:id/preview (§12.3).
@@ -101,6 +117,10 @@ export class HazardAlertValidator {
       : value;
 
   static #changeMessages = { 'any.custom': '{#message}' };
+
+  // POST /api/hazard-alerts/:id/all-clear (§12.15): nothing to send, since the
+  // all-clear message isn't editable. Anything sent is ignored.
+  static allClearSchema = Joi.object({});
 
   // POST /api/hazard-alerts/:id/update-preview (§12.13).
   static updatePreviewSchema = Joi.object(HazardAlertValidator.#change)

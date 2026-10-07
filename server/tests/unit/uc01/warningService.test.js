@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import { HazardAlert } from '../../../src/models/HazardAlert.js';
 import { HazardEvent } from '../../../src/models/HazardEvent.js';
+import { Notification } from '../../../src/models/Notification.js';
 import { UserNotification } from '../../../src/models/UserNotification.js';
 import { Role } from '../../../src/enums/Role.js';
 import { WarningService, warningService } from '../../../src/services/WarningService.js';
@@ -34,7 +35,7 @@ describe('WarningService', () => {
     });
 
   describe('startDraft', () => {
-    it('DMS-120: TC-01 stores a DRAFT, version 1, with an HA- reference and its first history entry', async () => {
+    it('Main 2: TC-01 stores a DRAFT, version 1, with an HA- reference and its first history entry', async () => {
       const alert = await startDraft();
 
       expect(alert).toMatchObject({
@@ -62,7 +63,7 @@ describe('WarningService', () => {
       expect(await HazardAlert.countDocuments()).toBe(1);
     });
 
-    it('DMS-120: each draft gets the next reference number', async () => {
+    it('Main 2: each draft gets the next reference number', async () => {
       await startDraft();
 
       await expect(startDraft()).resolves.toMatchObject({ referenceNo: 'HA-0002' });
@@ -70,7 +71,7 @@ describe('WarningService', () => {
   });
 
   describe('preview', () => {
-    it('DMS-120: TC-04 counts the citizens across districts and stores the composed draft', async () => {
+    it('Main 7: TC-04 counts the citizens across districts and stores the composed draft', async () => {
       await createUser({ homeDistrict: areas.colombo });
       await createUser({ homeDistrict: areas.colombo });
       await createUser({ homeDistrict: areas.gampaha });
@@ -103,7 +104,7 @@ describe('WarningService', () => {
       expect(stored).toMatchObject({ hazardType: 'FLOOD', severity: 'SEVERE', status: 'DRAFT' });
     });
 
-    it('DMS-120: TC-05 a district and a basin covering it count each citizen once', async () => {
+    it('Main 7: TC-05 a district and a basin covering it count each citizen once', async () => {
       await createUser({ homeDistrict: areas.colombo });
       await createUser({ homeDistrict: areas.gampaha });
       const { id } = await startDraft();
@@ -117,7 +118,7 @@ describe('WarningService', () => {
       ]);
     });
 
-    it('DMS-120: previewing again replaces the type, severity, scope and message', async () => {
+    it('Main 7: previewing again replaces the type, severity, scope and message', async () => {
       const { id } = await startDraft();
       await previewOf(id);
 
@@ -132,7 +133,7 @@ describe('WarningService', () => {
       expect(result.message.startsWith('Landslide Warning: LOW.')).toBe(true);
     });
 
-    it('DMS-120: E2 a scope with nobody registered is 0, not an error', async () => {
+    it('E2: a scope with nobody registered is 0, not an error', async () => {
       const { id } = await startDraft();
 
       await expect(previewOf(id, { areaIds: [areas.kalutara.id] })).resolves.toMatchObject({
@@ -140,7 +141,7 @@ describe('WarningService', () => {
       });
     });
 
-    it('DMS-120: links the ACTIVE event of the same type that affects the scope', async () => {
+    it('Main 7: links the ACTIVE event of the same type that affects the scope', async () => {
       const event = await HazardEvent.create({
         name: 'Flood – Colombo',
         hazardType: 'FLOOD',
@@ -155,7 +156,7 @@ describe('WarningService', () => {
       expect(result.alert.event).toEqual({ id: event.id, name: 'Flood – Colombo' });
     });
 
-    it('DMS-120: prefers the event sharing more districts, then the newest', async () => {
+    it('Main 7: prefers the event sharing more districts, then the newest', async () => {
       const event = (name, districts, startDate) =>
         HazardEvent.create({
           name,
@@ -176,7 +177,7 @@ describe('WarningService', () => {
       expect(result.alert.event).toEqual({ id: newer.id, name: 'New wide' });
     });
 
-    it('DMS-120: ignores CLOSED events and events of another hazard type', async () => {
+    it('Main 7: ignores CLOSED events and events of another hazard type', async () => {
       await HazardEvent.create({
         name: 'Landslide – Colombo',
         hazardType: 'LANDSLIDE',
@@ -197,7 +198,7 @@ describe('WarningService', () => {
       await expect(previewOf(id)).resolves.toMatchObject({ alert: { event: null } });
     });
 
-    it('DMS-120: E1 names every unknown area id on areaIds, and changes nothing', async () => {
+    it('E1: names every unknown area id on areaIds, and changes nothing', async () => {
       const { id } = await startDraft();
       const unknown = new mongoose.Types.ObjectId().toString();
 
@@ -211,7 +212,7 @@ describe('WarningService', () => {
       expect((await HazardAlert.findById(id)).hazardType).toBeNull();
     });
 
-    it('DMS-120: E1 an empty scope is a 400 on areaIds', async () => {
+    it('E1: an empty scope is a 400 on areaIds', async () => {
       const { id } = await startDraft();
 
       await expect(previewOf(id, { areaIds: [] })).rejects.toMatchObject({
@@ -220,7 +221,7 @@ describe('WarningService', () => {
       });
     });
 
-    it('DMS-120: previewing an alert that is no longer a draft is 409', async () => {
+    it('Main 7: previewing an alert that is no longer a draft is 409', async () => {
       const { id } = await startDraft();
       await HazardAlert.updateOne({ _id: id }, { status: 'BROADCAST' });
 
@@ -233,7 +234,7 @@ describe('WarningService', () => {
   });
 
   describe('saveDraftMessage', () => {
-    it('DMS-120: saves the edited message on the draft', async () => {
+    it('Main 8: saves the edited message on the draft', async () => {
       const { id } = await startDraft();
       await previewOf(id);
 
@@ -243,7 +244,7 @@ describe('WarningService', () => {
       expect((await HazardAlert.findById(id)).message).toBe('Move to higher ground now.');
     });
 
-    it('DMS-120: TC-07 accepts exactly 160 characters', async () => {
+    it('Main 8: TC-07 accepts exactly 160 characters', async () => {
       const { id } = await startDraft();
 
       await expect(service.saveDraftMessage(id, 'x'.repeat(160))).resolves.toMatchObject({
@@ -251,7 +252,7 @@ describe('WarningService', () => {
       });
     });
 
-    it('DMS-120: editing an alert that is no longer a draft is 409', async () => {
+    it('Main 8: editing an alert that is no longer a draft is 409', async () => {
       const { id } = await startDraft();
       await HazardAlert.updateOne({ _id: id }, { status: 'CANCELLED' });
 
@@ -263,7 +264,7 @@ describe('WarningService', () => {
   });
 
   describe('discardDraft', () => {
-    it('DMS-125: TC-30 removes the draft and returns it as it was', async () => {
+    it('A4: TC-30 removes the draft and returns it as it was', async () => {
       const { id } = await startDraft();
       await previewOf(id);
 
@@ -273,7 +274,7 @@ describe('WarningService', () => {
       expect(await HazardAlert.countDocuments()).toBe(0);
     });
 
-    it('DMS-125: TC-31 a colleague broadcasting between the read and the delete wins: 409, nothing removed', async () => {
+    it('A4: TC-31 a colleague broadcasting between the read and the delete wins: 409, nothing removed', async () => {
       const { id } = await startDraft();
       // The delete runs just after the broadcast lands.
       const racingModel = {
@@ -293,7 +294,7 @@ describe('WarningService', () => {
       expect(await HazardAlert.exists({ _id: id })).not.toBeNull();
     });
 
-    it('DMS-125: a draft deleted by a colleague between the read and the delete is 404', async () => {
+    it('A4: a draft deleted by a colleague between the read and the delete is 404', async () => {
       const { id } = await startDraft();
       const racingModel = {
         findById: (alertId) => HazardAlert.findById(alertId),
@@ -309,7 +310,7 @@ describe('WarningService', () => {
   });
 
   describe('listDrafts', () => {
-    it('DMS-125: only drafts, most recently changed first', async () => {
+    it('A4: only drafts, most recently changed first', async () => {
       const first = await startDraft();
       const second = await startDraft();
       const sent = await startDraft();
@@ -332,7 +333,7 @@ describe('WarningService', () => {
   });
 
   describe('findById', () => {
-    it('DMS-120: returns the alert object', async () => {
+    it('Main 2: returns the alert object', async () => {
       const { id } = await startDraft();
 
       await expect(service.findById(id)).resolves.toMatchObject({ id, referenceNo: 'HA-0001' });
@@ -341,7 +342,7 @@ describe('WarningService', () => {
     it.each([
       ['an unknown id', () => new mongoose.Types.ObjectId().toString()],
       ['a malformed id', () => 'nope'],
-    ])('DMS-120: %s is 404 NOT_FOUND', async (_case, idFor) => {
+    ])('Main 2: %s is 404 NOT_FOUND', async (_case, idFor) => {
       await expect(service.findById(idFor())).rejects.toMatchObject({
         status: 404,
         code: 'NOT_FOUND',
@@ -352,19 +353,17 @@ describe('WarningService', () => {
     });
   });
 
-  it('DMS-120: composing never creates a notification of any kind', async () => {
+  it('Main 8: composing never creates a notification of any kind', async () => {
     await createUser({ homeDistrict: areas.colombo });
     const { id } = await startDraft();
     await previewOf(id);
     await service.saveDraftMessage(id, 'Edited.');
 
     expect(await UserNotification.countDocuments()).toBe(0);
-    expect(
-      await mongoose.connection.db.listCollections({ name: 'notifications' }).toArray(),
-    ).toEqual([]);
+    expect(await Notification.countDocuments()).toBe(0);
   });
 
-  it('DMS-120: the shared default instance uses the real collaborators', async () => {
+  it('Main 2: the shared default instance uses the real collaborators', async () => {
     const alert = await warningService.startDraft(officer);
 
     expect(alert.referenceNo).toMatch(/^HA-\d{4}$/);

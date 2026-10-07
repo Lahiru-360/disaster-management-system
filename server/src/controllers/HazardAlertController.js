@@ -28,9 +28,12 @@ export class HazardAlertController extends BaseController {
     ApiResponse.success(res, data, 201);
   }
 
-  // GET /api/hazard-alerts?status=draft - UC01 A4 (§12.11).
+  // GET /api/hazard-alerts?status=draft|active - UC01 A4 and A3.1 (§12.11).
   async list(req, res) {
-    const alerts = await this.#warningService.listDrafts();
+    const alerts =
+      req.query.status === 'active'
+        ? await this.#warningService.listActive()
+        : await this.#warningService.listDrafts();
 
     ApiResponse.success(res, { alerts }, 200);
   }
@@ -88,9 +91,23 @@ export class HazardAlertController extends BaseController {
     ApiResponse.success(res, result, 200);
   }
 
+  // POST /api/hazard-alerts/:id/all-clear - UC01 A3.2-A3.3 (§12.15).
+  async allClear(req, res) {
+    const result = await this.#broadcastService.allClear(req.params.id, req.user);
+
+    ApiResponse.success(res, result, 200);
+  }
+
   // GET /api/hazard-alerts/:id/delivery-summary - UC01 step 14 (§12.7).
   async deliverySummary(req, res) {
     const result = await this.#broadcastService.deliverySummary(req.params.id);
+
+    ApiResponse.success(res, result, 200);
+  }
+
+  // GET /api/hazard-alerts/:id/unreached - UC01 E3.3 (§12.16).
+  async unreached(req, res) {
+    const result = await this.#broadcastService.unreached(req.params.id, req.query);
 
     ApiResponse.success(res, result, 200);
   }

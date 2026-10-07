@@ -228,13 +228,22 @@ export class HazardAlert {
   }
 
   /**
-   * Ends an active warning with an all-clear (A3): it becomes CANCELLED.
+   * Ends an active warning with an all-clear (A3.2): it becomes CANCELLED with
+   * the next version, so the all-clear's deliveries are counted apart from the
+   * warning's and updates' (contract §12.15), and a history entry for it.
+   * Everything is checked before anything changes, so a refused all-clear
+   * leaves it as it was.
    * @param {object|string} officer
    * @param {Date} at
+   * @param {string|null} [message] The all-clear message citizens will read,
+   *   which replaces the current one; null keeps it.
    * @throws {InvalidAlertTransitionError} If it isn't active.
    */
-  cancel(officer, at) {
+  cancel(officer, at, message = null) {
     this.#requireActive('cancelled');
+    const text = message === null ? null : HazardAlert.#validMessage(message);
+    if (text) this.#message = text;
+    this.#version += 1;
     this.#record(AlertStatus.CANCELLED, officer, at);
   }
 

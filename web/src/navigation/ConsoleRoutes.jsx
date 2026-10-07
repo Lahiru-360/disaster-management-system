@@ -5,6 +5,8 @@ import GroundReportsScreen from '../screens/groundReports/GroundReportsScreen';
 import HazardWarningsScreen from '../screens/hazardWarnings/HazardWarningsScreen';
 import DeliverySummaryScreen from '../screens/hazardWarnings/DeliverySummaryScreen';
 import IssueWarningScreen from '../screens/hazardWarnings/IssueWarningScreen';
+import ReportParametersScreen from '../screens/reports/ReportParametersScreen';
+import ReportViewScreen from '../screens/reports/ReportViewScreen';
 import PlaceholderScreen from '../screens/shared/PlaceholderScreen';
 import ShelterResourcesScreen from '../screens/shelterResources/ShelterResourcesScreen';
 
@@ -36,7 +38,8 @@ export default function ConsoleRoutes() {
         <Route path="rescue-teams" element={<PlaceholderScreen title="Rescue Teams" />} />
         <Route path="relief-supplies" element={<PlaceholderScreen title="Relief Supplies" />} />
         <Route path="map" element={<PlaceholderScreen title="Map" />} />
-        <Route path="reports" element={<PlaceholderScreen title="Reports" />} />
+        <Route path="reports" element={<ReportParametersScreen />} />
+        <Route path="reports/:reportId" element={<ReportViewScreen />} />
         <Route path="settings" element={<PlaceholderScreen title="Settings" />} />
       </Route>
 

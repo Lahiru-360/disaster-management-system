@@ -14,12 +14,29 @@ export class CoordinationPresenter {
     { path: 'lead', select: 'name' },
   ];
 
+  static STOCK_POPULATE = [
+    { path: 'organisation', select: 'name type' },
+    { path: 'district', select: 'name' },
+  ];
+
   static DISTRIBUTION_POPULATE = [
     { path: 'shelter', select: 'name' },
     { path: 'stock', select: 'unit' },
     { path: 'organisation', select: 'name type' },
     { path: 'district', select: 'name' },
     { path: 'loggedBy', select: 'name' },
+  ];
+
+  static DISPATCH_POPULATE = [
+    {
+      path: 'team',
+      select: 'name organisation',
+      populate: { path: 'organisation', select: 'name type' },
+    },
+    { path: 'district', select: 'name' },
+    { path: 'incident', select: 'name' },
+    { path: 'createdBy', select: 'name' },
+    { path: 'statusHistory.by', select: 'name' },
   ];
 
   /**
@@ -72,6 +89,24 @@ export class CoordinationPresenter {
   }
 
   /**
+   * The contract's relief stock object, with its owning organisation.
+   * @param {object} doc A ReliefStock document, populated with STOCK_POPULATE.
+   * @returns {object}
+   */
+  static stock(doc) {
+    const json = doc.toJSON();
+    return {
+      id: String(json.id),
+      organisation: CoordinationPresenter.organisation(json.organisation),
+      district: CoordinationPresenter.reference(json.district, ['name']),
+      supplyType: json.supplyType,
+      unit: json.unit,
+      quantityAvailable: json.quantityAvailable,
+      updatedAt: json.updatedAt,
+    };
+  }
+
+  /**
    * The contract's supply distribution object; unit comes from the stock row.
    * @param {object} doc A SupplyDistribution document, shelter, stock, organisation, district and loggedBy populated.
    * @returns {object}
@@ -89,6 +124,40 @@ export class CoordinationPresenter {
       quantity: json.quantity,
       distributedAt: json.distributedAt,
       loggedBy: CoordinationPresenter.reference(json.loggedBy, ['name']),
+    };
+  }
+
+  /**
+   * The contract's dispatch object, with the team's owning organisation.
+   * @param {object} doc A Dispatch document, populated with DISPATCH_POPULATE.
+   * @returns {object}
+   */
+  static dispatch(doc) {
+    const json = doc.toJSON();
+    const team = json.team
+      ? {
+          ...CoordinationPresenter.reference(json.team, ['name']),
+          organisation: CoordinationPresenter.organisation(json.team.organisation),
+        }
+      : null;
+    return {
+      id: String(json.id),
+      status: json.status,
+      team,
+      district: CoordinationPresenter.reference(json.district, ['name']),
+      incident: CoordinationPresenter.reference(json.incident, ['name']),
+      incidentLocation: CoordinationPresenter.#location(json.incidentLocation),
+      priority: json.priority,
+      supportRequested: json.supportRequested ?? false,
+      createdBy: CoordinationPresenter.reference(json.createdBy, ['name']),
+      createdAt: json.createdAt,
+      ackDeadline: json.ackDeadline ?? null,
+      declineReason: json.declineReason ?? null,
+      statusHistory: (json.statusHistory ?? []).map((entry) => ({
+        status: entry.status,
+        at: entry.at,
+        by: CoordinationPresenter.reference(entry.by, ['name']),
+      })),
     };
   }
 

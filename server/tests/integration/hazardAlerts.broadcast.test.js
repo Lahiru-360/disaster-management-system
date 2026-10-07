@@ -51,7 +51,7 @@ const deliverySummary = (id, user = duty) =>
   request(app).get(`/api/hazard-alerts/${id}/delivery-summary`).set(as(user));
 
 describe('POST /api/hazard-alerts/:id/broadcast', () => {
-  it('DMS-121: TC-09 sets BROADCAST with the issuing officer, the time and a history entry', async () => {
+  it('Main 12: TC-09 sets BROADCAST with the issuing officer, the time and a history entry', async () => {
     const id = await previewedDraft();
 
     const res = await broadcast(id);
@@ -74,7 +74,7 @@ describe('POST /api/hazard-alerts/:id/broadcast', () => {
     });
   });
 
-  it('DMS-121: TC-10 creates one delivery per recipient and channel and returns their summary', async () => {
+  it('Main 13: TC-10 creates one delivery per recipient and channel and returns their summary', async () => {
     const id = await previewedDraft();
 
     const res = await broadcast(id);
@@ -105,7 +105,7 @@ describe('POST /api/hazard-alerts/:id/broadcast', () => {
     });
   });
 
-  it("DMS-121: puts the warning in each recipient's inbox, and no one else's", async () => {
+  it("Main 13: puts the warning in each recipient's inbox, and no one else's", async () => {
     const id = await previewedDraft();
 
     await broadcast(id);
@@ -120,7 +120,7 @@ describe('POST /api/hazard-alerts/:id/broadcast', () => {
     expect(items[0]).toMatchObject({ type: 'HAZARD_ALERT', body: MESSAGE, severity: 'SEVERE' });
   });
 
-  it('DMS-121: TC-12 broadcasting it again is 409 INVALID_ALERT_TRANSITION and sends nothing more', async () => {
+  it('Main 12: TC-12 broadcasting it again is 409 INVALID_ALERT_TRANSITION and sends nothing more', async () => {
     const id = await previewedDraft();
     await broadcast(id);
 
@@ -135,7 +135,7 @@ describe('POST /api/hazard-alerts/:id/broadcast', () => {
     expect(await UserNotification.countDocuments()).toBe(3);
   });
 
-  it('DMS-121: a draft that was never previewed is 409 and sends nothing', async () => {
+  it('Main 12: a draft that was never previewed is 409 and sends nothing', async () => {
     const start = await request(app).post('/api/hazard-alerts').set(as(duty)).send({});
     const { id } = start.body.data.alert;
 
@@ -151,7 +151,7 @@ describe('POST /api/hazard-alerts/:id/broadcast', () => {
     ['missing', {}],
     ['empty', { message: '   ' }],
     ['161 characters', { message: 'x'.repeat(161) }],
-  ])('DMS-121: a message %s is 400 VALIDATION_ERROR on message', async (_case, body) => {
+  ])('Main 12: a message %s is 400 VALIDATION_ERROR on message', async (_case, body) => {
     const id = await previewedDraft();
 
     const res = await broadcast(id, body);
@@ -163,7 +163,7 @@ describe('POST /api/hazard-alerts/:id/broadcast', () => {
   });
 
   it.each([Role.DISTRICT_OFFICER, Role.CITIZEN])(
-    'DMS-121: a %s is 403 FORBIDDEN, and nothing is sent',
+    'Main 12: a %s is 403 FORBIDDEN, and nothing is sent',
     async (role) => {
       const id = await previewedDraft();
 
@@ -175,7 +175,7 @@ describe('POST /api/hazard-alerts/:id/broadcast', () => {
     },
   );
 
-  it('DMS-121: no token is 401 and an expired one is 401 TOKEN_EXPIRED', async () => {
+  it('Main 12: no token is 401 and an expired one is 401 TOKEN_EXPIRED', async () => {
     const id = await previewedDraft();
 
     const missing = await request(app)
@@ -194,7 +194,7 @@ describe('POST /api/hazard-alerts/:id/broadcast', () => {
 });
 
 describe('GET /api/hazard-alerts/:id/delivery-summary', () => {
-  it('DMS-121: TC-11 the per-channel counts match the stored delivery records', async () => {
+  it('Main 14: TC-11 the per-channel counts match the stored delivery records', async () => {
     const id = await previewedDraft();
     await broadcast(id);
     // Two push and one SMS delivery failed, as E3 would leave them.
@@ -217,7 +217,7 @@ describe('GET /api/hazard-alerts/:id/delivery-summary', () => {
     expect(res.body.data.summary.totals).toEqual({ sent: 9, delivered: 6, failed: 3 });
   });
 
-  it('DMS-121: a DRAFT has sent nothing, so every count is zero', async () => {
+  it('Main 14: a DRAFT has sent nothing, so every count is zero', async () => {
     const id = await previewedDraft();
 
     const res = await deliverySummary(id);
@@ -228,7 +228,7 @@ describe('GET /api/hazard-alerts/:id/delivery-summary', () => {
     expect(res.body.data.summary.unreachedCount).toBe(0);
   });
 
-  it('DMS-121: a district officer cannot read it', async () => {
+  it('Main 14: a district officer cannot read it', async () => {
     const id = await previewedDraft();
 
     const res = await deliverySummary(id, await createUser({ role: Role.DISTRICT_OFFICER }));
@@ -240,7 +240,7 @@ describe('GET /api/hazard-alerts/:id/delivery-summary', () => {
 it.each([
   ['an unknown id', () => new mongoose.Types.ObjectId().toString()],
   ['a malformed id', () => 'not-an-id'],
-])('DMS-121: %s is 404 NOT_FOUND on broadcast and delivery summary', async (_case, idFor) => {
+])('Main 12: %s is 404 NOT_FOUND on broadcast and delivery summary', async (_case, idFor) => {
   const id = idFor();
 
   const responses = await Promise.all([broadcast(id), deliverySummary(id)]);

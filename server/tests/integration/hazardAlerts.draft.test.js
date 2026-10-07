@@ -39,7 +39,7 @@ const floodIn = (...areaDocs) => ({
 });
 
 describe('POST /api/hazard-alerts', () => {
-  it('DMS-120: TC-01 a duty officer starts a DRAFT, version 1, with its first history entry', async () => {
+  it('Main 2: TC-01 a duty officer starts a DRAFT, version 1, with its first history entry', async () => {
     const res = await request(app).post('/api/hazard-alerts').set(as(duty)).send({});
 
     expect(res.status).toBe(201);
@@ -66,14 +66,14 @@ describe('POST /api/hazard-alerts', () => {
     ]);
   });
 
-  it('DMS-120: a dmc_officer may start one too', async () => {
+  it('Main 2: a dmc_officer may start one too', async () => {
     const res = await request(app).post('/api/hazard-alerts').set(as(dmc)).send({});
 
     expect(res.status).toBe(201);
   });
 
   it.each([Role.DISTRICT_OFFICER, Role.CITIZEN, Role.COMMUNITY_VOLUNTEER, Role.RESCUE_TEAM_LEAD])(
-    'DMS-120: TC-02 a %s is 403 FORBIDDEN, and no draft is made',
+    'Main 2: TC-02 a %s is 403 FORBIDDEN, and no draft is made',
     async (role) => {
       const res = await request(app)
         .post('/api/hazard-alerts')
@@ -86,14 +86,14 @@ describe('POST /api/hazard-alerts', () => {
     },
   );
 
-  it('DMS-120: TC-03 no token is 401 AUTH_HEADER_MISSING', async () => {
+  it('Main 2: TC-03 no token is 401 AUTH_HEADER_MISSING', async () => {
     const res = await request(app).post('/api/hazard-alerts').send({});
 
     expect(res.status).toBe(401);
     expect(res.body.error.code).toBe('AUTH_HEADER_MISSING');
   });
 
-  it('DMS-120: TC-03 an expired token is 401 TOKEN_EXPIRED', async () => {
+  it('Main 2: TC-03 an expired token is 401 TOKEN_EXPIRED', async () => {
     const res = await request(app)
       .post('/api/hazard-alerts')
       .set('Authorization', expiredBearerFor(duty))
@@ -105,7 +105,7 @@ describe('POST /api/hazard-alerts', () => {
 });
 
 describe('POST /api/hazard-alerts/:id/preview', () => {
-  it('DMS-120: TC-04 counts the citizens of Colombo and Gampaha and returns the preview', async () => {
+  it('Main 7: TC-04 counts the citizens of Colombo and Gampaha and returns the preview', async () => {
     for (const homeDistrict of [areas.colombo, areas.colombo, areas.gampaha, areas.kalutara]) {
       await createUser({ homeDistrict });
     }
@@ -137,7 +137,7 @@ describe('POST /api/hazard-alerts/:id/preview', () => {
     expect(res.body.data.alert.message).toBe(res.body.data.message);
   });
 
-  it('DMS-120: TC-05 Colombo plus the Kelani basin counts each citizen once', async () => {
+  it('Main 7: TC-05 Colombo plus the Kelani basin counts each citizen once', async () => {
     await createUser({ homeDistrict: areas.colombo });
     await createUser({ role: Role.COMMUNITY_VOLUNTEER, homeDistrict: areas.gampaha });
     const id = await startDraft();
@@ -147,7 +147,7 @@ describe('POST /api/hazard-alerts/:id/preview', () => {
     expect(res.body.data.recipientCount).toBe(2);
   });
 
-  it('DMS-120: E2 no citizens in scope is 200 with recipientCount 0', async () => {
+  it('E2: no citizens in scope is 200 with recipientCount 0', async () => {
     const id = await startDraft();
 
     const res = await preview(id, floodIn(areas.kalutara));
@@ -156,7 +156,7 @@ describe('POST /api/hazard-alerts/:id/preview', () => {
     expect(res.body.data.recipientCount).toBe(0);
   });
 
-  it('DMS-120: a colleague can preview a draft someone else started (drafts are shared)', async () => {
+  it('Main 7: a colleague can preview a draft someone else started (drafts are shared)', async () => {
     const id = await startDraft(duty);
 
     const res = await preview(id, floodIn(areas.colombo), dmc);
@@ -164,7 +164,7 @@ describe('POST /api/hazard-alerts/:id/preview', () => {
     expect(res.status).toBe(200);
   });
 
-  it('DMS-120: a missing type, severity and scope are one 400 entry each', async () => {
+  it('Main 7: a missing type, severity and scope are one 400 entry each', async () => {
     const id = await startDraft();
 
     const res = await preview(id, {});
@@ -178,7 +178,7 @@ describe('POST /api/hazard-alerts/:id/preview', () => {
     ]);
   });
 
-  it("DMS-120: UC02's report hazard types and unknown severities are refused", async () => {
+  it("Main 7: UC02's report hazard types and unknown severities are refused", async () => {
     const id = await startDraft();
 
     const res = await preview(id, {
@@ -196,7 +196,7 @@ describe('POST /api/hazard-alerts/:id/preview', () => {
   it.each([
     ['an empty scope', () => [], 'must contain at least 1 items'],
     ['a scope that is not a list', () => 'colombo', 'must be a list of area ids'],
-  ])('DMS-120: E1 %s is a 400 on areaIds', async (_case, areaIdsFor, message) => {
+  ])('E1: %s is a 400 on areaIds', async (_case, areaIdsFor, message) => {
     const id = await startDraft();
 
     const res = await preview(id, {
@@ -209,7 +209,7 @@ describe('POST /api/hazard-alerts/:id/preview', () => {
     expect(res.body.error.errors).toEqual([{ field: 'areaIds', message }]);
   });
 
-  it('DMS-120: E1 unknown and malformed area ids are named on areaIds, and the draft is unchanged', async () => {
+  it('E1: unknown and malformed area ids are named on areaIds, and the draft is unchanged', async () => {
     const id = await startDraft();
     const unknown = new mongoose.Types.ObjectId().toString();
 
@@ -226,7 +226,7 @@ describe('POST /api/hazard-alerts/:id/preview', () => {
     expect((await HazardAlert.findById(id)).targets).toHaveLength(0);
   });
 
-  it('DMS-120: previewing an alert that is no longer a draft is 409 INVALID_ALERT_TRANSITION', async () => {
+  it('Main 7: previewing an alert that is no longer a draft is 409 INVALID_ALERT_TRANSITION', async () => {
     const id = await startDraft();
     await HazardAlert.updateOne({ _id: id }, { status: 'BROADCAST' });
 
@@ -239,7 +239,7 @@ describe('POST /api/hazard-alerts/:id/preview', () => {
     });
   });
 
-  it('DMS-120: a citizen cannot preview', async () => {
+  it('Main 7: a citizen cannot preview', async () => {
     const id = await startDraft();
 
     const res = await preview(id, floodIn(areas.colombo), await createUser());
@@ -249,7 +249,7 @@ describe('POST /api/hazard-alerts/:id/preview', () => {
 });
 
 describe('PATCH /api/hazard-alerts/:id/draft', () => {
-  it('DMS-120: saves the edited message, trimmed', async () => {
+  it('Main 8: saves the edited message, trimmed', async () => {
     const id = await startDraft();
     await preview(id, floodIn(areas.colombo));
 
@@ -264,7 +264,7 @@ describe('PATCH /api/hazard-alerts/:id/draft', () => {
     );
   });
 
-  it('DMS-120: TC-07 a message of exactly 160 characters is saved', async () => {
+  it('Main 8: TC-07 a message of exactly 160 characters is saved', async () => {
     const id = await startDraft();
 
     const res = await saveMessage(id, 'x'.repeat(160));
@@ -273,7 +273,7 @@ describe('PATCH /api/hazard-alerts/:id/draft', () => {
     expect(res.body.data.alert.message).toHaveLength(160);
   });
 
-  it('DMS-120: TC-08 161 characters is 400 VALIDATION_ERROR on message', async () => {
+  it('Main 8: TC-08 161 characters is 400 VALIDATION_ERROR on message', async () => {
     const id = await startDraft();
 
     const res = await saveMessage(id, 'x'.repeat(161));
@@ -288,7 +288,7 @@ describe('PATCH /api/hazard-alerts/:id/draft', () => {
   it.each([
     ['missing', undefined],
     ['blank', '   '],
-  ])('DMS-120: a %s message is 400 is required', async (_case, message) => {
+  ])('Main 8: a %s message is 400 is required', async (_case, message) => {
     const id = await startDraft();
 
     const res = await saveMessage(id, message);
@@ -296,7 +296,7 @@ describe('PATCH /api/hazard-alerts/:id/draft', () => {
     expect(res.body.error.errors).toEqual([{ field: 'message', message: 'is required' }]);
   });
 
-  it('DMS-120: editing a CANCELLED alert is 409', async () => {
+  it('Main 8: editing a CANCELLED alert is 409', async () => {
     const id = await startDraft();
     await HazardAlert.updateOne({ _id: id }, { status: 'CANCELLED' });
 
@@ -308,7 +308,7 @@ describe('PATCH /api/hazard-alerts/:id/draft', () => {
 });
 
 describe('GET /api/hazard-alerts/:id', () => {
-  it('DMS-120: returns the alert as last composed', async () => {
+  it('Main 2: returns the alert as last composed', async () => {
     const id = await startDraft();
     await preview(id, floodIn(areas.kelani));
     await saveMessage(id, 'Edited.');
@@ -326,7 +326,7 @@ describe('GET /api/hazard-alerts/:id', () => {
   it.each([
     ['an unknown id', () => new mongoose.Types.ObjectId().toString()],
     ['a malformed id', () => 'not-an-id'],
-  ])('DMS-120: %s is 404 NOT_FOUND on every endpoint', async (_case, idFor) => {
+  ])('Main 2: %s is 404 NOT_FOUND on every endpoint', async (_case, idFor) => {
     const id = idFor();
 
     const responses = await Promise.all([
@@ -341,7 +341,7 @@ describe('GET /api/hazard-alerts/:id', () => {
     }
   });
 
-  it('DMS-120: a district officer cannot read an alert', async () => {
+  it('Main 2: a district officer cannot read an alert', async () => {
     const id = await startDraft();
 
     const res = await request(app)
@@ -352,7 +352,7 @@ describe('GET /api/hazard-alerts/:id', () => {
   });
 });
 
-it('DMS-120: composing a warning sends nothing and creates no inbox item', async () => {
+it('Main 8: composing a warning sends nothing and creates no inbox item', async () => {
   await createUser({ homeDistrict: areas.colombo });
   const id = await startDraft();
   await preview(id, floodIn(areas.colombo));

@@ -5,10 +5,10 @@ import { Role } from '../../src/enums/Role.js';
 import { HazardAlert } from '../../src/models/HazardAlert.js';
 import { HazardEvent } from '../../src/models/HazardEvent.js';
 import { Notification } from '../../src/models/Notification.js';
+import { OccupancyRecord } from '../../src/models/OccupancyRecord.js';
 import { Organisation } from '../../src/models/Organisation.js';
 import { PostEventReport } from '../../src/models/PostEventReport.js';
 import { SupplyDistribution } from '../../src/models/SupplyDistribution.js';
-import { OccupancyRecordRepository } from '../../src/services/reports/repositories/OccupancyRecordRepository.js';
 import { seedAreas } from '../helpers/areaFixtures.js';
 import { bearerFor } from '../helpers/authHelper.js';
 import { createUser } from '../helpers/userFactory.js';
@@ -59,10 +59,19 @@ const seedKelani = async () => {
       sentAt: june(9),
     })),
   );
-  await mongoose.connection.collection(OccupancyRecordRepository.COLLECTION).insertMany([
-    { shelter: new ObjectId(), district: areas.gampaha._id, occupants: 300, recordedAt: june(12) },
-    { shelter: new ObjectId(), district: areas.colombo._id, occupants: 120, recordedAt: june(12) },
-  ]);
+  await OccupancyRecord.create(
+    [
+      [areas.gampaha, 300],
+      [areas.colombo, 120],
+    ].map(([district, occupants]) => ({
+      shelter: new ObjectId(),
+      district: district._id,
+      occupants,
+      capacity: 500,
+      recordedAt: june(12),
+      recordedBy: officer._id,
+    })),
+  );
   const unicef = await Organisation.create({ name: 'UNICEF Sri Lanka', type: 'DONOR' });
   await SupplyDistribution.create({
     shelter: new ObjectId(),
@@ -318,11 +327,10 @@ describe('UC04 main flow: closed events and the read-only guarantee', () => {
   });
 
   it('TC-17 Main: generating a report changes none of the data it reads', async () => {
-    const occupancy = mongoose.connection.collection(OccupancyRecordRepository.COLLECTION);
     const snapshot = async () => ({
       alerts: await HazardAlert.find().sort({ _id: 1 }).lean(),
       deliveries: await Notification.find().sort({ _id: 1 }).lean(),
-      occupancy: await occupancy.find().sort({ _id: 1 }).toArray(),
+      occupancy: await OccupancyRecord.find().sort({ _id: 1 }).lean(),
       distributions: await SupplyDistribution.find().sort({ _id: 1 }).lean(),
       events: await HazardEvent.find().sort({ _id: 1 }).lean(),
     });

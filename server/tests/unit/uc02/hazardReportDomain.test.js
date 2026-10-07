@@ -90,6 +90,15 @@ describe('HazardReport domain', () => {
       expect(report.location).toBeInstanceOf(Coordinates);
     });
 
+    it('DMS-139: builds an empty PENDING report when given no fields at all', () => {
+      const report = new HazardReport();
+
+      expect(report.status).toBe(ReportStatus.PENDING);
+      expect(report.id).toBeNull();
+      expect(report.location).toBeUndefined();
+      expect(report.isEscalatable()).toBe(false);
+    });
+
     it('DMS-130: refuses a status outside ReportStatus', () => {
       expect(() => pendingReport({ status: 'CLOSED' })).toThrow('unknown status "CLOSED"');
     });
