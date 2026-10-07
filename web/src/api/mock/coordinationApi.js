@@ -641,6 +641,27 @@ async function assignTeam(dispatchId, teamId) {
   return { dispatch: { ...dispatch } };
 }
 
+// E4 (§13.10.1): an UNAVAILABLE team is available again; one already AVAILABLE
+// is returned as it is; one out on a dispatch is 409 INVALID_TEAM_TRANSITION.
+async function markTeamAvailable(teamId) {
+  await delay();
+  takeFailure();
+  const team = teams.find((t) => t.id === teamId);
+  if (!team) throw apiError(404, 'NOT_FOUND', 'Rescue team not found.');
+  if (['DISPATCHED', 'ON_SITE'].includes(team.status)) {
+    throw apiError(
+      409,
+      'INVALID_TEAM_TRANSITION',
+      `${team.name} is ${team.status}; it becomes available when its dispatch is completed.`,
+    );
+  }
+  if (team.status === 'UNAVAILABLE') {
+    team.status = 'AVAILABLE';
+    team.updatedAt = new Date().toISOString();
+  }
+  return presentTeam(team);
+}
+
 // Newest first, optionally only some statuses, as the server's list (§13.7.3).
 async function listDispatches({ districtId, status } = {}) {
   await delay();
@@ -664,7 +685,8 @@ async function listRescueTeams({ districtId } = {}) {
  * fail as if offline; `failNext('forbidden')` answers the next call with the
  * 403 a district officer gets for another district; `declineLatest(reason)`
  * plays the team lead declining the newest assignment from the field app;
- * `freeATeam()` plays a busy team finishing its job and coming available.
+ * `freeATeam()` plays a busy team finishing its job and coming available;
+ * `expireLatest()` plays the newest assignment passing its deadline unanswered.
  */
 export const mockControls = {
   failNext(kind) {
@@ -676,6 +698,22 @@ export const mockControls = {
     const team = teams.find((t) => t.status === 'DISPATCHED');
     if (!team) return;
     team.status = 'AVAILABLE';
+    team.currentTask = null;
+  },
+  // The newest ASSIGNED dispatch passing its acknowledgement deadline (E4): it
+  // is UNRESPONSIVE, with no author since the system did it, and its team is
+  // UNAVAILABLE, so the next poll shows the reassign prompt.
+  expireLatest() {
+    const dispatch = dispatches.findLast((d) => d.status === 'ASSIGNED');
+    if (!dispatch) return;
+    dispatch.status = 'UNRESPONSIVE';
+    dispatch.statusHistory.push({
+      status: 'UNRESPONSIVE',
+      at: new Date().toISOString(),
+      by: null,
+    });
+    const team = teams.find((t) => t.id === dispatch.team.id);
+    team.status = 'UNAVAILABLE';
     team.currentTask = null;
   },
   // The team lead declining the newest ASSIGNED dispatch from the field app
@@ -709,6 +747,7 @@ export default {
   dispatchTeam,
   queueUnassigned,
   assignTeam,
+  markTeamAvailable,
   listDispatches,
   listRescueTeams,
 };

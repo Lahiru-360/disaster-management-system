@@ -147,10 +147,22 @@ async function assignTeam(dispatchId, teamId) {
 }
 
 /**
+ * `POST /api/rescue-teams/:id/availability` (§13.10.1, E4) - puts an UNAVAILABLE
+ * team (one that missed its acknowledgement deadline) back in the available
+ * list. Resolves with the team. A team that is already AVAILABLE comes back
+ * unchanged; one out on a dispatch rejects with 409 INVALID_TEAM_TRANSITION.
+ */
+async function markTeamAvailable(teamId) {
+  const response = await client.post(`/rescue-teams/${teamId}/availability`);
+  return response.data.data.team;
+}
+
+/**
  * `GET /api/dispatches` (§13.7.3) - the district's dispatches, newest first,
  * at most 100. `status` is one DispatchStatus or an array of them; the console
  * asks for `['DECLINED']` to prompt a reassignment (A3.2) and `['UNASSIGNED']`
- * for the unassigned queue (E3). A district officer
+ * for the unassigned queue (E3), and `['UNRESPONSIVE']` for the teams that never
+ * answered (E4). A district officer
  * may leave out `districtId` (their own).
  */
 async function listDispatches({ districtId, status } = {}) {
@@ -182,6 +194,7 @@ export default {
   dispatchTeam,
   queueUnassigned,
   assignTeam,
+  markTeamAvailable,
   listDispatches,
   listRescueTeams,
 };
