@@ -107,3 +107,55 @@ describe('ExportService', () => {
     expect(storage.storeFile).not.toHaveBeenCalled();
   });
 });
+
+describe('ExportService — E3 export failure', () => {
+  it('TC-44 E3: an exporter that throws is 500 EXPORT_FAILED, and nothing is uploaded or recorded', async () => {
+    const { service, storage, exportModel, csv } = setup();
+    csv.write.mockRejectedValueOnce(new Error('font missing'));
+
+    await expect(service.generateFile(officer, 'r-1', ExportFormat.CSV)).rejects.toMatchObject({
+      status: 500,
+      code: 'EXPORT_FAILED',
+      message: 'The export file could not be created. Please try again.',
+    });
+    expect(storage.storeFile).not.toHaveBeenCalled();
+    expect(exportModel.create).not.toHaveBeenCalled();
+  });
+
+  it("TC-45 E3: StorageService's 502 STORAGE_UNAVAILABLE passes through, and nothing is recorded", async () => {
+    const { service, storage, exportModel } = setup();
+    const down = new ApiError(
+      502,
+      'STORAGE_UNAVAILABLE',
+      'Could not upload the file. Please try again.',
+    );
+    storage.storeFile.mockRejectedValueOnce(down);
+
+    await expect(service.generateFile(officer, 'r-1', ExportFormat.PDF)).rejects.toBe(down);
+    expect(exportModel.create).not.toHaveBeenCalled();
+  });
+
+  it('TC-45 E3: any other storage failure is answered as 502 STORAGE_UNAVAILABLE too', async () => {
+    const { service, storage, exportModel } = setup();
+    storage.storeFile.mockRejectedValueOnce(new Error('socket hang up'));
+
+    await expect(service.generateFile(officer, 'r-1', ExportFormat.PDF)).rejects.toMatchObject({
+      status: 502,
+      code: 'STORAGE_UNAVAILABLE',
+      message: 'Could not upload the file. Please try again.',
+    });
+    expect(exportModel.create).not.toHaveBeenCalled();
+  });
+
+  it('TC-46 E3: retrying the same request after a failure exports the report', async () => {
+    const { service, storage, exportModel } = setup();
+    storage.storeFile.mockRejectedValueOnce(new Error('socket hang up'));
+    await expect(service.generateFile(officer, 'r-1', ExportFormat.CSV)).rejects.toThrow();
+
+    const created = await service.generateFile(officer, 'r-1', ExportFormat.CSV);
+
+    expect(created.exportId).toBe('x-1');
+    expect(storage.storeFile).toHaveBeenCalledTimes(2);
+    expect(exportModel.create).toHaveBeenCalledTimes(1);
+  });
+});

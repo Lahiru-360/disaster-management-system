@@ -6,13 +6,15 @@ import { Role } from '../../src/enums/Role.js';
 import { HazardEvent } from '../../src/models/HazardEvent.js';
 import { PostEventReport } from '../../src/models/PostEventReport.js';
 import { ReportExport } from '../../src/models/ReportExport.js';
+import { PdfReportExporter } from '../../src/services/reports/exporters/PdfReportExporter.js';
 import { storageService } from '../../src/services/StorageService.js';
+import { ApiError } from '../../src/utils/ApiError.js';
 import { seedAreas } from '../helpers/areaFixtures.js';
 import { bearerFor } from '../helpers/authHelper.js';
 import { createUser } from '../helpers/userFactory.js';
 
 // UC04 main flow steps 12-13 (DMS-154, contract §14.8): exporting a stored
-// Kelani report as PDF or CSV. Storage is faked, so each upload is recorded
+// Kelani report as PDF or CSV, and E3 when that fails (DMS-161). Storage is faked, so each upload is recorded
 // here instead of reaching Supabase.
 let areas;
 let officer;
@@ -211,5 +213,48 @@ describe('POST /api/post-event-reports/:id/exports — refused', () => {
     expect(res.body.error.code).toBe('NOT_FOUND');
     expect(uploads).toHaveLength(0);
     expect(await ReportExport.countDocuments()).toBe(0);
+  });
+});
+
+describe('POST /api/post-event-reports/:id/exports — E3 export failure', () => {
+  const storageDown = () =>
+    new ApiError(502, 'STORAGE_UNAVAILABLE', 'Could not upload the file. Please try again.');
+
+  it('TC-44 E3: when the file cannot be written, 500 EXPORT_FAILED and no ReportExport', async () => {
+    jest
+      .spyOn(PdfReportExporter.prototype, 'write')
+      .mockRejectedValueOnce(new Error('pdfkit failed'));
+
+    const res = await exportReport(report._id, { format: 'PDF' });
+
+    expect(res.status).toBe(500);
+    expect(res.body.error).toEqual({
+      code: 'EXPORT_FAILED',
+      message: 'The export file could not be created. Please try again.',
+    });
+    expect(uploads).toHaveLength(0);
+    expect(await ReportExport.countDocuments()).toBe(0);
+  });
+
+  it('TC-45 E3: when storage fails, 502 STORAGE_UNAVAILABLE and no ReportExport', async () => {
+    storageService.storeFile.mockRejectedValueOnce(storageDown());
+
+    const res = await exportReport(report._id, { format: 'CSV' });
+
+    expect(res.status).toBe(502);
+    expect(res.body.error.code).toBe('STORAGE_UNAVAILABLE');
+    expect(await ReportExport.countDocuments()).toBe(0);
+  });
+
+  it('TC-46 E3: retrying the same request after a failure answers 201, and the report is unchanged', async () => {
+    const before = await PostEventReport.findById(report._id).lean();
+    storageService.storeFile.mockRejectedValueOnce(storageDown());
+    expect((await exportReport(report._id, { format: 'CSV' })).status).toBe(502);
+
+    const retry = await exportReport(report._id, { format: 'CSV' });
+
+    expect(retry.status).toBe(201);
+    expect(await ReportExport.countDocuments({ report: report._id })).toBe(1);
+    expect(await PostEventReport.findById(report._id).lean()).toEqual(before);
   });
 });
