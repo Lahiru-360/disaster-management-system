@@ -14,6 +14,7 @@ import { Notification } from '../../../src/models/Notification.js';
 import { OccupancyRecord } from '../../../src/models/OccupancyRecord.js';
 import { PostEventReport } from '../../../src/models/PostEventReport.js';
 import { ReliefStock } from '../../../src/models/ReliefStock.js';
+import { ReportExport } from '../../../src/models/ReportExport.js';
 import { Shelter } from '../../../src/models/Shelter.js';
 import { SupplyDistribution } from '../../../src/models/SupplyDistribution.js';
 import { User } from '../../../src/models/User.js';
@@ -74,11 +75,11 @@ afterEach(() => {
 });
 
 describe('Uc04Seeder', () => {
-  it('DMS-153.7: is the uc04 seeder, and --reset-demo empties only the generated reports', () => {
+  it('DMS-153.7: is the uc04 seeder, and --reset-demo empties only the generated reports and their exports', () => {
     const seeder = new Uc04Seeder();
 
     expect(seeder.name).toBe('uc04');
-    expect(seeder.demoModels).toEqual([PostEventReport]);
+    expect(seeder.demoModels).toEqual([PostEventReport, ReportExport]);
   });
 
   it('DMS-153.7: seeds the Kelani event history that the four report sections compile from', async () => {
