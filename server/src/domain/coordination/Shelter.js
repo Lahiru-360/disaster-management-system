@@ -118,4 +118,15 @@ export class Shelter {
     }
     return ShelterStatus.FULL;
   }
+
+  /**
+   * Whether new arrivals can still be sent here (UC03 A2): the shelter is
+   * AVAILABLE or FILLING_UP, i.e. below 90%. A NEAR_CAPACITY or FULL shelter
+   * has none, which is also what makes an alternate worth suggesting.
+   * @returns {boolean}
+   */
+  hasSpareCapacity() {
+    const status = this.status();
+    return status === ShelterStatus.AVAILABLE || status === ShelterStatus.FILLING_UP;
+  }
 }
