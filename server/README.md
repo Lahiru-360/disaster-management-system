@@ -66,7 +66,7 @@ node server/scripts/checkCoverage.js
 
 ## Deployed dev environment
 
-The API is deployed from `dev-release` to Render, auto-deploying on every push.
+The API is deployed from `develop` to Render, auto-deploying every time work is merged into it.
 
 - **Public URL**: `https://<your-render-service>.onrender.com`
 - **Dashboard**: `https://dashboard.render.com/web/<your-service-id>`
