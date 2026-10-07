@@ -1,3 +1,5 @@
+import { useId } from 'react';
+
 import { REPORT_SECTIONS } from '../../constants/reports';
 import { eventDays, formatDayRange } from '../../utils/reportFormat';
 import Button from '../ui/Button';
@@ -7,14 +9,22 @@ import TextInput from '../ui/TextInput';
 // UC04 steps 2-4 (the §5.1 wireframe): the closed event, its date range, the
 // districts and the sections to report on. Presentational: the screen owns
 // the values and sends them. `values` is null until an event is chosen.
-function CheckboxRow({ legend, options, selected, onChange, disabled }) {
+// `errors` holds the server's E1 message for each field it refused (DMS-159),
+// shown on that field.
+function CheckboxRow({ legend, options, selected, onChange, disabled, error }) {
+  const messageId = useId();
   const toggle = (value) =>
     onChange(
       selected.includes(value) ? selected.filter((item) => item !== value) : [...selected, value],
     );
 
   return (
-    <fieldset className="mb-4" disabled={disabled}>
+    <fieldset
+      className="mb-4"
+      disabled={disabled}
+      aria-invalid={error ? true : undefined}
+      aria-describedby={error ? messageId : undefined}
+    >
       <legend className="mb-1.5 text-[13px] font-semibold text-ink">{legend}</legend>
       <div className="flex flex-wrap gap-x-5 gap-y-2">
         {options.map((option) => (
@@ -32,6 +42,11 @@ function CheckboxRow({ legend, options, selected, onChange, disabled }) {
           </label>
         ))}
       </div>
+      {error ? (
+        <p id={messageId} className="mt-1.5 text-[13px] font-medium text-danger">
+          {error}
+        </p>
+      ) : null}
     </fieldset>
   );
 }
@@ -44,13 +59,17 @@ export default function ReportParametersForm({
   onReset,
   onSubmit,
   submitting = false,
+  errors = {},
 }) {
   const event = events.find((item) => item.id === values?.eventId) ?? null;
   const period = event ? eventDays(event) : null;
   const set = (field) => (value) => onChange({ ...values, [field]: value });
 
   return (
+    // noValidate: min/max only guide the date pickers; the server's E1 checks
+    // decide, so every refusal shows the same way, on its field.
     <form
+      noValidate
       className="max-w-2xl rounded-xl border border-line bg-paper p-6"
       onSubmit={(submitEvent) => {
         submitEvent.preventDefault();
@@ -59,6 +78,7 @@ export default function ReportParametersForm({
     >
       <Select
         label="Event"
+        error={errors.eventId}
         placeholder="Select a closed event"
         value={values?.eventId ?? ''}
         onChange={(changeEvent) => onSelectEvent(changeEvent.target.value)}
@@ -71,6 +91,7 @@ export default function ReportParametersForm({
       <div className="flex gap-4">
         <TextInput
           label="From"
+          error={errors.from}
           type="date"
           containerClassName="flex-1"
           value={values?.from ?? ''}
@@ -81,6 +102,7 @@ export default function ReportParametersForm({
         />
         <TextInput
           label="To"
+          error={errors.to}
           type="date"
           containerClassName="flex-1"
           value={values?.to ?? ''}
@@ -93,6 +115,7 @@ export default function ReportParametersForm({
 
       <CheckboxRow
         legend="Districts"
+        error={errors.districtIds}
         disabled={!event}
         options={(event?.districts ?? []).map((district) => ({
           value: district.id,
@@ -104,6 +127,7 @@ export default function ReportParametersForm({
 
       <CheckboxRow
         legend="Sections"
+        error={errors.sections}
         disabled={!event}
         options={REPORT_SECTIONS.map((section) => ({ value: section.key, label: section.title }))}
         selected={values?.sections ?? []}
