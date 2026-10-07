@@ -1,7 +1,7 @@
-import { useEffect, useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 
 import { coordinationApi } from '../../api';
-import { apiErrorMessage } from '../../utils/apiErrors';
+import { apiErrorMessage, mapFieldErrors } from '../../utils/apiErrors';
 import { supplyTypeLabel } from '../../utils/supplyTypes';
 import Button from '../ui/Button';
 import Loader from '../ui/Loader';
@@ -22,8 +22,11 @@ function organisationsIn(stock) {
 // stock it comes from is always shown ("Available stock 1,200 bottles") and
 // follows the two selects. Save sends `{ shelterId, stockId, quantity }`; the
 // server checks the quantity against the stock and `onLogged` receives its
-// `{ distribution, stock }` answer. Mounted only while open, so each opening
-// starts fresh.
+// `{ distribution, stock }` answer. E5 (DMS-151): when the server refuses the
+// quantity (0 or less, or more than is held), its message - which shows what is
+// available - appears under Quantity, the typed value stays, the stock figure
+// is refreshed in case someone else took some, and nothing was saved. Mounted
+// only while open, so each opening starts fresh.
 export default function LogReliefSupplyDialog({ shelters, onClose, onLogged }) {
   const titleId = useId();
 
@@ -37,6 +40,8 @@ export default function LogReliefSupplyDialog({ shelters, onClose, onLogged }) {
   const [quantityText, setQuantityText] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
+  const [quantityError, setQuantityError] = useState(null);
+  const quantityRef = useRef(null);
 
   useEffect(() => {
     let current = true;
@@ -67,6 +72,7 @@ export default function LogReliefSupplyDialog({ shelters, onClose, onLogged }) {
     setOrganisationId(next);
     setSupplyType(stock.find((row) => row.organisation.id === next)?.supplyType ?? '');
     setError(null);
+    setQuantityError(null);
   };
 
   const canSave = Boolean(selected && shelterId && quantityText.trim() !== '');
@@ -76,6 +82,7 @@ export default function LogReliefSupplyDialog({ shelters, onClose, onLogged }) {
     if (submitting || !canSave) return;
     setSubmitting(true);
     setError(null);
+    setQuantityError(null);
     try {
       // Sent as typed, not pre-checked here: the server owns the stock rule.
       const result = await coordinationApi.logDistribution({
@@ -85,8 +92,21 @@ export default function LogReliefSupplyDialog({ shelters, onClose, onLogged }) {
       });
       onLogged(result);
     } catch (failure) {
-      setError(apiErrorMessage(failure, 'The supply could not be logged. Try again.'));
+      const { byField, others } = mapFieldErrors(failure, ['quantity']);
+      const fieldMessage = byField.quantity ?? null;
+      setQuantityError(fieldMessage);
+      // Anything that isn't about the quantity (offline, 403, 409 ...) is a Notice.
+      if (others.length > 0) {
+        setError(others.join(' '));
+      } else if (!fieldMessage) {
+        setError(apiErrorMessage(failure, 'The supply could not be logged. Try again.'));
+      }
       setSubmitting(false);
+      if (fieldMessage) {
+        // Show what is held now, and put the cursor back in the field (step 12).
+        coordinationApi.listStock().then(setStock, () => {});
+        setTimeout(() => quantityRef.current?.focus(), 0);
+      }
     }
   };
 
@@ -113,6 +133,7 @@ export default function LogReliefSupplyDialog({ shelters, onClose, onLogged }) {
           onChange={(event) => {
             setSupplyType(event.target.value);
             setError(null);
+            setQuantityError(null);
           }}
           disabled={submitting}
           options={typesHeld.map((row) => ({
@@ -134,10 +155,13 @@ export default function LogReliefSupplyDialog({ shelters, onClose, onLogged }) {
           inputMode="numeric"
           min="1"
           step="1"
+          ref={quantityRef}
           value={quantityText}
+          error={quantityError}
           onChange={(event) => {
             setQuantityText(event.target.value);
             setError(null);
+            setQuantityError(null);
           }}
           disabled={submitting}
         />
