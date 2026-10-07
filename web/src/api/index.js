@@ -15,6 +15,8 @@ import hazardAlertsApiMock from './mock/hazardAlertsApi';
 import hazardAlertsApiReal from './hazardAlertsApi';
 import notificationsApiMock from './mock/notificationsApi';
 import notificationsApiReal from './notificationsApi';
+import reportsApiMock from './mock/reportsApi';
+import reportsApiReal from './reportsApi';
 
 export const areasApi = USE_MOCK ? areasApiMock : areasApiReal;
 export const authApi = USE_MOCK ? authApiMock : authApiReal;
@@ -22,3 +24,4 @@ export const coordinationApi = USE_MOCK ? coordinationApiMock : coordinationApiR
 export const groundReportsApi = USE_MOCK ? groundReportsApiMock : groundReportsApiReal;
 export const hazardAlertsApi = USE_MOCK ? hazardAlertsApiMock : hazardAlertsApiReal;
 export const notificationsApi = USE_MOCK ? notificationsApiMock : notificationsApiReal;
+export const reportsApi = USE_MOCK ? reportsApiMock : reportsApiReal;
