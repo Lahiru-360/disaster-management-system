@@ -41,6 +41,31 @@ async function updateOccupancy(shelterId, occupants) {
 }
 
 /**
+ * `GET /api/relief-stock` (§13.11.1) - the stock rows behind the Log Relief
+ * Supply dialog, sorted by organisation then supply type. Rows with nothing
+ * left are included, with `quantityAvailable: 0`. `organisationId` and
+ * `supplyType` narrow it.
+ */
+async function listStock({ districtId, organisationId, supplyType } = {}) {
+  const response = await client.get('/relief-stock', {
+    params: { districtId, organisationId, supplyType },
+  });
+  return response.data.data.stock;
+}
+
+/**
+ * `POST /api/supply-distributions` (§13.11.2, steps 12-13) - logs `quantity` of
+ * one stock row going to a shelter. Resolves with `{ distribution, stock }`,
+ * `stock` being the row after the withdrawal. A quantity of 0 or less, or more
+ * than is available, rejects with 400 VALIDATION_ERROR on `quantity` (E5) and
+ * changes nothing.
+ */
+async function logDistribution({ shelterId, stockId, quantity }) {
+  const response = await client.post('/supply-distributions', { shelterId, stockId, quantity });
+  return response.data.data;
+}
+
+/**
  * `GET /api/rescue-teams` (§13.5) - the district's rescue teams, each with its
  * owning organisation and status, sorted by name.
  */
@@ -53,5 +78,7 @@ export default {
   getOperationalPicture,
   listShelters,
   updateOccupancy,
+  listStock,
+  logDistribution,
   listRescueTeams,
 };
