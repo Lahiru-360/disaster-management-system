@@ -4,6 +4,7 @@ import { HazardEvent } from '../../../src/domain/events/HazardEvent.js';
 import { EventStatus } from '../../../src/enums/EventStatus.js';
 import { HazardAlert } from '../../../src/models/HazardAlert.js';
 import { Notification } from '../../../src/models/Notification.js';
+import { OccupancyRecord } from '../../../src/models/OccupancyRecord.js';
 import { Organisation } from '../../../src/models/Organisation.js';
 import { SupplyDistribution } from '../../../src/models/SupplyDistribution.js';
 import { ReportNames } from '../../../src/services/reports/ReportNames.js';
@@ -259,12 +260,12 @@ describe('DeliveryRecordRepository.findSent', () => {
   });
 });
 
-describe('OccupancyRecordRepository (fallback: reads the occupancyrecords collection)', () => {
+describe('OccupancyRecordRepository', () => {
   const s1 = new ObjectId();
   const s2 = new ObjectId();
   const s3 = new ObjectId();
   const insert = (records) =>
-    mongoose.connection.collection(OccupancyRecordRepository.COLLECTION).insertMany(
+    OccupancyRecord.create(
       records.map(([shelter, district, occupants, recordedAt]) => ({
         shelter,
         district: district._id,
@@ -413,10 +414,19 @@ describe('the four sections with their default repositories', () => {
       status: 'DELIVERED',
       sentAt: at(9),
     });
-    await mongoose.connection.collection(OccupancyRecordRepository.COLLECTION).insertMany([
-      { shelter, district: areas.colombo._id, occupants: 120, recordedAt: at(7) },
-      { shelter, district: areas.colombo._id, occupants: 180, recordedAt: at(9) },
-    ]);
+    await OccupancyRecord.create(
+      [
+        [120, at(7)],
+        [180, at(9)],
+      ].map(([occupants, recordedAt]) => ({
+        shelter,
+        district: areas.colombo._id,
+        occupants,
+        capacity: 500,
+        recordedAt,
+        recordedBy: officer,
+      })),
+    );
     await SupplyDistribution.create({
       shelter: new ObjectId(),
       stock: new ObjectId(),
