@@ -1,4 +1,6 @@
 import Joi from 'joi';
+import { DispatchStatus } from '../enums/DispatchStatus.js';
+import { Priority } from '../enums/Priority.js';
 import { SupplyType } from '../enums/SupplyType.js';
 
 // One rule, so a bad id gives one error, as the contract's errors array expects.
@@ -12,6 +14,52 @@ const objectId = Joi.string()
 export class CoordinationValidator {
   static districtQuery = Joi.object({
     districtId: objectId,
+  });
+
+  // UC03 step 7 (§13.6): the incident's position, and teams to leave out as
+  // comma-separated ids (A3.3, the team that just declined).
+  static availableQuery = Joi.object({
+    lat: Joi.number().min(-90).max(90).required(),
+    lng: Joi.number().min(-180).max(180).required(),
+    districtId: objectId,
+    excludeTeamIds: Joi.string()
+      .pattern(/^[0-9a-fA-F]{24}(,[0-9a-fA-F]{24})*$/)
+      .messages({ 'string.pattern.base': '{#label} must be comma-separated ids' })
+      .custom((value) => value.split(',')),
+  });
+
+  // The officer console's dispatch list (§13.7.3): one DispatchStatus or
+  // several separated by commas, e.g. "DECLINED,UNRESPONSIVE". Handed on as an array.
+  static dispatchListQuery = Joi.object({
+    districtId: objectId,
+    status: Joi.string()
+      .custom((value, helpers) => {
+        const statuses = value.split(',');
+        return statuses.every((status) => Object.values(DispatchStatus).includes(status))
+          ? statuses
+          : helpers.error('dispatch.status');
+      })
+      .messages({
+        'dispatch.status': `{#label} must be DispatchStatus values separated by commas (${Object.values(DispatchStatus).join(', ')})`,
+      }),
+  });
+
+  // UC03 steps 8-9 (§13.7.2).
+  static dispatchBody = Joi.object({
+    teamId: objectId.required(),
+    incidentLocation: Joi.object({
+      lat: Joi.number().strict().min(-90).max(90).required(),
+      lng: Joi.number().strict().min(-180).max(180).required(),
+      label: Joi.string().trim().max(200).allow(null),
+    }).required(),
+    priority: Joi.string()
+      .valid(...Object.values(Priority))
+      .required(),
+  });
+
+  // UC03 A3.1 (§13.8): why the lead turns the assignment down.
+  static declineBody = Joi.object({
+    reason: Joi.string().trim().min(1).max(200).required(),
   });
 
   // UC03 Log Relief Supply dialog (§13.11.1).

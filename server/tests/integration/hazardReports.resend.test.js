@@ -57,6 +57,7 @@ describe('POST /api/hazard-reports - resend (A3)', () => {
 
   it('A3: a resend with a different body still returns the report first stored', async () => {
     const first = await submitAs(citizen);
+    expect(first.status).toBe(201);
 
     const second = await submitAs(citizen, body({ description: 'Edited on the phone' }));
 

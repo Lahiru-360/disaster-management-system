@@ -38,6 +38,7 @@ describe('NotificationType', () => {
       'ASSIGNMENT',
       'SHELTER_CAPACITY',
       'SUPPORT_REQUEST',
+      'DISPATCH_DECLINED',
     ]);
   });
 
