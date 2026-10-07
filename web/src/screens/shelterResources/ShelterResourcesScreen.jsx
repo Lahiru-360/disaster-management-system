@@ -8,6 +8,7 @@ import LogReliefSupplyDialog from '../../components/shelterResources/LogReliefSu
 import LiveOpsMap from '../../components/shelterResources/LiveOpsMap';
 import OrganisationFilter from '../../components/shelterResources/OrganisationFilter';
 import ReassignPrompt from '../../components/shelterResources/ReassignPrompt';
+import RegisterShelterDialog from '../../components/shelterResources/RegisterShelterDialog';
 import RescueTeamsTable from '../../components/shelterResources/RescueTeamsTable';
 import ShelterStatusTable from '../../components/shelterResources/ShelterStatusTable';
 import SummaryCards from '../../components/shelterResources/SummaryCards';
@@ -32,8 +33,7 @@ const errorMessage = (error, fallback) => error?.response?.data?.error?.message 
 // or duty officer picks one first, since the server requires it for them.
 // The dashboard refetches whenever the district or the organisation filter
 // changes, and again after the occupancy (DMS-141), dispatch (DMS-142) and
-// supply (DMS-143) dialogs save, as the shelter dialog (DMS-144) will once
-// built.
+// supply (DMS-143) dialogs save, and after a shelter is registered (DMS-144).
 export default function ShelterResourcesScreen() {
   const { user } = useAuth();
   const isDmc = [ROLES.DMC_OFFICER, ROLES.DUTY_OFFICER].includes(user?.role);
@@ -57,6 +57,8 @@ export default function ShelterResourcesScreen() {
   // `reassigning` is the declined dispatch it was reopened for (A3.3).
   const [dispatchOpen, setDispatchOpen] = useState(false);
   const [reassigning, setReassigning] = useState(null);
+  // Whether the Register shelter dialog (A1) is open.
+  const [registerOpen, setRegisterOpen] = useState(false);
 
   useEffect(() => {
     if (!isDmc) return;
@@ -119,6 +121,11 @@ export default function ShelterResourcesScreen() {
   const closeDispatch = () => {
     setDispatchOpen(false);
     setReassigning(null);
+  };
+
+  const handleShelterRegistered = () => {
+    setRegisterOpen(false);
+    loadPicture();
   };
 
   const handleSupplyLogged = () => {
@@ -202,7 +209,12 @@ export default function ShelterResourcesScreen() {
                 >
                   Log Relief Supply
                 </Button>
-                <Button variant="outline" fullWidth={false} disabled={!picture.incident}>
+                <Button
+                  variant="outline"
+                  fullWidth={false}
+                  disabled={!canWrite}
+                  onClick={() => setRegisterOpen(true)}
+                >
                   Manage Shelters
                 </Button>
               </IncidentHeader>
@@ -272,6 +284,14 @@ export default function ShelterResourcesScreen() {
           }
           onClose={closeDispatch}
           onDispatched={handleDispatched}
+        />
+      ) : null}
+
+      {registerOpen && picture ? (
+        <RegisterShelterDialog
+          mapCenter={picture.shelters[0]?.location}
+          onClose={() => setRegisterOpen(false)}
+          onRegistered={handleShelterRegistered}
         />
       ) : null}
 

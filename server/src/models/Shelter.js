@@ -49,8 +49,17 @@ const shelterSchema = new mongoose.Schema(
   },
 );
 
-// The natural key, and the dashboard's "shelters in this district" lookup.
-shelterSchema.index({ district: 1, name: 1 }, { unique: true });
+// The natural key, and the dashboard's "shelters in this district" lookup. The
+// collation (strength 2) compares names ignoring case, so "Ja-Ela Central
+// College" and "ja-ela central college" are one name; the schema's `trim`
+// removes surrounding spaces. This is the contract's SHELTER_NAME_TAKEN rule
+// (§13.4.3), enforced by the database so concurrent registrations can't both
+// succeed. Named explicitly so it sits beside a deployed case-sensitive
+// `district_1_name_1` index rather than clashing with it.
+shelterSchema.index(
+  { district: 1, name: 1 },
+  { unique: true, name: 'district_1_name_1_ci', collation: { locale: 'en', strength: 2 } },
+);
 
 // Kept thin on purpose: the schema above is the whole model. The occupancy
 // rate and status rules are the Shelter class in domain/coordination.
