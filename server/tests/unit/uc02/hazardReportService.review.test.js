@@ -272,6 +272,25 @@ describe('HazardReportService.confirm (steps 12-14)', () => {
     );
   });
 
+  it('A1.3 (DMS-139.2): still dismisses when telling the reporter fails', async () => {
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+    const notifyUser = jest.fn().mockRejectedValue(new Error('inbox down'));
+    const failing = new HazardReportService({ clock, notifications: { notifyUser } });
+    const pending = await storeReport();
+
+    const report = await failing.dismiss(pending.id, officer, { reason: 'DUPLICATE' });
+
+    expect(report).toMatchObject({ status: 'DISMISSED', dismissalReason: 'DUPLICATE' });
+    expect(notifyUser).toHaveBeenCalledWith(
+      pending.reporter,
+      expect.objectContaining({ type: 'REPORT_DISMISSED' }),
+    );
+    expect(console.error).toHaveBeenCalledWith(
+      `Could not notify the reporter of ${pending.referenceNo}:`,
+      'inbox down',
+    );
+  });
+
   it.each([ReportStatus.CONFIRMED, ReportStatus.DISMISSED])(
     'E3: refuses to confirm a %s report and leaves it as it was',
     async (status) => {

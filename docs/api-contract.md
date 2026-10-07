@@ -2594,7 +2594,7 @@ A shelter has **spare capacity** when its status is `AVAILABLE` or `FILLING_UP`,
 | `currentOccupancy` | integer | 0 or more. It may exceed `capacity`: nobody is turned away by the software, and the shelter shows as `FULL`. |
 | `rate` | number | `currentOccupancy / capacity`, unrounded, e.g. `0.92`, or `1.05` over capacity. Show `status` as given rather than recomputing it from a rounded percentage. |
 | `status` | `ShelterStatus` | Derived from `rate` by the table above. |
-| `redirectingTo` | reference or `null` | The shelter new arrivals are redirected to (13.4.4). Only set while this shelter is `NEAR_CAPACITY` or `FULL`. |
+| `redirectingTo` | `{ id, name }` or `null` | The shelter new arrivals are redirected to: the target of the latest redirect from this shelter (13.4.4). Shown only while this shelter is `NEAR_CAPACITY` or `FULL`, so it goes back to `null` by itself once an update brings the shelter below 90%; nothing needs to clear it. |
 
 #### The rescue team object
 
@@ -2831,7 +2831,11 @@ UC03 main flow steps 3–5 (DMS-141), with A2 (DMS-145), E1 (DMS-147) and E2 (DM
    | 500 | 1 | `FULL` |
    | 505 | 1.01 | `FULL` |
 
-3. **A2:** when the status is now `NEAR_CAPACITY` or `FULL`, the shelter is **flagged** and the response suggests the nearest other shelter in the same district with spare capacity, by distance between the shelters' locations.
+3. **A2:** when the status is now `NEAR_CAPACITY` or `FULL`, the shelter is **flagged** and the response suggests the nearest other shelter in the same district with **spare capacity**.
+   - *Spare capacity* means a status of `AVAILABLE` or `FILLING_UP`, that is, below 90%. It is the same rule that 13.4.4 applies when the officer redirects.
+   - *Nearest* is the straight-line (haversine) distance between the two shelters' `location` points. The shelter itself is never suggested, and neither is a shelter in another district. A tie is broken by name.
+   - The suggestion is only a suggestion: nothing is stored until the officer redirects (13.4.4).
+   - An update that leaves the shelter below 90% is not flagged, has no suggestion, and ends any redirect from it (see `redirectingTo` in 13.2).
 4. **E2:** when no other shelter in the district has spare capacity, there is no suggestion and every DMC officer is notified (13.12). For each district this alert is sent at most once an hour while the condition lasts, and again if space became available in between.
 
 **Success — `200 OK`** (main flow: 380 of 500, not flagged)
@@ -2960,7 +2964,35 @@ UC03 A1 (DMS-144). Opens a new shelter in the officer's own district, empty and 
 }
 ```
 
-**Success — `201 Created`**: `{ "shelter": { ... } }`, the new shelter object with `currentOccupancy: 0`, `rate: 0` and `status: "AVAILABLE"`.
+**Behaviour** (UC03 A1, from step 2)
+1. The officer's own district is used; a `district` in the body is ignored.
+2. The district must have an `ACTIVE` incident (13.1), as for every officer write.
+3. The name is compared **ignoring case and surrounding spaces**, so `"Ja-Ela Central College"`, `"ja-ela central college"` and `" Ja-Ela Central College "` are the same name. A second shelter with it in the same district is refused; the same name in another district is allowed. The database enforces this with a unique index on the district and the name compared that way, so two requests at the same moment can't both succeed.
+4. The shelter is created with `currentOccupancy: 0`, which makes it `AVAILABLE`, and its name is stored trimmed. No occupancy record is created: a record is written only by an occupancy update (13.4.2).
+5. The shelter shows in the dashboard table and on the map (13.3) from then on. `redirectingTo` is `null`.
+
+**Success — `201 Created`**: `{ "shelter": { ... } }`, the new shelter object (13.2) with `currentOccupancy: 0`, `rate: 0` and `status: "AVAILABLE"`.
+
+```json
+{
+  "success": true,
+  "data": {
+    "shelter": {
+      "id": "66fb0a1b2c3d4e5f6a7b8c06",
+      "name": "Ja-Ela Central College",
+      "district": { "id": "66f7c1a2b3c4d5e6f7a8b902", "name": "Gampaha" },
+      "location": { "lat": 7.0744, "lng": 79.8919, "label": "Ja-Ela" },
+      "capacity": 300,
+      "currentOccupancy": 0,
+      "rate": 0,
+      "status": "AVAILABLE",
+      "redirectingTo": null,
+      "createdAt": "2026-10-03T10:00:00.000Z",
+      "updatedAt": "2026-10-03T10:00:00.000Z"
+    }
+  }
+}
+```
 
 **Failure — `409 Conflict`** (the name is taken in this district)
 
@@ -2974,7 +3006,26 @@ UC03 A1 (DMS-144). Opens a new shelter in the officer's own district, empty and 
 }
 ```
 
-Also `400 VALIDATION_ERROR` (e.g. `capacity` 0, −5 or 10.5; `name` or `location` missing) and `409 NO_ACTIVE_INCIDENT`.
+**Failure — `400 Bad Request`** (e.g. `capacity` 0). Nothing is created.
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "Request validation failed.",
+    "errors": [{ "field": "capacity", "message": "must be a whole number, 1 or more" }]
+  }
+}
+```
+
+| Status | Code | When |
+|---|---|---|
+| `400` | `VALIDATION_ERROR` | `name` or `location` missing, `name` empty after trimming or over 100 characters, `lat` / `lng` out of range or not numbers, `label` over 200 characters, or `capacity` missing, 0 or less, not a whole number (e.g. `10.5`) or not a number. Carries `errors`, one entry per field; any problem with the point or its label is reported on `location`, never on `location.lat`. Any other field in the body, such as `district` or `currentOccupancy`, is ignored. |
+| `401` | `AUTH_HEADER_MISSING`, `AUTH_HEADER_MALFORMED`, `TOKEN_EXPIRED`, `TOKEN_INVALID` | As in 13.13. |
+| `403` | `FORBIDDEN` | The caller isn't a `district_officer`, or has no district on their account. |
+| `409` | `NO_ACTIVE_INCIDENT` | The officer's district has no `ACTIVE` hazard event. |
+| `409` | `SHELTER_NAME_TAKEN` | The name, ignoring case and surrounding spaces, is already used in the district. |
 
 #### 13.4.4 Redirect new arrivals — `POST /api/shelters/:id/redirects`
 
@@ -2987,6 +3038,13 @@ UC03 A2.3 (DMS-145). Records that new arrivals at shelter `:id` are sent to anot
 | Field | Rule |
 |---|---|
 | `toShelterId` | Required. Another shelter in the same district, not `:id` itself. |
+
+**Behaviour**
+1. Both shelters must be in the officer's own district, and the district must have an `ACTIVE` incident (13.1).
+2. The target must have **spare capacity at that moment**: a status of `AVAILABLE` or `FILLING_UP`, below 90% (the same meaning as in 13.4.2). It may have filled up since the suggestion was made; then nothing is stored (`409 SHELTER_NO_SPACE`).
+3. A redirect record is stored (below). A later redirect from the same shelter replaces the earlier one as the current redirect; the older records stay as history.
+4. `:id` shows the target as `redirectingTo` (13.2) while it is `NEAR_CAPACITY` or `FULL`. The shelter does not have to be flagged for the redirect to be stored, but it is only shown while it is.
+5. Nothing else changes: neither shelter's occupancy, and no occupancy record.
 
 **Success — `201 Created`**
 
@@ -3018,7 +3076,26 @@ UC03 A2.3 (DMS-145). Records that new arrivals at shelter `:id` are sent to anot
 }
 ```
 
-Also `400 VALIDATION_ERROR` on `toShelterId` (missing, the same shelter, or a shelter in another district), `403 FORBIDDEN`, `404 NOT_FOUND` and `409 NO_ACTIVE_INCIDENT`.
+**The redirect record.** Each successful redirect stores one record; a refused one stores none. UC03 has no endpoint that lists them.
+
+| Field | Type | Notes |
+|---|---|---|
+| `from` | shelter id | The shelter whose new arrivals are sent away (`:id`). |
+| `to` | shelter id | The receiving shelter. |
+| `district` | district id | The district both shelters are in. |
+| `by` | user id | The district officer who redirected. |
+| `at` | date | When it was stored. |
+
+Records are indexed by `{ from, at }`.
+
+| Status | Code | When |
+|---|---|---|
+| `400` | `VALIDATION_ERROR` | `toShelterId` missing or malformed, the same shelter as `:id`, or a shelter in another district. Carries `errors` on `toShelterId`. |
+| `401` | `AUTH_HEADER_MISSING`, `AUTH_HEADER_MALFORMED`, `TOKEN_EXPIRED`, `TOKEN_INVALID` | As in 13.13. |
+| `403` | `FORBIDDEN` | The caller isn't a `district_officer`, or `:id` is in another district. |
+| `404` | `NOT_FOUND` | No shelter has `:id`, or none has `toShelterId` (a well-formed id of no shelter). |
+| `409` | `NO_ACTIVE_INCIDENT` | The officer's district has no `ACTIVE` hazard event. |
+| `409` | `SHELTER_NO_SPACE` | The target is `NEAR_CAPACITY` or `FULL`. |
 
 ### 13.5 List rescue teams — `GET /api/rescue-teams`
 
@@ -3183,9 +3260,38 @@ For the officer console: the unassigned queue (13.9), and the decline and timeou
 | Query param | Rule |
 |---|---|
 | `districtId` | As in 13.3. |
-| `status` | Optional. One `DispatchStatus`, or several separated by commas, e.g. `DECLINED,UNRESPONSIVE`. |
+| `status` | Optional. One `DispatchStatus`, or several separated by commas, e.g. `DECLINED,UNRESPONSIVE`. Any other value → `400 VALIDATION_ERROR` on `status`. Left out, every status is listed. |
 
-**Success — `200 OK`**: `{ "dispatches": [ ... ] }`, dispatch objects newest first, at most 100.
+**Success — `200 OK`**: `{ "dispatches": [ ... ] }`, the district's dispatch objects (13.2), newest first by `createdAt`, at most 100. Nothing matching is `200` with `[]`. This is a read, so it works without an active incident.
+
+```json
+{
+  "success": true,
+  "data": {
+    "dispatches": [
+      {
+        "id": "66fb0c1b2c3d4e5f6a7b8e01",
+        "status": "DECLINED",
+        "declineReason": "Vehicle unavailable",
+        "team": { "id": "66fb0b1b2c3d4e5f6a7b8d01", "name": "Team Alpha", "organisation": { "id": "66f7c1a2b3c4d5e6f7a8b9d5", "name": "SL Army", "type": "ARMED_FORCES" } },
+        "incidentLocation": { "lat": 6.9555, "lng": 79.9865, "label": "Biyagama – flooded road" },
+        "priority": "HIGH",
+        "createdBy": { "id": "66f1a2b3c4d5e6f7a8b9c0d6", "name": "Dilani Wickramasinghe" },
+        "...": "the rest of the dispatch object"
+      }
+    ]
+  }
+}
+```
+
+The console uses it for the reassign prompt: a `DECLINED` dispatch ("Team Alpha declined (Vehicle unavailable) – choose another team", 13.8) reopens the Dispatch dialog with the same `incidentLocation` and `priority`, asking 13.6 with `excludeTeamIds` set to the declined `team.id`.
+
+| Status | Code | When |
+|---|---|---|
+| `400` | `VALIDATION_ERROR` | `districtId` missing for a DMC officer or malformed, or a `status` that isn't a `DispatchStatus` (or a comma-separated list of them). |
+| `401` | `AUTH_HEADER_MISSING`, `AUTH_HEADER_MALFORMED`, `TOKEN_EXPIRED`, `TOKEN_INVALID` | As in 13.13. |
+| `403` | `FORBIDDEN` | A role other than `district_officer` or a DMC officer, or a district officer asking for another district. |
+| `404` | `NOT_FOUND` | A DMC officer asked for a district that doesn't exist. |
 
 #### 13.7.4 Dispatch detail — `GET /api/dispatches/:id`
 
@@ -3305,9 +3411,63 @@ UC03 A3 (DMS-146). `ASSIGNED` → `DECLINED`: the team returns to `AVAILABLE`, a
 |---|---|
 | `reason` | Required. 1–200 characters after trimming, e.g. `"Vehicle unavailable"`. |
 
-**Success — `200 OK`**: `{ "dispatch": { ... } }`, with `declineReason` set.
+```json
+{ "reason": "Vehicle unavailable" }
+```
 
-**Failures:** `400 VALIDATION_ERROR` on `reason`, `403 FORBIDDEN`, and `409 INVALID_DISPATCH_TRANSITION` when the dispatch is no longer `ASSIGNED` (e.g. already acknowledged).
+**Behaviour** (UC03 sequence diagram (b), the `[declined A3]` branch)
+1. Only the lead of the dispatch's team may decline, and only while it is `ASSIGNED`; an overdue dispatch has already become `UNRESPONSIVE` (13.10), so it can't be declined.
+2. The dispatch becomes `DECLINED`, with `declineReason` set and a `statusHistory` entry by the lead.
+3. The team returns to `AVAILABLE` (it was never on its way), so it can be dispatched again later.
+4. The officer who created the dispatch is notified (13.12, `DISPATCH_DECLINED`). A failed notification never fails the decline.
+
+**Success — `200 OK`**
+
+```json
+{
+  "success": true,
+  "data": {
+    "dispatch": {
+      "id": "66fb0c1b2c3d4e5f6a7b8e01",
+      "status": "DECLINED",
+      "declineReason": "Vehicle unavailable",
+      "statusHistory": [
+        {
+          "status": "ASSIGNED",
+          "at": "2026-10-03T09:30:00.000Z",
+          "by": { "id": "66f1a2b3c4d5e6f7a8b9c0d6", "name": "Dilani Wickramasinghe" }
+        },
+        {
+          "status": "DECLINED",
+          "at": "2026-10-03T09:31:40.000Z",
+          "by": { "id": "66f1a2b3c4d5e6f7a8b9c0d3", "name": "Suresh Bandara" }
+        }
+      ],
+      "...": "the rest of the dispatch object"
+    }
+  }
+}
+```
+
+**Failure — `409 Conflict`** (the lead acknowledged first)
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "INVALID_DISPATCH_TRANSITION",
+    "message": "This dispatch is ACKNOWLEDGED and can't be declined."
+  }
+}
+```
+
+| Status | Code | When |
+|---|---|---|
+| `400` | `VALIDATION_ERROR` | `reason` missing, empty after trimming, or over 200 characters. Carries `errors` on `reason`. |
+| `401` | `AUTH_HEADER_MISSING`, `AUTH_HEADER_MALFORMED`, `TOKEN_EXPIRED`, `TOKEN_INVALID` | As in 13.13. |
+| `403` | `FORBIDDEN` | The caller isn't a `rescue_team_lead`, or leads another team. |
+| `404` | `NOT_FOUND` | No dispatch has this id, or the id isn't valid. |
+| `409` | `INVALID_DISPATCH_TRANSITION` | The dispatch isn't `ASSIGNED` any more: acknowledged, on site, completed, declined or timed out. |
 
 ### 13.9 Unassigned queue
 

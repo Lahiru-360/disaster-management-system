@@ -5,6 +5,7 @@ import morgan from 'morgan';
 import { ErrorHandler } from '../middleware/ErrorHandler.js';
 import { areaRoutes } from '../routes/AreaRoutes.js';
 import { authRoutes } from '../routes/AuthRoutes.js';
+import { dispatchRoutes } from '../routes/DispatchRoutes.js';
 import { hazardAlertRoutes } from '../routes/HazardAlertRoutes.js';
 import { hazardEventRoutes } from '../routes/HazardEventRoutes.js';
 import { hazardReportRoutes } from '../routes/HazardReportRoutes.js';
@@ -40,6 +41,7 @@ export class App {
       operationalPictureRoutes,
       shelterRoutes,
       rescueTeamRoutes,
+      dispatchRoutes,
       reliefStockRoutes,
       supplyDistributionRoutes,
     ],

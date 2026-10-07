@@ -22,6 +22,24 @@ export class ShelterRoutes extends BaseRoutes {
       shelterController.list,
     );
 
+    // UC03 A1: district officers only; the shelter goes in their own district.
+    router.post(
+      '/',
+      authMiddleware.requireAuth,
+      authMiddleware.requireRole(Role.DISTRICT_OFFICER),
+      RequestValidator.body(CoordinationValidator.shelterBody),
+      shelterController.create,
+    );
+
+    // UC03 A2.3: district officers only, for a shelter in their own district.
+    router.post(
+      '/:id/redirects',
+      authMiddleware.requireAuth,
+      authMiddleware.requireRole(Role.DISTRICT_OFFICER),
+      RequestValidator.body(CoordinationValidator.redirectBody),
+      shelterController.redirect,
+    );
+
     // UC03 steps 3-5: district officers only, in their own district.
     router.patch(
       '/:id/occupancy',

@@ -106,3 +106,25 @@ describe('DistrictScope.assertOwnDistrict', () => {
     );
   });
 });
+
+describe('DistrictScope.ownDistrict', () => {
+  it('TC-30: is the district on a district officer’s profile', async () => {
+    const officer = await createUser({ role: Role.DISTRICT_OFFICER, district: areas.gampaha });
+
+    expect(scope.ownDistrict(officer)).toBe(areas.gampaha.id);
+  });
+
+  it('refuses a district officer with no district', async () => {
+    const officer = await createUser({ role: Role.DISTRICT_OFFICER });
+
+    expect(() => scope.ownDistrict(officer)).toThrow('No district is assigned to your account.');
+  });
+
+  it('refuses anyone who is not a district officer', async () => {
+    const dmc = await createUser({ role: Role.DMC_OFFICER });
+
+    expect(() => scope.ownDistrict(dmc)).toThrow(
+      'You do not have permission to perform this action.',
+    );
+  });
+});
