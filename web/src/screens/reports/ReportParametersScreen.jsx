@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router';
 
 import { reportsApi } from '../../api';
 import ReportParametersForm from '../../components/reports/ReportParametersForm';
+import Button from '../../components/ui/Button';
 import EmptyState from '../../components/ui/EmptyState';
 import Loader from '../../components/ui/Loader';
 import Notice from '../../components/ui/Notice';
@@ -30,6 +31,9 @@ const defaultsFor = (event) => {
   };
 };
 
+// E2 (DMS-160): every requested section came back empty, so nothing was stored.
+const isNoData = (error) => error?.response?.data?.error?.code === 'NO_DATA_FOR_SELECTION';
+
 // UC04 main flow steps 1-5 (DMS-153.9): Reports → Post-Event Analysis. Lists
 // the closed events, pre-fills the chosen one's period and districts, and
 // generates the report, which then opens in the report view.
@@ -44,6 +48,7 @@ export default function ReportParametersScreen() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
   const [fieldErrors, setFieldErrors] = useState({});
+  const [noData, setNoData] = useState(false);
 
   useEffect(() => {
     if (!canReport) return;
@@ -79,6 +84,11 @@ export default function ReportParametersScreen() {
     reportsApi.generate(values).then(
       (report) => navigate(`/reports/${report.id}`, { state: { report } }),
       (generateError) => {
+        if (isNoData(generateError)) {
+          setNoData(true);
+          setSubmitting(false);
+          return;
+        }
         // E1 (step 5): the refused fields are highlighted and every input is
         // kept, so the officer corrects them and resumes at step 4.
         const { byField, others } = mapFieldErrors(generateError, FORM_FIELDS);
@@ -115,6 +125,20 @@ export default function ReportParametersScreen() {
           icon="▤"
           title="No closed events yet"
           description="A report can be generated once a hazard event has been closed."
+        />
+      ) : noData ? (
+        // E2.2: the officer is told plainly and goes back to event selection
+        // (step 3), with the selection they tried still filled in.
+        <EmptyState
+          className="mt-6"
+          icon="∅"
+          title="No data for this selection"
+          description="Nothing was recorded for the chosen sections on these days in these districts. Try a wider range, more districts or other sections."
+          action={
+            <Button fullWidth={false} onClick={() => setNoData(false)}>
+              Back to event selection
+            </Button>
+          }
         />
       ) : (
         <div className="mt-5 flex flex-col gap-4">

@@ -67,10 +67,15 @@ export class PostEventReportService {
       districtIds: PostEventReportService.#inEventOrder(event, districtIds),
       clock: this.#clock,
     });
-    const { report, summary } = await this.#builder.build(ctx, {
+    const { report, summary, isEmpty } = await this.#builder.build(ctx, {
       sectionKeys: sections,
       generatedBy: officer.id,
     });
+    // E2: a selection with no records in any requested section is not a
+    // report, so nothing is stored (404 NO_DATA_FOR_SELECTION).
+    if (isEmpty) {
+      throw new ApiError(404, 'NO_DATA_FOR_SELECTION', 'No data is available for this selection.');
+    }
 
     const doc = await this.#reportModel.create({
       event: report.eventId,

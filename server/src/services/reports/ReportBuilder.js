@@ -49,10 +49,12 @@ export class ReportBuilder {
 
   /**
    * Compiles the requested sections, one after another, into a report that is
-   * not stored yet. generatedAt comes from the context's clock.
+   * not stored yet. generatedAt comes from the context's clock. isEmpty is
+   * true when every compiled section found no records at all (UC04 E2); a
+   * report with only some sections empty is not empty - their days are gaps.
    * @param {import('../../domain/analysis/ReportContext.js').ReportContext} ctx
    * @param {{ sectionKeys: string[], generatedBy: string }} params
-   * @returns {Promise<{ report: PostEventReport, summary: object }>}
+   * @returns {Promise<{ report: PostEventReport, summary: object, isEmpty: boolean }>}
    */
   async build(ctx, { sectionKeys, generatedBy }) {
     const unknown = sectionKeys.filter((key) => !this.sectionKeys.includes(key));
@@ -69,13 +71,15 @@ export class ReportBuilder {
       districts: ctx.districtIds,
     });
     const summary = { ...ReportBuilder.#EMPTY_SUMMARY };
+    let isEmpty = true;
 
     for (const section of this.#sections.filter((s) => sectionKeys.includes(s.key))) {
-      const { result, gaps } = await section.compile(ctx);
-      report.addSection({ key: section.key, result, gaps });
-      Object.assign(summary, section.summarise(result));
+      const compiled = await section.compile(ctx);
+      report.addSection({ key: section.key, result: compiled.result, gaps: compiled.gaps });
+      Object.assign(summary, section.summarise(compiled.result));
+      isEmpty = isEmpty && compiled.isEmpty;
     }
 
-    return { report, summary };
+    return { report, summary, isEmpty };
   }
 }
