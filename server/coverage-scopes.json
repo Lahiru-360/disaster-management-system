@@ -62,13 +62,17 @@
     "src/services/ActiveIncident.js",
     "src/services/ShelterService.js",
     "src/services/RescueTeamService.js",
+    "src/services/SupplyService.js",
     "src/controllers/OperationalPictureController.js",
     "src/controllers/ShelterController.js",
     "src/controllers/RescueTeamController.js",
+    "src/controllers/SupplyController.js",
     "src/validators/CoordinationValidator.js",
     "src/routes/OperationalPictureRoutes.js",
     "src/routes/ShelterRoutes.js",
-    "src/routes/RescueTeamRoutes.js"
+    "src/routes/RescueTeamRoutes.js",
+    "src/routes/ReliefStockRoutes.js",
+    "src/routes/SupplyDistributionRoutes.js"
   ],
   "uc04": [
     "src/domain/events/**/*.js",
