@@ -4,8 +4,8 @@ import { app } from '../../src/core/App.js';
 import { Role } from '../../src/enums/Role.js';
 import { HazardAlert } from '../../src/models/HazardAlert.js';
 import { HazardEvent } from '../../src/models/HazardEvent.js';
+import { OccupancyRecord } from '../../src/models/OccupancyRecord.js';
 import { PostEventReport } from '../../src/models/PostEventReport.js';
-import { OccupancyRecordRepository } from '../../src/services/reports/repositories/OccupancyRecordRepository.js';
 import { seedAreas } from '../helpers/areaFixtures.js';
 import { bearerFor } from '../helpers/authHelper.js';
 import { createUser } from '../helpers/userFactory.js';
@@ -53,7 +53,7 @@ const generate = (fields = {}) =>
 // none in Kalutara.
 const SHELTERS = [new ObjectId(), new ObjectId()];
 const seedOccupancy = () =>
-  mongoose.connection.collection(OccupancyRecordRepository.COLLECTION).insertMany(
+  OccupancyRecord.create(
     [8, 9, 10, 11, 12].flatMap((day) =>
       [areas.colombo, areas.gampaha].map((district, i) => ({
         shelter: SHELTERS[i],
@@ -61,6 +61,7 @@ const seedOccupancy = () =>
         occupants: 100 * (i + 1) + day,
         capacity: 500,
         recordedAt: june(day),
+        recordedBy: officer._id,
       })),
     ),
   );
