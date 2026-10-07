@@ -1,0 +1,63 @@
+import DataTable from '../ui/DataTable';
+import EmptyState from '../ui/EmptyState';
+import ProgressBar from '../ui/ProgressBar';
+import StatusBadge from '../ui/StatusBadge';
+import { SHELTER_STATUS_LABELS, SHELTER_STATUS_TONES } from '../../utils/shelterStatus';
+
+// Step 2's Shelter Status table: name, district, an occupancy bar and %, and
+// a status badge. The bar's own thresholds follow the shelter status rule
+// (0.75 / 0.90), not ProgressBar's defaults.
+const OCCUPANCY_THRESHOLDS = [
+  { upTo: 74, tone: 'success' },
+  { upTo: 89, tone: 'warning' },
+  { upTo: Infinity, tone: 'danger' },
+];
+
+const COLUMNS = [
+  { key: 'name', header: 'Shelter' },
+  { key: 'district', header: 'District', render: (row) => row.district.name },
+  {
+    key: 'occupancy',
+    header: 'Occupancy',
+    render: (row) => (
+      <div className="w-40">
+        <ProgressBar
+          value={row.currentOccupancy}
+          max={row.capacity}
+          thresholds={OCCUPANCY_THRESHOLDS}
+        />
+        <p className="mt-1 text-[12px] text-muted">
+          {row.currentOccupancy} / {row.capacity} ({Math.round(row.rate * 100)}%)
+        </p>
+      </div>
+    ),
+  },
+  {
+    key: 'status',
+    header: 'Status',
+    render: (row) => (
+      <StatusBadge tone={SHELTER_STATUS_TONES[row.status]}>
+        {SHELTER_STATUS_LABELS[row.status]}
+      </StatusBadge>
+    ),
+  },
+];
+
+// `onSelect(shelter)`, when given, makes each row clickable: step 3 opens the
+// Update Shelter Occupancy dialog for the row clicked.
+export default function ShelterStatusTable({ shelters, onSelect }) {
+  return (
+    <DataTable
+      columns={COLUMNS}
+      rows={shelters}
+      onRowClick={onSelect}
+      emptyState={
+        <EmptyState
+          icon="⌂"
+          title="No shelters yet"
+          description="Registered shelters for this district will appear here."
+        />
+      }
+    />
+  );
+}
