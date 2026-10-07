@@ -4143,7 +4143,7 @@ At least one filter must be set; a body with none → `400` on `filters`: "must 
 | Filter | Sections it narrows | How |
 |---|---|---|
 | `hazardType` | `alertTimeline`, `citizensReached` | Only alerts of that hazard type are in the timeline, and only their deliveries count. |
-| `districtId` | all four | The report is compiled for that one district, exactly as if `districtIds` had held only it (14.3): the alerts covering it and their deliveries, its shelters' occupancy, and the distributions to it. The new report's `districts` is that one district. |
+| `districtId` | all four | The report is compiled for that one district, exactly as if `districtIds` had held only it (14.3): the alerts covering it and their deliveries, its shelters' occupancy, and the distributions to it. The new report keeps the report's `districts`, so the filter can later be changed to another of them; `filters.districtId` names the one its sections cover. |
 | `organisationId` | `resourceDistribution` | Only distribution records of that organisation's supplies. The other sections are compiled as if it weren't set, and the view marks them "Not affected by organisation filter". |
 
 Every section, the gaps and the summary figures are compiled again for the filtered selection, with the same rules as 14.2. A section a filter doesn't narrow comes out exactly as it would without that filter.

@@ -23,6 +23,15 @@ export class ReportSection {
     throw new Error(`${this.constructor.name} must define key`);
   }
 
+  /**
+   * The A1 filters (ReportContext.filters) this section is narrowed by. Every
+   * section honours the district filter; a section adds the others it reads.
+   * @returns {string[]}
+   */
+  get honouredFilters() {
+    return ['districtId'];
+  }
+
   /** Why a day with no records is a gap, e.g. "No occupancy records". */
   get gapReason() {
     throw new Error(`${this.constructor.name} must define gapReason`);

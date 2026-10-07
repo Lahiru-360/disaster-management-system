@@ -26,6 +26,10 @@ export class ResourceDistributionSection extends ReportSection {
     return ReportSectionKey.RESOURCE_DISTRIBUTION;
   }
 
+  get honouredFilters() {
+    return ['districtId', 'organisationId'];
+  }
+
   get gapReason() {
     return 'No distribution records';
   }
@@ -45,7 +49,12 @@ export class ResourceDistributionSection extends ReportSection {
   async compile(ctx) {
     const { start, end } = ctx.instants();
     const records = (
-      await this.#distributions.findInRange({ districtIds: ctx.districtIds, start, end })
+      await this.#distributions.findInRange({
+        districtIds: ctx.districtIds,
+        start,
+        end,
+        organisationId: ctx.filters.organisationId,
+      })
     ).filter((record) => ctx.includesDistrict(record.district));
 
     const [districtNames, organisationNames] = await Promise.all([
