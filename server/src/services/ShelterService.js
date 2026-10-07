@@ -3,6 +3,7 @@ import { ShelterStatus } from '../enums/ShelterStatus.js';
 import { District as DistrictModel } from '../models/District.js';
 import { OccupancyRecord as OccupancyRecordModel } from '../models/OccupancyRecord.js';
 import { Shelter as ShelterModel } from '../models/Shelter.js';
+import { ShelterRedirect as ShelterRedirectModel } from '../models/ShelterRedirect.js';
 import { ApiError } from '../utils/ApiError.js';
 import { GeoDistance } from '../utils/GeoDistance.js';
 import { systemClock } from '../utils/SystemClock.js';
@@ -15,6 +16,7 @@ import { districtScope as defaultDistrictScope } from './DistrictScope.js';
 export class ShelterService {
   #shelterModel;
   #occupancyRecordModel;
+  #shelterRedirectModel;
   #districtModel;
   #districtScope;
   #activeIncident;
@@ -23,6 +25,7 @@ export class ShelterService {
   constructor({
     shelterModel = ShelterModel,
     occupancyRecordModel = OccupancyRecordModel,
+    shelterRedirectModel = ShelterRedirectModel,
     districtModel = DistrictModel,
     districtScope = defaultDistrictScope,
     activeIncident = defaultActiveIncident,
@@ -30,6 +33,7 @@ export class ShelterService {
   } = {}) {
     this.#shelterModel = shelterModel;
     this.#occupancyRecordModel = occupancyRecordModel;
+    this.#shelterRedirectModel = shelterRedirectModel;
     this.#districtModel = districtModel;
     this.#districtScope = districtScope;
     this.#activeIncident = activeIncident;
@@ -49,7 +53,8 @@ export class ShelterService {
       .find({ district })
       .sort({ name: 1 })
       .populate(CoordinationPresenter.SHELTER_POPULATE);
-    return docs.map((doc) => CoordinationPresenter.shelter(doc));
+    const redirects = await this.redirectsFor(docs);
+    return docs.map((doc) => CoordinationPresenter.shelter(doc, redirects.get(String(doc._id))));
   }
 
   /**
@@ -125,7 +130,8 @@ export class ShelterService {
       recordedBy: user._id,
     });
 
-    const presented = CoordinationPresenter.shelter(doc);
+    const redirects = await this.redirectsFor([doc]);
+    const presented = CoordinationPresenter.shelter(doc, redirects.get(String(doc._id)));
     const flagged = [ShelterStatus.NEAR_CAPACITY, ShelterStatus.FULL].includes(presented.status);
     return {
       shelter: presented,
@@ -143,6 +149,90 @@ export class ShelterService {
       // Filled in by E2 (DMS-148).
       dmcAlerted: false,
     };
+  }
+
+  /**
+   * UC03 A2.3 (redirect in sequence diagram (a), contract §13.4.4): records
+   * that new arrivals at a shelter of the officer's district go to another
+   * shelter of it instead. The target must still have spare capacity (below
+   * 90%) at this moment - it may have filled up since it was suggested - or
+   * nothing is stored. The shelter being redirected need not be flagged now;
+   * its `redirectingTo` only shows while it is, so the redirect ends by itself
+   * when it drops below 90%.
+   * @param {object} user The signed-in district officer.
+   * @param {string} shelterId The shelter being redirected away from.
+   * @param {{ toShelterId: string }} input Validated by the route.
+   * @returns {Promise<object>} The redirect record (§13.4.4).
+   * @throws {ApiError} 404 NOT_FOUND, 403 FORBIDDEN, 409 NO_ACTIVE_INCIDENT, 400 VALIDATION_ERROR or 409 SHELTER_NO_SPACE.
+   */
+  async redirect(user, shelterId, { toShelterId }) {
+    const from = await this.#findShelter(shelterId);
+    this.#districtScope.assertOwnDistrict(user, from.district._id);
+    await this.#activeIncident.require(from.district._id);
+
+    const to = await this.#findShelter(toShelterId);
+    const targetProblem = ShelterService.#redirectTargetProblem(from, to);
+    if (targetProblem) {
+      throw new ApiError(400, 'VALIDATION_ERROR', 'Request validation failed.', [
+        { field: 'toShelterId', message: targetProblem },
+      ]);
+    }
+
+    const target = Shelter.fromDocument(to);
+    if (!target.hasSpareCapacity()) {
+      throw new ApiError(
+        409,
+        'SHELTER_NO_SPACE',
+        `${to.name} has no spare capacity (${Math.round(target.occupancyRate() * 100)}%).`,
+      );
+    }
+
+    const doc = await this.#shelterRedirectModel.create({
+      from: from._id,
+      to: to._id,
+      district: from.district._id,
+      by: user._id,
+      at: this.#clock.now(),
+    });
+    await doc.populate(CoordinationPresenter.REDIRECT_POPULATE);
+    return CoordinationPresenter.redirect(doc);
+  }
+
+  // Why a shelter can't be the redirect's target, or null: it is the shelter
+  // itself, or in another district.
+  static #redirectTargetProblem(from, to) {
+    if (String(from._id) === String(to._id)) return 'must be another shelter';
+    if (String(from.district._id) !== String(to.district._id)) {
+      return 'must be a shelter in the same district';
+    }
+    return null;
+  }
+
+  /**
+   * The shelter each given shelter is redirecting new arrivals to (contract
+   * §13.2 `redirectingTo`): the target of its latest redirect, by shelter id as
+   * `{ id, name }`. Only shelters that are NEAR_CAPACITY or FULL are looked up,
+   * since a redirect is only shown while the shelter is.
+   * @param {object[]} shelterDocs Shelter documents.
+   * @returns {Promise<Map<string, { id: string, name: string }>>}
+   */
+  async redirectsFor(shelterDocs) {
+    const flagged = shelterDocs.filter((doc) => !Shelter.fromDocument(doc).hasSpareCapacity());
+    if (flagged.length === 0) return new Map();
+
+    const records = await this.#shelterRedirectModel
+      .find({ from: { $in: flagged.map((doc) => doc._id) } })
+      .sort({ at: -1, _id: -1 })
+      .populate({ path: 'to', select: 'name' });
+
+    const latest = new Map();
+    for (const record of records) {
+      const key = String(record.from);
+      if (!latest.has(key)) {
+        latest.set(key, CoordinationPresenter.reference(record.to, ['name']));
+      }
+    }
+    return latest;
   }
 
   /**

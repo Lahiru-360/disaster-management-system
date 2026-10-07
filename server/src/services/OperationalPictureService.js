@@ -13,6 +13,7 @@ import { ApiError } from '../utils/ApiError.js';
 import { CoordinationPresenter } from './CoordinationPresenter.js';
 import { dispatchService as defaultDispatchService } from './DispatchService.js';
 import { districtScope as defaultDistrictScope } from './DistrictScope.js';
+import { shelterService as defaultShelterService } from './ShelterService.js';
 
 // UC03 main flow steps 1-2 and 14: the combined operational picture of one
 // district - shelters, rescue teams, recent supply logs and totals by owning
@@ -31,6 +32,7 @@ export class OperationalPictureService {
   #distributionModel;
   #districtScope;
   #dispatchService;
+  #shelterService;
 
   constructor({
     districtModel = DistrictModel,
@@ -42,6 +44,7 @@ export class OperationalPictureService {
     distributionModel = SupplyDistributionModel,
     districtScope = defaultDistrictScope,
     dispatchService = defaultDispatchService,
+    shelterService = defaultShelterService,
   } = {}) {
     this.#districtModel = districtModel;
     this.#hazardEventModel = hazardEventModel;
@@ -52,6 +55,7 @@ export class OperationalPictureService {
     this.#distributionModel = distributionModel;
     this.#districtScope = districtScope;
     this.#dispatchService = dispatchService;
+    this.#shelterService = shelterService;
   }
 
   /**
@@ -111,6 +115,7 @@ export class OperationalPictureService {
         ]),
       ]);
 
+    const redirects = await this.#shelterService.redirectsFor(shelterDocs);
     const currentTasks = await this.#dispatchService.currentTasksFor(
       teamDocs.map((doc) => doc._id),
     );
@@ -127,7 +132,9 @@ export class OperationalPictureService {
         : null,
       organisation: organisation ? CoordinationPresenter.organisation(organisation) : null,
       summary: OperationalPictureService.#summary(shelterDocs, teamDocs, distributedByOrganisation),
-      shelters: shelterDocs.map((doc) => CoordinationPresenter.shelter(doc)),
+      shelters: shelterDocs.map((doc) =>
+        CoordinationPresenter.shelter(doc, redirects.get(String(doc._id))),
+      ),
       teams: teamDocs.map((doc) =>
         CoordinationPresenter.team(doc, currentTasks.get(String(doc._id)) ?? null),
       ),
