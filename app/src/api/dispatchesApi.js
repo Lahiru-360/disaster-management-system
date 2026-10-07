@@ -21,6 +21,15 @@ async function acknowledge(id) {
   return response.data.data;
 }
 
+// `POST /api/dispatches/:id/decline` (§13.8, A3): ASSIGNED -> DECLINED, with the
+// lead's reason (1-200 characters). The team is available again and the officer
+// who dispatched it is told. Resolves with `{ dispatch }`; 409
+// INVALID_DISPATCH_TRANSITION if it was acknowledged or has expired meanwhile.
+async function decline(id, reason) {
+  const response = await client.post(`/dispatches/${id}/decline`, { reason });
+  return response.data.data;
+}
+
 // `POST /api/dispatches/:id/on-site` (§13.7.7): ACKNOWLEDGED -> ON_SITE.
 async function markOnSite(id) {
   const response = await client.post(`/dispatches/${id}/on-site`);
@@ -37,6 +46,7 @@ async function complete(id) {
 const dispatchesApi = {
   getMine,
   acknowledge,
+  decline,
   markOnSite,
   complete,
 };

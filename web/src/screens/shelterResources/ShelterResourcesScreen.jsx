@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router';
 
 import { areasApi, coordinationApi } from '../../api';
 import DispatchDialog from '../../components/shelterResources/DispatchDialog';
@@ -6,6 +7,7 @@ import IncidentHeader from '../../components/shelterResources/IncidentHeader';
 import LogReliefSupplyDialog from '../../components/shelterResources/LogReliefSupplyDialog';
 import LiveOpsMap from '../../components/shelterResources/LiveOpsMap';
 import OrganisationFilter from '../../components/shelterResources/OrganisationFilter';
+import ReassignPrompt from '../../components/shelterResources/ReassignPrompt';
 import RescueTeamsTable from '../../components/shelterResources/RescueTeamsTable';
 import ShelterStatusTable from '../../components/shelterResources/ShelterStatusTable';
 import SummaryCards from '../../components/shelterResources/SummaryCards';
@@ -21,6 +23,7 @@ import SectionLabel from '../../components/ui/SectionLabel';
 import Select from '../../components/ui/Select';
 import { ROLES } from '../../constants/roles';
 import useAuth from '../../hooks/useAuth';
+import useDeclinedDispatches from '../../hooks/useDeclinedDispatches';
 
 const errorMessage = (error, fallback) => error?.response?.data?.error?.message ?? fallback;
 
@@ -50,8 +53,10 @@ export default function ShelterResourcesScreen() {
   const [occupancyShelterId, setOccupancyShelterId] = useState(null);
   // Whether the Log Relief Supply dialog (steps 12-13) is open.
   const [logSupplyOpen, setLogSupplyOpen] = useState(false);
-  // Whether the Dispatch Rescue Team dialog (steps 6-9) is open.
+  // Whether the Dispatch Rescue Team dialog (steps 6-9) is open, and for what:
+  // `reassigning` is the declined dispatch it was reopened for (A3.3).
   const [dispatchOpen, setDispatchOpen] = useState(false);
+  const [reassigning, setReassigning] = useState(null);
 
   useEffect(() => {
     if (!isDmc) return;
@@ -90,7 +95,30 @@ export default function ShelterResourcesScreen() {
 
   const handleDispatched = () => {
     setDispatchOpen(false);
+    if (reassigning) handledDecline(reassigning);
+    setReassigning(null);
     loadPicture();
+  };
+
+  // A declined dispatch has been dealt with (reassigned or dismissed): drop its
+  // prompt, and the inbox link's `?dispatch=` that pointed at it.
+  function handledDecline(dispatch) {
+    dismissDecline(dispatch.id);
+    if (searchParams.get('dispatch') === dispatch.id) {
+      setSearchParams({}, { replace: true });
+    }
+  }
+
+  // A3.3: choose another team for the declined dispatch's incident, with the
+  // team that declined left out.
+  const openReassign = (dispatch) => {
+    setReassigning(dispatch);
+    setDispatchOpen(true);
+  };
+
+  const closeDispatch = () => {
+    setDispatchOpen(false);
+    setReassigning(null);
   };
 
   const handleSupplyLogged = () => {
@@ -101,6 +129,15 @@ export default function ShelterResourcesScreen() {
   // Only a district officer updates occupancy or logs supplies, and only while
   // an incident is active (the server refuses otherwise); the DMC just reads.
   const canWrite = !isDmc && Boolean(picture?.incident);
+
+  // A3.2: while the dashboard is open, ask every 15 s whether a team declined.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const { declined, dismiss: dismissDecline } = useDeclinedDispatches({
+    enabled: canWrite,
+    userId: user?.id,
+    focusId: searchParams.get('dispatch'),
+    onNewDecline: loadPicture,
+  });
 
   const districtName = isDmc
     ? districts?.find((d) => d.id === districtId)?.name
@@ -170,6 +207,14 @@ export default function ShelterResourcesScreen() {
                 </Button>
               </IncidentHeader>
 
+              {canWrite ? (
+                <ReassignPrompt
+                  dispatches={declined}
+                  onReassign={openReassign}
+                  onDismiss={handledDecline}
+                />
+              ) : null}
+
               <SummaryCards summary={picture.summary} />
 
               <div className="flex items-center justify-between">
@@ -216,7 +261,16 @@ export default function ShelterResourcesScreen() {
       {dispatchOpen && picture ? (
         <DispatchDialog
           mapCenter={picture.shelters[0]?.location}
-          onClose={() => setDispatchOpen(false)}
+          initial={
+            reassigning
+              ? {
+                  incidentLocation: reassigning.incidentLocation,
+                  priority: reassigning.priority,
+                  excludeTeamIds: [reassigning.team.id],
+                }
+              : undefined
+          }
+          onClose={closeDispatch}
           onDispatched={handleDispatched}
         />
       ) : null}

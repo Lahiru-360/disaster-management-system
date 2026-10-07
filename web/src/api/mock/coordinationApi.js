@@ -421,6 +421,18 @@ async function dispatchTeam({ teamId, incidentLocation, priority }) {
   return { dispatch: { ...dispatch } };
 }
 
+// Newest first, optionally only some statuses, as the server's list (§13.7.3).
+async function listDispatches({ districtId, status } = {}) {
+  await delay();
+  takeFailure();
+  if (!inDistrict(districtId)) return [];
+  const statuses = [status].flat().filter(Boolean);
+  return dispatches
+    .filter((d) => statuses.length === 0 || statuses.includes(d.status))
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    .map((d) => ({ ...d, incidentLocation: { ...d.incidentLocation } }));
+}
+
 async function listRescueTeams({ districtId } = {}) {
   await delay();
   takeFailure();
@@ -430,11 +442,29 @@ async function listRescueTeams({ districtId } = {}) {
 /**
  * Demo hooks, not part of the API: `failNext('network')` makes the next call
  * fail as if offline; `failNext('forbidden')` answers the next call with the
- * 403 a district officer gets for another district.
+ * 403 a district officer gets for another district; `declineLatest(reason)`
+ * plays the team lead declining the newest assignment from the field app.
  */
 export const mockControls = {
   failNext(kind) {
     pendingFailure = kind;
+  },
+  // The team lead declining the newest ASSIGNED dispatch from the field app
+  // (A3): the dispatch is DECLINED with the reason and the team is AVAILABLE
+  // again, so the next poll shows the reassign prompt.
+  declineLatest(reason = 'Vehicle unavailable') {
+    const dispatch = dispatches.findLast((d) => d.status === 'ASSIGNED');
+    if (!dispatch) return;
+    dispatch.status = 'DECLINED';
+    dispatch.declineReason = reason;
+    dispatch.statusHistory.push({
+      status: 'DECLINED',
+      at: new Date().toISOString(),
+      by: DEMO_LEAD,
+    });
+    const team = teams.find((t) => t.id === dispatch.team.id);
+    team.status = 'AVAILABLE';
+    team.currentTask = null;
   },
 };
 
@@ -446,5 +476,6 @@ export default {
   logDistribution,
   listAvailableTeams,
   dispatchTeam,
+  listDispatches,
   listRescueTeams,
 };

@@ -37,6 +37,7 @@ const OPEN = ['ASSIGNED', 'ACKNOWLEDGED', 'ON_SITE'];
 
 const VERBS = {
   ACKNOWLEDGED: 'acknowledged',
+  DECLINED: 'declined',
   ON_SITE: 'marked on site',
   COMPLETED: 'completed',
 };
@@ -181,6 +182,25 @@ async function acknowledge(id) {
   return transition(id, 'ASSIGNED', 'ACKNOWLEDGED');
 }
 
+// A3: the reason is required, 1-200 characters after trimming; a bad one is a
+// 400 on `reason` and changes nothing. Declining frees the team again.
+async function decline(id, reason) {
+  await delay();
+  takeFailure();
+  const text = typeof reason === 'string' ? reason.trim() : '';
+  if (text.length < 1 || text.length > 200) {
+    const error = apiError(400, 'VALIDATION_ERROR', 'Request validation failed.');
+    error.response.data.error.errors = [
+      { field: 'reason', message: text ? 'must be at most 200 characters' : 'is required' },
+    ];
+    throw error;
+  }
+  return transition(id, 'ASSIGNED', 'DECLINED', (dispatch) => {
+    dispatch.declineReason = text;
+    team.status = 'AVAILABLE';
+  });
+}
+
 async function markOnSite(id) {
   await delay();
   takeFailure();
@@ -227,6 +247,7 @@ export const mockControls = {
 const dispatchesApi = {
   getMine,
   acknowledge,
+  decline,
   markOnSite,
   complete,
 };

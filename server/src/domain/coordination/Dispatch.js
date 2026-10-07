@@ -10,11 +10,15 @@ import { InvalidDispatchTransitionError } from './InvalidDispatchTransitionError
 //
 // Built from a Dispatch document; nothing here knows about the database.
 export class Dispatch {
+  static MAX_DECLINE_REASON = 200;
+
   // From each status, the moves allowed and where they lead. `team` is the
   // assigned team's new status, or null when it stays as it is.
   static #TRANSITIONS = {
     [DispatchStatus.ASSIGNED]: {
       acknowledge: { to: DispatchStatus.ACKNOWLEDGED, team: null },
+      // A3: the team never left, so it is free again.
+      decline: { to: DispatchStatus.DECLINED, team: TeamStatus.AVAILABLE },
     },
     [DispatchStatus.ACKNOWLEDGED]: {
       markOnSite: { to: DispatchStatus.ON_SITE, team: TeamStatus.ON_SITE },
@@ -27,6 +31,7 @@ export class Dispatch {
   // Every move's verb, so a refused move can say what was attempted.
   static #VERBS = {
     acknowledge: 'acknowledged',
+    decline: 'declined',
     markOnSite: 'marked on site',
     complete: 'completed',
   };
@@ -37,6 +42,7 @@ export class Dispatch {
   #createdAt;
   #ackDeadline;
   #statusHistory;
+  #declineReason;
 
   constructor({
     dispatchId,
@@ -45,6 +51,7 @@ export class Dispatch {
     createdAt,
     ackDeadline = null,
     statusHistory = [],
+    declineReason = null,
   } = {}) {
     if (dispatchId === undefined || dispatchId === null) {
       throw new Error('Dispatch needs a dispatchId');
@@ -58,6 +65,7 @@ export class Dispatch {
     this.#createdAt = createdAt ? new Date(createdAt) : undefined;
     this.#ackDeadline = ackDeadline ? new Date(ackDeadline) : null;
     this.#statusHistory = statusHistory.map((entry) => ({ ...entry }));
+    this.#declineReason = declineReason;
   }
 
   /**
@@ -92,6 +100,11 @@ export class Dispatch {
     return this.#ackDeadline;
   }
 
+  /** Why the lead declined (A3), or null. */
+  get declineReason() {
+    return this.#declineReason;
+  }
+
   /** [{ status, at, by }], oldest first, as a copy. */
   get statusHistory() {
     return this.#statusHistory.map((entry) => ({ ...entry }));
@@ -107,6 +120,26 @@ export class Dispatch {
    */
   acknowledge(by, at) {
     return this.#move('acknowledge', by, at);
+  }
+
+  /**
+   * UC03 A3: the team lead turns the assignment down, with a reason. ASSIGNED
+   * only; the team is AVAILABLE again and the officer picks another team.
+   * @param {string} reason 1-200 characters once trimmed.
+   * @param {object} by The lead.
+   * @param {Date} at
+   * @returns {{ teamStatus: string|null }}
+   * @throws {Error} For a missing or over-long reason.
+   * @throws {InvalidDispatchTransitionError} From any status but ASSIGNED.
+   */
+  decline(reason, by, at) {
+    const trimmed = typeof reason === 'string' ? reason.trim() : '';
+    if (trimmed.length < 1 || trimmed.length > Dispatch.MAX_DECLINE_REASON) {
+      throw new Error(`A decline needs a reason of 1-${Dispatch.MAX_DECLINE_REASON} characters`);
+    }
+    const result = this.#move('decline', by, at);
+    this.#declineReason = trimmed;
+    return result;
   }
 
   /**
