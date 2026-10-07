@@ -21,6 +21,15 @@ export class ShelterRoutes extends BaseRoutes {
       RequestValidator.query(CoordinationValidator.districtQuery),
       shelterController.list,
     );
+
+    // UC03 steps 3-5: district officers only, in their own district.
+    router.patch(
+      '/:id/occupancy',
+      authMiddleware.requireAuth,
+      authMiddleware.requireRole(Role.DISTRICT_OFFICER),
+      RequestValidator.body(CoordinationValidator.occupancyBody),
+      shelterController.updateOccupancy,
+    );
   }
 }
 

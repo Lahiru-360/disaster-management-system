@@ -11,6 +11,7 @@ import {
   InterTight_600SemiBold,
 } from '@expo-google-fonts/inter-tight';
 
+import OfflineSync from './src/components/hazardReports/OfflineSync';
 import RootNavigator from './src/navigation/RootNavigator';
 import { navigationRef } from './src/navigation/navigationRef';
 import { AuthProvider } from './src/store/AuthContext';
@@ -47,6 +48,7 @@ export default function App() {
     <SafeAreaProvider onLayout={onLayoutRootView}>
       <AuthProvider>
         <AppContent />
+        <OfflineSync />
         <StatusBar style="auto" />
       </AuthProvider>
     </SafeAreaProvider>

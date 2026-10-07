@@ -20,6 +20,16 @@ const minutesAgo = (minutes) => new Date(Date.now() - minutes * 60000).toISOStri
 // Newest first: one of each kind a field user receives.
 const inbox = [
   {
+    id: '66fa1b2c3d4e5f6a7b8c9d05',
+    type: 'HAZARD_ALERT',
+    title: 'Flood Warning: SEVERE',
+    body: 'Flood Warning: SEVERE. Move to higher ground and follow official guidance.',
+    link: null,
+    severity: 'SEVERE',
+    readAt: null,
+    createdAt: minutesAgo(1),
+  },
+  {
     id: '66fa1b2c3d4e5f6a7b8c9d04',
     type: 'ASSIGNMENT',
     title: 'New assignment',

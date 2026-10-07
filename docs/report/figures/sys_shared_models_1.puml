@@ -1,0 +1,106 @@
+@startuml sys_shared_models_1
+' Figure 7.1 — Shared-model class diagram (DMS-114.3). Render at 2x:
+'   plantuml -tpng -Sdpi=200 sys_shared_models_1.puml
+skinparam classAttributeIconSize 0
+skinparam shadowing false
+hide empty members
+
+package "Shared (one model each)" {
+  abstract class TargetArea {
+    - areaId : String
+    - name : String
+    + contains(c : Citizen) : boolean
+  }
+  class District
+  class RiverBasin
+  TargetArea <|-- District
+  TargetArea <|-- RiverBasin
+  RiverBasin "0..*" -- "1..*" District : spans >
+
+  abstract class Person {
+    - name : String
+    - phone : String
+  }
+  class Citizen {
+    - homeDistrict : District
+  }
+  class DMCOfficer
+  class DutyOfficer {
+    - shiftDistrict : District
+  }
+  class DistrictOfficer {
+    - district : District
+  }
+  Person <|-- Citizen
+  Person <|-- DMCOfficer
+  DMCOfficer <|-- DutyOfficer
+  Person <|-- DistrictOfficer
+
+  class HazardEvent {
+    - hazardType
+    - status : EventStatus
+    - startDate : Date
+    - endDate : Date
+  }
+  HazardEvent "0..*" --> "1..*" District : affects >
+
+  class Organisation {
+    - name : String
+    - type : OrgType
+    - contactEmail : String
+  }
+
+  class NotificationService {
+    + notifyUser(userId, payload)
+    + notifyRole(role, scope, payload)
+  }
+  interface NotificationChannel {
+    + send(n) : DeliveryResult
+  }
+  class UserNotification <<inbox item>>
+  NotificationService ..> NotificationChannel
+  NotificationService ..> UserNotification : stores
+}
+
+package "UC01 Issue Hazard Warning" {
+  class HazardAlert
+  class Notification <<delivery record>>
+  class PushChannel
+  class SmsChannel
+  class AudibleChannel
+  HazardAlert "0..*" --> "1..*" TargetArea : targets >
+  HazardAlert "1" *-- "0..*" Notification : triggers >
+  Notification "0..*" --> "1" Citizen : sent to >
+  NotificationChannel <|.. PushChannel
+  NotificationChannel <|.. SmsChannel
+  NotificationChannel <|.. AudibleChannel
+}
+
+package "UC02 Submit & Verify Hazard Report" {
+  class HazardReport
+  HazardReport --> District : located in >
+  HazardAlert "0..*" --> "0..1" HazardReport : raised from >
+}
+
+package "UC03 Coordinate Shelter & Resources" {
+  class Shelter
+  class OccupancyRecord
+  class SupplyDistribution
+  class RescueTeam
+  Shelter --> District : in >
+  Shelter "1" *-- "0..*" OccupancyRecord
+  SupplyDistribution --> Shelter
+  SupplyDistribution --> Organisation
+  RescueTeam --> Organisation : belongs to >
+}
+
+package "UC04 Post-Event Analysis Report" {
+  class PostEventReport
+  PostEventReport --> HazardEvent : analyses >
+  PostEventReport ..> HazardAlert : reads
+  PostEventReport ..> Notification : reads
+  PostEventReport ..> OccupancyRecord : reads
+  PostEventReport ..> SupplyDistribution : reads
+  PostEventReport ..> Organisation : shared with
+}
+@enduml

@@ -98,6 +98,23 @@ export class AreaRegistry {
   }
 
   /**
+   * The reverse of expandToDistricts: the ids of every area that covers at
+   * least one of the districts - the districts themselves and each river basin
+   * spanning any of them. An alert targeting any of these overlaps the
+   * districts, so this is what an overlap query matches stored targets against.
+   * @param {string[]} districtIds
+   * @returns {Promise<string[]>}
+   */
+  async areaIdsCovering(districtIds) {
+    if (districtIds.length === 0) return [];
+    const basins = await this.#riverBasinModel
+      .find({ districts: { $in: districtIds } })
+      .select('_id')
+      .lean();
+    return [...new Set([...districtIds.map(String), ...basins.map(({ _id }) => String(_id))])];
+  }
+
+  /**
    * The district a point falls in, or null when it is more than 50 km from
    * every district. Bounding boxes are only an approximation, so a point in
    * several boxes (or on a shared edge) goes to the nearest centroid among
