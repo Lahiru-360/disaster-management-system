@@ -7,8 +7,10 @@ import StatusBadge from '../ui/StatusBadge';
 // more shows. The flag, e.g. "(!) 92% – Near capacity"; the nearest shelter
 // that still has space ("Nearest with space: Minuwangoda NS (76%, 3.2 km)");
 // and "Redirect arrivals here", which sends new arrivals there. `result` is
-// the server's answer to the update. With no shelter to suggest (E2, DMS-148)
-// only the flag shows. Presentational: the redirect itself is `onRedirect`.
+// the server's answer to the update. With no shelter to suggest, every shelter
+// in the district is at 90% or more (E2, DMS-148): the dialog says so and that
+// the DMC has been alerted, and offers no redirect. Presentational: the
+// redirect itself is `onRedirect`.
 export default function AlternateShelterPanel({
   shelterName,
   result,
@@ -17,7 +19,7 @@ export default function AlternateShelterPanel({
   error,
   onRedirect,
 }) {
-  const { alternateShelter, status, rate } = result;
+  const { alternateShelter, dmcAlerted, status, rate } = result;
 
   return (
     <div className="flex flex-col gap-3">
@@ -48,6 +50,10 @@ export default function AlternateShelterPanel({
             </div>
           )}
         </div>
+      ) : null}
+
+      {!alternateShelter && dmcAlerted ? (
+        <Notice>No shelter with space – DMC alerted</Notice>
       ) : null}
 
       {error ? <Notice variant="error">{error}</Notice> : null}
