@@ -1,4 +1,6 @@
 import { Shelter } from '../domain/coordination/Shelter.js';
+import { NotificationType } from '../enums/NotificationType.js';
+import { Role } from '../enums/Role.js';
 import { ShelterStatus } from '../enums/ShelterStatus.js';
 import { District as DistrictModel } from '../models/District.js';
 import { OccupancyRecord as OccupancyRecordModel } from '../models/OccupancyRecord.js';
@@ -8,8 +10,10 @@ import { ApiError } from '../utils/ApiError.js';
 import { GeoDistance } from '../utils/GeoDistance.js';
 import { systemClock } from '../utils/SystemClock.js';
 import { activeIncident as defaultActiveIncident } from './ActiveIncident.js';
+import { capacityAlertWindow as defaultCapacityAlertWindow } from './CapacityAlertWindow.js';
 import { CoordinationPresenter } from './CoordinationPresenter.js';
 import { districtScope as defaultDistrictScope } from './DistrictScope.js';
+import { notificationService as defaultNotificationService } from './NotificationService.js';
 
 // UC03 shelters: the ShelterController's work in sequence diagram (a). Every
 // collaborator comes through the constructor.
@@ -20,6 +24,8 @@ export class ShelterService {
   #districtModel;
   #districtScope;
   #activeIncident;
+  #capacityAlerts;
+  #notifications;
   #clock;
 
   constructor({
@@ -29,6 +35,8 @@ export class ShelterService {
     districtModel = DistrictModel,
     districtScope = defaultDistrictScope,
     activeIncident = defaultActiveIncident,
+    capacityAlerts = defaultCapacityAlertWindow,
+    notifications = defaultNotificationService,
     clock = systemClock,
   } = {}) {
     this.#shelterModel = shelterModel;
@@ -37,6 +45,8 @@ export class ShelterService {
     this.#districtModel = districtModel;
     this.#districtScope = districtScope;
     this.#activeIncident = activeIncident;
+    this.#capacityAlerts = capacityAlerts;
+    this.#notifications = notifications;
     this.#clock = clock;
   }
 
@@ -86,6 +96,9 @@ export class ShelterService {
       throw error;
     }
 
+    // A new, empty shelter is space the DMC alert (E2) should know about.
+    await this.#capacityAlerts.reset(districtId);
+
     await doc.populate(CoordinationPresenter.SHELTER_POPULATE);
     return { shelter: CoordinationPresenter.shelter(doc) };
   }
@@ -133,22 +146,59 @@ export class ShelterService {
     const redirects = await this.redirectsFor([doc]);
     const presented = CoordinationPresenter.shelter(doc, redirects.get(String(doc._id)));
     const flagged = [ShelterStatus.NEAR_CAPACITY, ShelterStatus.FULL].includes(presented.status);
+    // A2: the nearest shelter that can still take people, if there is one.
+    const alternateShelter = flagged
+      ? await this.findNearestWithSpace({
+          location: doc.location,
+          district: doc.district._id,
+          excludeShelterId: doc._id,
+        })
+      : null;
+
+    // E2: flagged and nowhere to send people means every shelter in the
+    // district is at 90% or more. Anything else means space exists.
+    const noSpaceAnywhere = flagged && alternateShelter === null;
+    if (!noSpaceAnywhere) await this.#capacityAlerts.reset(doc.district._id);
+
     return {
       shelter: presented,
       rate: presented.rate,
       status: presented.status,
       flagged,
-      // A2: the nearest shelter that can still take people, if there is one.
-      alternateShelter: flagged
-        ? await this.findNearestWithSpace({
-            location: doc.location,
-            district: doc.district._id,
-            excludeShelterId: doc._id,
-          })
-        : null,
-      // Filled in by E2 (DMS-148).
-      dmcAlerted: false,
+      alternateShelter,
+      dmcAlerted: noSpaceAnywhere ? await this.#alertDmc(doc, presented.rate) : false,
     };
+  }
+
+  /**
+   * UC03 E2 (contract §13.4.2): every shelter in the district is near capacity
+   * or full, so every DMC officer is told - at most once an hour for the
+   * district while this lasts (CapacityAlertWindow), and again if space became
+   * available in between. A failed notification never fails the update.
+   * @param {object} doc The updated Shelter document, district populated.
+   * @param {number} rate Its occupancy rate.
+   * @returns {Promise<true>} The DMC has been alerted, by this update or within the last hour.
+   */
+  async #alertDmc(doc, rate) {
+    const due = await this.#capacityAlerts.claim(doc.district._id, this.#clock.now());
+    if (due) {
+      const district = doc.district.name;
+      try {
+        await this.#notifications.notifyRole(
+          Role.DMC_OFFICER,
+          {},
+          {
+            type: NotificationType.SHELTER_CAPACITY,
+            title: `No shelter with space in ${district}`,
+            body: `All shelters in ${district} are near capacity or full (${doc.name} ${Math.round(rate * 100)}%)`,
+            link: '/shelter-resources',
+          },
+        );
+      } catch (error) {
+        console.error(`Could not alert the DMC about ${district}:`, error.message);
+      }
+    }
+    return true;
   }
 
   /**

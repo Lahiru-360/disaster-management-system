@@ -57,6 +57,8 @@
     "src/models/Dispatch.js",
     "src/models/OccupancyRecord.js",
     "src/models/ShelterRedirect.js",
+    "src/models/DistrictCapacityAlert.js",
+    "src/services/CapacityAlertWindow.js",
     "src/domain/coordination/**/*.js",
     "src/services/CoordinationPresenter.js",
     "src/services/OperationalPictureService.js",
