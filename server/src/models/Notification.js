@@ -45,6 +45,13 @@ const notificationSchema = new mongoose.Schema(
       default: 1,
       min: 1,
     },
+    // SMS once a failed delivery has been resent through the fallback (E3);
+    // channel keeps the channel it was first sent on.
+    fallbackChannel: {
+      type: String,
+      enum: [...Object.values(Channel), null],
+      default: null,
+    },
     sentAt: {
       type: Date,
       default: null,
@@ -76,6 +83,8 @@ const notificationSchema = new mongoose.Schema(
 notificationSchema.index({ alert: 1, alertVersion: 1, citizen: 1, channel: 1 }, { unique: true });
 // The delivery summary groups one alert's records by status.
 notificationSchema.index({ alert: 1, status: 1 });
+// The all-clear's original recipients: the distinct citizens of one alert (A3).
+notificationSchema.index({ alert: 1, citizen: 1 });
 
 // Kept thin on purpose: the schema above is the whole model. How a delivery's
 // status may change is the Notification class in domain/alerts.

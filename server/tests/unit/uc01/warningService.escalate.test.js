@@ -61,7 +61,7 @@ describe('WarningService escalation (A1)', () => {
   };
 
   describe('escalateFromReport', () => {
-    it('DMS-122: TC-16 a CONFIRMED rising-river report gives a DRAFT linked to it, pre-filled FLOOD in its district', async () => {
+    it('A1: TC-16 a CONFIRMED rising-river report gives a DRAFT linked to it, pre-filled FLOOD in its district', async () => {
       const report = await createReport();
 
       const { alert, prefill } = await service.escalateFromReport(officer, report.id);
@@ -84,7 +84,7 @@ describe('WarningService escalation (A1)', () => {
       expect(String(stored.sourceReport)).toBe(report.id);
     });
 
-    it('DMS-122: TC-16 the escalated draft continues through the main flow from step 4', async () => {
+    it('A1: TC-16 the escalated draft continues through the main flow from step 4', async () => {
       const report = await createReport();
       const { alert, prefill } = await service.escalateFromReport(officer, report.id);
 
@@ -102,7 +102,7 @@ describe('WarningService escalation (A1)', () => {
       });
     });
 
-    it('DMS-122: TC-16 a LANDSLIDE report pre-fills LANDSLIDE', async () => {
+    it('A1: TC-16 a LANDSLIDE report pre-fills LANDSLIDE', async () => {
       const report = await createReport({ hazardType: 'LANDSLIDE' });
 
       const { prefill } = await service.escalateFromReport(officer, report.id);
@@ -111,7 +111,7 @@ describe('WarningService escalation (A1)', () => {
     });
 
     it.each(['BLOCKED_ROAD', 'OTHER'])(
-      'DMS-122: TC-17 a %s report leaves the hazard type for the officer to choose',
+      'A1: TC-17 a %s report leaves the hazard type for the officer to choose',
       async (hazardType) => {
         const report = await createReport({ hazardType });
 
@@ -124,7 +124,7 @@ describe('WarningService escalation (A1)', () => {
     );
 
     it.each([ReportStatus.PENDING, ReportStatus.DISMISSED])(
-      'DMS-122: TC-18 a %s report is refused with 409 and no draft is created',
+      'A1: TC-18 a %s report is refused with 409 and no draft is created',
       async (status) => {
         const report = await createReport({ status });
 
@@ -140,7 +140,7 @@ describe('WarningService escalation (A1)', () => {
     it.each([
       ['an unknown id', () => new mongoose.Types.ObjectId().toString()],
       ['a malformed id', () => 'not-an-id'],
-    ])('DMS-122: TC-19 %s is 404 and no draft is created', async (_label, idFor) => {
+    ])('A1: TC-19 %s is 404 and no draft is created', async (_label, idFor) => {
       await expect(service.escalateFromReport(officer, idFor())).rejects.toMatchObject({
         status: 404,
         code: 'NOT_FOUND',
@@ -151,7 +151,7 @@ describe('WarningService escalation (A1)', () => {
   });
 
   describe('prefillFromReport', () => {
-    it('DMS-122: takes the district from the coordinates, not the district the report was filed under', async () => {
+    it('A1: takes the district from the coordinates, not the district the report was filed under', async () => {
       const report = await createReport({ coordinates: IN_GAMPAHA, district: areas.kalutara });
 
       const prefill = await service.prefillFromReport(report.id);
@@ -159,7 +159,7 @@ describe('WarningService escalation (A1)', () => {
       expect(prefill.districtId).toBe(areas.gampaha.id);
     });
 
-    it('DMS-122: falls back to the filed district when no district is near the coordinates', async () => {
+    it('A1: falls back to the filed district when no district is near the coordinates', async () => {
       const report = await createReport({ coordinates: IN_JAFFNA, district: areas.kalutara });
 
       const prefill = await service.prefillFromReport(report.id);
@@ -167,7 +167,7 @@ describe('WarningService escalation (A1)', () => {
       expect(prefill.districtId).toBe(areas.kalutara.id);
     });
 
-    it('DMS-122: reads the report only through the injected report service (X-1)', async () => {
+    it('A1: reads the report only through the injected report service (X-1)', async () => {
       const report = {
         id: 'r1',
         referenceNo: 'GR-0001',

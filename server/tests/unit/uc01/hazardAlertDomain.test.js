@@ -47,7 +47,7 @@ const expectTransitionError = (action, message) => {
 };
 
 describe('HazardAlert (domain)', () => {
-  it('DMS-120: TC-01 startDraft opens a DRAFT at version 1 with one history entry', () => {
+  it('Main 2: TC-01 startDraft opens a DRAFT at version 1 with one history entry', () => {
     const alert = draft();
 
     expect(alert).toMatchObject({
@@ -64,7 +64,7 @@ describe('HazardAlert (domain)', () => {
     expect(alert.isActive()).toBe(false);
   });
 
-  it('DMS-120: compose sets type, severity, scope, message and event on a draft', () => {
+  it('Main 3–5: compose sets type, severity, scope, message and event on a draft', () => {
     const alert = draft();
 
     alert.compose({
@@ -88,7 +88,7 @@ describe('HazardAlert (domain)', () => {
     ]);
   });
 
-  it('DMS-120: compose refuses an unknown type or severity, an empty scope or a bad message', () => {
+  it('Main 3–5: compose refuses an unknown type or severity, an empty scope or a bad message', () => {
     const alert = draft();
     const valid = { hazardType: 'FLOOD', severity: 'HIGH', targets: [colombo], message: MESSAGE };
 
@@ -105,7 +105,7 @@ describe('HazardAlert (domain)', () => {
     expect(alert.hazardType).toBeNull();
   });
 
-  it('DMS-120: TC-07 editMessage accepts exactly 160 characters', () => {
+  it('Main 8: TC-07 editMessage accepts exactly 160 characters', () => {
     const alert = composed();
 
     alert.editMessage('x'.repeat(160));
@@ -113,7 +113,7 @@ describe('HazardAlert (domain)', () => {
     expect(alert.message).toHaveLength(160);
   });
 
-  it('DMS-120: broadcast moves DRAFT to BROADCAST and records who and when', () => {
+  it('Main 12: broadcast moves DRAFT to BROADCAST and records who and when', () => {
     const alert = broadcast();
 
     expect(alert).toMatchObject({ status: 'BROADCAST', issuedById: OFFICER, issuedAt: T1 });
@@ -126,7 +126,7 @@ describe('HazardAlert (domain)', () => {
     expect(alert.isActive()).toBe(true);
   });
 
-  it("DMS-121: broadcast takes the final message, replacing the draft's", () => {
+  it("Main 12: broadcast takes the final message, replacing the draft's", () => {
     const alert = composed();
 
     alert.broadcast(OFFICER, T1, '  Move to higher ground now.  ');
@@ -135,7 +135,7 @@ describe('HazardAlert (domain)', () => {
     expect(() => composed().broadcast(OFFICER, T1, 'x'.repeat(161))).toThrow('1-160 characters');
   });
 
-  it('DMS-120: a draft that was never previewed cannot be broadcast', () => {
+  it('Main 12: a draft that was never previewed cannot be broadcast', () => {
     const alert = draft();
 
     expectTransitionError(
@@ -145,7 +145,7 @@ describe('HazardAlert (domain)', () => {
     expect(alert.status).toBe('DRAFT');
   });
 
-  it('DMS-120: TC-12 broadcasting twice is refused, naming the current status', () => {
+  it('Main 12: TC-12 broadcasting twice is refused, naming the current status', () => {
     const alert = broadcast();
 
     const error = expectTransitionError(
@@ -156,7 +156,7 @@ describe('HazardAlert (domain)', () => {
     expect(alert.issuedById).toBe(OFFICER);
   });
 
-  it('DMS-120: composing or editing a broadcast alert is refused', () => {
+  it('Domain: composing or editing a broadcast alert is refused', () => {
     const alert = broadcast();
 
     expectTransitionError(
@@ -171,13 +171,13 @@ describe('HazardAlert (domain)', () => {
     expect(alert.severity).toBe('SEVERE');
   });
 
-  it('DMS-120: update raises the version each time and records UPDATED (1 → 2 → 3)', () => {
+  it('A2: update raises the version each time and records UPDATED (1 → 2 → 3)', () => {
     const alert = broadcast();
 
     alert.update('HIGH', [colombo, gampaha], COLLEAGUE, T2);
-    alert.update(null, null, OFFICER, T2);
+    alert.update('SEVERE', null, OFFICER, T2);
 
-    expect(alert).toMatchObject({ status: 'UPDATED', version: 3, severity: 'HIGH' });
+    expect(alert).toMatchObject({ status: 'UPDATED', version: 3, severity: 'SEVERE' });
     expect(alert.targets.map((target) => target.areaId)).toEqual(['d-colombo', 'd-gampaha']);
     expect(alert.statusHistory.map(({ status, version }) => [status, version])).toEqual([
       ['DRAFT', 1],
@@ -188,7 +188,7 @@ describe('HazardAlert (domain)', () => {
     expect(alert.isActive()).toBe(true);
   });
 
-  it('DMS-120: update refuses an unknown severity or an empty scope, and changes nothing', () => {
+  it('A2: update refuses an unknown severity or an empty scope, and changes nothing', () => {
     const alert = broadcast();
 
     expect(() => alert.update('EXTREME', null, OFFICER, T2)).toThrow('unknown severity');
@@ -196,20 +196,155 @@ describe('HazardAlert (domain)', () => {
     expect(alert).toMatchObject({ status: 'BROADCAST', version: 1 });
   });
 
-  it('DMS-120: cancel ends an active alert with CANCELLED', () => {
+  it('A2: TC-24 update records UPDATED at the new version, by whom and when', () => {
+    const alert = broadcast();
+
+    alert.update(null, [kelani], COLLEAGUE, T2);
+
+    expect(alert).toMatchObject({ status: 'UPDATED', version: 2, severity: 'SEVERE' });
+    expect(alert.targets).toEqual([{ kind: 'RiverBasin', areaId: 'b-kelani' }]);
+    expect(alert.statusHistory.at(-1)).toEqual({
+      status: 'UPDATED',
+      version: 2,
+      at: T2,
+      byId: COLLEAGUE,
+    });
+    expect(alert.issuedById).toBe(OFFICER);
+    expect(alert.issuedAt).toBe(T1);
+  });
+
+  it('A2: update replaces the message with the update message, trimmed', () => {
+    const alert = broadcast();
+    const update =
+      'UPDATE: Flood Warning now HIGH. Move to higher ground and follow official guidance.';
+
+    alert.update('HIGH', null, OFFICER, T2, `  ${update} `);
+
+    expect(alert.message).toBe(update);
+    expect(alert.toFields()).toMatchObject({ message: update, version: 2, status: 'UPDATED' });
+  });
+
+  it('A2: update without a message keeps the current one', () => {
+    const alert = broadcast();
+
+    alert.update('HIGH', null, OFFICER, T2);
+
+    expect(alert.message).toBe(MESSAGE);
+  });
+
+  it.each([
+    ['no severity and no scope', null, null],
+    ['the same severity', 'SEVERE', null],
+    ['the same scope', null, [colombo]],
+    ['the same severity and scope', 'SEVERE', [colombo]],
+  ])('A2: update refuses %s, and changes nothing', (label, severity, areas) => {
+    const alert = broadcast();
+
+    expect(() => alert.update(severity, areas, OFFICER, T2)).toThrow(
+      'an update must change the severity or the scope',
+    );
+    expect(alert).toMatchObject({ status: 'BROADCAST', version: 1, severity: 'SEVERE' });
+    expect(alert.statusHistory).toHaveLength(2);
+  });
+
+  it('A2: update refuses a message over 160 characters, and changes nothing', () => {
+    const alert = broadcast();
+
+    expect(() => alert.update('HIGH', [gampaha], OFFICER, T2, 'x'.repeat(161))).toThrow(
+      'the message must be 1-160 characters',
+    );
+    expect(alert).toMatchObject({
+      status: 'BROADCAST',
+      version: 1,
+      severity: 'SEVERE',
+      message: MESSAGE,
+    });
+    expect(alert.targets).toEqual([{ kind: 'District', areaId: 'd-colombo' }]);
+  });
+
+  it('A2: changesWith compares the set of areas, not their order or repeats', () => {
+    const alert = broadcast();
+    alert.update(null, [colombo, gampaha], OFFICER, T2);
+
+    expect(alert.changesWith(null, [gampaha, colombo])).toBe(false);
+    expect(alert.changesWith(null, [gampaha, colombo, gampaha])).toBe(false);
+    expect(alert.changesWith(null, [colombo])).toBe(true);
+    expect(alert.changesWith(null, [kelani])).toBe(true);
+    expect(alert.changesWith('HIGH', [gampaha, colombo])).toBe(true);
+    expect(alert.changesWith('SEVERE', null)).toBe(false);
+  });
+
+  it('A2: changesWith refuses an unknown severity or an empty scope', () => {
+    const alert = broadcast();
+
+    expect(() => alert.changesWith('EXTREME', null)).toThrow('unknown severity');
+    expect(() => alert.changesWith(null, [])).toThrow('at least one area');
+  });
+
+  it('A2: an update of a CANCELLED alert is refused before its changes are checked', () => {
+    const alert = broadcast();
+    alert.cancel(OFFICER, T2);
+
+    expectTransitionError(
+      () => alert.update(null, null, OFFICER, T2),
+      'Only an active alert can be updated – current status: CANCELLED',
+    );
+  });
+
+  it('A3: TC-26 cancel ends an active alert with CANCELLED as the next version', () => {
     const alert = broadcast();
     alert.update('HIGH', null, OFFICER, T2);
 
     alert.cancel(COLLEAGUE, T2);
 
     expect(alert.status).toBe('CANCELLED');
+    expect(alert.version).toBe(3);
     expect(alert.isActive()).toBe(false);
     expect(alert.statusHistory.at(-1)).toEqual({
       status: 'CANCELLED',
-      version: 2,
+      version: 3,
       at: T2,
       byId: COLLEAGUE,
     });
+    expect(alert.message).toBe(MESSAGE);
+    expect(alert).toMatchObject({ issuedById: OFFICER, issuedAt: T1 });
+  });
+
+  it('A3: cancel of a BROADCAST alert stores the all-clear message', () => {
+    const alert = broadcast();
+    const allClear =
+      'ALL CLEAR: The Flood warning has ended. It is now safe, but follow official guidance.';
+
+    alert.cancel(OFFICER, T2, allClear);
+
+    expect(alert).toMatchObject({ status: 'CANCELLED', version: 2, message: allClear });
+    expect(alert.statusHistory.map(({ status, version }) => [status, version])).toEqual([
+      ['DRAFT', 1],
+      ['BROADCAST', 1],
+      ['CANCELLED', 2],
+    ]);
+  });
+
+  it('A3: cancel refuses a message over 160 characters, and changes nothing', () => {
+    const alert = broadcast();
+
+    expect(() => alert.cancel(OFFICER, T2, 'x'.repeat(161))).toThrow(
+      'the message must be 1-160 characters',
+    );
+    expect(alert).toMatchObject({ status: 'BROADCAST', version: 1, message: MESSAGE });
+    expect(alert.statusHistory).toHaveLength(2);
+  });
+
+  it('A3: TC-28 a refused cancel leaves the version and history unchanged', () => {
+    const alert = broadcast();
+    alert.cancel(OFFICER, T2);
+
+    expectTransitionError(
+      () => alert.cancel(COLLEAGUE, T2, 'ALL CLEAR again'),
+      'Only an active alert can be cancelled – current status: CANCELLED',
+    );
+    expect(alert).toMatchObject({ status: 'CANCELLED', version: 2 });
+    expect(alert.statusHistory).toHaveLength(3);
   });
 
   it.each([
@@ -218,7 +353,7 @@ describe('HazardAlert (domain)', () => {
     ['CANCELLED', 'update', (alert) => alert.update('HIGH', null, OFFICER, T2)],
     ['CANCELLED', 'cancel', (alert) => alert.cancel(OFFICER, T2)],
     ['CANCELLED', 'broadcast', (alert) => alert.broadcast(OFFICER, T2)],
-  ])('DMS-120: TC-15 refuses %s → %s', (status, action, change) => {
+  ])('Domain: TC-15 refuses %s → %s', (status, action, change) => {
     const alert = new HazardAlert({
       referenceNo: 'HA-1',
       createdBy: OFFICER,
@@ -238,7 +373,7 @@ describe('HazardAlert (domain)', () => {
     expect(alert.status).toBe(status);
   });
 
-  it('DMS-125: discard allows a DRAFT, previewed or not, and changes nothing', () => {
+  it('A4: discard allows a DRAFT, previewed or not, and changes nothing', () => {
     for (const alert of [draft(), composed()]) {
       const before = alert.toFields();
 
@@ -265,7 +400,7 @@ describe('HazardAlert (domain)', () => {
         return alert;
       },
     ],
-  ])('DMS-125: TC-31 discard refuses a %s alert', (status, make) => {
+  ])('A4: TC-31 discard refuses a %s alert', (status, make) => {
     const error = expectTransitionError(
       () => make().discard(),
       `Only a DRAFT alert can be discarded – current status: ${status}`,
@@ -273,17 +408,17 @@ describe('HazardAlert (domain)', () => {
     expect(error.currentStatus).toBe(status);
   });
 
-  it('DMS-120: a status change needs the officer and a valid time', () => {
+  it('Domain: a status change needs the officer and a valid time', () => {
     expect(() => composed().broadcast(null, T1)).toThrow('needs the officer');
     expect(() => composed().broadcast(OFFICER, new Date('nope'))).toThrow('needs the time');
     expect(() => composed().broadcast(OFFICER, '2026-10-02')).toThrow('needs the time');
   });
 
-  it('DMS-120: refuses an unknown status', () => {
+  it('Domain: refuses an unknown status', () => {
     expect(() => new HazardAlert({ status: 'SENT' })).toThrow('unknown status "SENT"');
   });
 
-  it('DMS-120: toFields round-trips through the model and fromDocument', async () => {
+  it('Domain: toFields round-trips through the model and fromDocument', async () => {
     const alert = broadcast();
     const officerId = new mongoose.Types.ObjectId();
     const areaId = new mongoose.Types.ObjectId().toString();
@@ -318,7 +453,7 @@ describe('HazardAlert (domain)', () => {
     expect(alert.toFields().targets).toEqual([{ kind: 'District', area: 'd-colombo' }]);
   });
 
-  it('DMS-120: fromDocument accepts a plain object with populated references', () => {
+  it('Domain: fromDocument accepts a plain object with populated references', () => {
     const loaded = HazardAlert.fromDocument({
       id: 'a1',
       referenceNo: 'HA-9',

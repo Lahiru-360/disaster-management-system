@@ -49,9 +49,7 @@ export default function Tabs({ tabs, value, onChange, className, ...props }) {
             className={[
               '-mb-px border-b-2 px-4 py-2.5 text-[14px] font-semibold transition-colors',
               'focus-visible:ring-2 focus-visible:ring-navy-soft focus-visible:outline-none',
-              isActive
-                ? 'border-navy text-navy'
-                : 'border-transparent text-muted hover:text-ink',
+              isActive ? 'border-navy text-navy' : 'border-transparent text-muted hover:text-ink',
             ].join(' ')}
           >
             {tab.label}

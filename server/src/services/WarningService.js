@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import { HazardAlert } from '../domain/alerts/HazardAlert.js';
+import { InvalidAlertTransitionError } from '../domain/alerts/InvalidAlertTransitionError.js';
 import { MessageTemplate } from '../domain/alerts/MessageTemplate.js';
 import { ReportHazardTypeMapper } from '../domain/alerts/ReportHazardTypeMapper.js';
 import { AlertStatus } from '../enums/AlertStatus.js';
@@ -15,9 +16,9 @@ import { hazardReportService as defaultReportService } from './HazardReportServi
 import { HazardAlertPresenter } from './HazardAlertPresenter.js';
 import { ReferenceNumberGenerator } from './ReferenceNumberGenerator.js';
 
-// UC01 Issue Hazard Warning, composing (main flow steps 1-8) and backing out
-// (A4): the WarningController's work in the sequence diagram up to the
-// confirmation.
+// UC01 Issue Hazard Warning, composing (main flow steps 1-8), previewing an
+// update (A2), listing the active warnings (A3.1) and backing out (A4): the WarningController's work in the
+// sequence diagram up to the confirmation.
 // The controller hands it validated input; it asks the HazardAlert domain
 // class for every change, AreaRegistry for the scope, CitizenRegistry for the
 // reach and MessageTemplate for the text. Nothing here sends anything. A
@@ -129,9 +130,10 @@ export class WarningService {
     const areas = await this.#validScope(areaIds);
     const districtIds = this.#areaRegistry.expandToDistricts(areas);
 
-    const [recipientCount, event] = await Promise.all([
+    const [recipientCount, event, activeWarning] = await Promise.all([
       this.#citizenRegistry.countRecipients(districtIds),
       this.#coveringEvent(hazardType, districtIds),
+      this.findActive(hazardType, districtIds),
     ]);
     const message = this.#messageTemplate.generate(hazardType, severity);
 
@@ -145,9 +147,82 @@ export class WarningService {
       recipientCount,
       message,
       channels: this.#channels.map((channel) => ({ channel, ready: true })),
-      // The active-warning check (UC01 A2) is DMS-123.
-      activeWarning: null,
+      activeWarning,
     };
+  }
+
+  /**
+   * A2.1-A2.2, resuming at step 7 (contract §12.13): what updating an active
+   * warning to this severity and/or scope would send - the recipients
+   * recalculated for the new scope, the update message, and any other active
+   * warning the new scope would duplicate. It changes nothing: the version
+   * goes up only when the officer confirms (BroadcastService.update).
+   * @param {string} alertId
+   * @param {{ severity?: string, areaIds?: string[] }} changes Left out, the
+   *   current value stays.
+   * @returns {Promise<{ alert: object, nextVersion: number, recipientCount: number,
+   *   message: string, channels: { channel: string, ready: boolean }[],
+   *   activeWarning: object|null }>}
+   * @throws {ApiError} 404 for an unknown alert, 400 for an invalid scope, 409
+   *   if it isn't active.
+   */
+  async previewUpdate(alertId, { severity, areaIds }) {
+    const doc = await this.#findDoc(alertId);
+    const alert = HazardAlert.fromDocument(doc);
+    if (!alert.isActive()) {
+      throw new InvalidAlertTransitionError(
+        `Only an active alert can be updated – current status: ${alert.status}`,
+        alert.status,
+      );
+    }
+    const areas = await this.#validScope(
+      areaIds ?? alert.targets.map((target) => String(target.areaId)),
+    );
+    const districtIds = this.#areaRegistry.expandToDistricts(areas);
+
+    const [recipientCount, activeWarning] = await Promise.all([
+      this.#citizenRegistry.countRecipients(districtIds),
+      this.findActive(alert.hazardType, districtIds, { excludeId: alert.id }),
+    ]);
+
+    return {
+      alert: await HazardAlertPresenter.present(doc),
+      nextVersion: alert.version + 1,
+      recipientCount,
+      message: this.#messageTemplate.update(alert.hazardType, severity ?? alert.severity),
+      channels: this.#channels.map((channel) => ({ channel, ready: true })),
+      activeWarning,
+    };
+  }
+
+  /**
+   * Step 6 / A2 (findActive in the sequence diagram): the active warning a
+   * scope would duplicate - BROADCAST or UPDATED, the same hazard type, and at
+   * least one district in common once both scopes are expanded (a basin
+   * overlaps through any district it spans). The most recently issued one if
+   * several do.
+   * @param {string} hazardType An AlertHazardType.
+   * @param {string[]} districtIds The scope, already expanded to districts.
+   * @param {{ excludeId?: string }} [options] An alert never conflicts with
+   *   itself, so an update leaves itself out.
+   * @returns {Promise<{ id: string, referenceNo: string, hazardType: string,
+   *   severity: string, targets: object[], version: number }|null>}
+   */
+  async findActive(hazardType, districtIds, { excludeId } = {}) {
+    const areaIds = await this.#areaRegistry.areaIdsCovering(districtIds);
+    if (areaIds.length === 0) return null;
+
+    const filter = {
+      status: { $in: HazardAlert.ACTIVE_STATUSES },
+      hazardType,
+      'targets.area': { $in: areaIds },
+    };
+    if (excludeId) filter._id = { $ne: excludeId };
+    const doc = await this.#alertModel.findOne(filter).sort({ issuedAt: -1, _id: -1 });
+    if (!doc) return null;
+
+    const { referenceNo, severity, targets, version } = await HazardAlertPresenter.present(doc);
+    return { id: doc.id, referenceNo, hazardType: doc.hazardType, severity, targets, version };
   }
 
   /**
@@ -186,6 +261,25 @@ export class WarningService {
       .find({ status: AlertStatus.DRAFT })
       .sort({ updatedAt: -1, _id: -1 });
     return Promise.all(docs.map((doc) => HazardAlertPresenter.present(doc)));
+  }
+
+  /**
+   * A3.1: every active warning (BROADCAST or UPDATED), whoever issued it, most
+   * recently issued first, each with how many citizens its all-clear would
+   * reach (contract §12.11).
+   * @returns {Promise<object[]>} Alert objects with originalRecipientCount.
+   */
+  async listActive() {
+    const docs = await this.#alertModel
+      .find({ status: { $in: HazardAlert.ACTIVE_STATUSES } })
+      .sort({ issuedAt: -1, _id: -1 });
+    const counts = await this.#citizenRegistry.countOriginalRecipients(docs.map((doc) => doc.id));
+    return Promise.all(
+      docs.map(async (doc) => ({
+        ...(await HazardAlertPresenter.present(doc)),
+        originalRecipientCount: counts.get(doc.id) ?? 0,
+      })),
+    );
   }
 
   /**

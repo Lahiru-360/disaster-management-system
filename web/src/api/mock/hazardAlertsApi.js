@@ -2,10 +2,15 @@
 // same shapes the real client hands back and rejects with axios-shaped
 // errors, so swapping in the real client changes no calling code. It applies
 // the server's own rules - the 160-character message, unknown areas (E1),
-// DRAFT-only edits, broadcasts and discards (A4) - so the screen meets the same errors,
+// DRAFT-only edits, broadcasts and discards (A4), one active warning per hazard
+// type and district, and updates (A2) and all-clears (A3) only of an active
+// one - so the screen meets the same errors,
 // counts citizens per district from ./areaFixtures.js (each once, even through
 // a basin), and generates the server's messages. A broadcast delivers on every
-// channel, as the server does with its demo failure rates at 0. Escalating a
+// channel, as the server does with its demo failure rates at 0, unless
+// `mockControls.failDeliveries` sets the share of each channel's sends that
+// fail: failures are then resent by SMS up to 3 attempts (E3), and the
+// summary and the unreached list (§12.16) follow from those shares. Escalating a
 // report (A1) reads it from the ground reports mock, so a report confirmed
 // there can be escalated here, and anything else is refused as the server does.
 // `mockControls.failNext` fakes the failures that can't be typed in.
@@ -15,7 +20,7 @@
 
 import { DEMO_USERS } from '../../constants/demoUsers';
 import { ROLES } from '../../constants/roles';
-import { citizensIn, expandToDistrictIds, findArea } from './areaFixtures';
+import { DISTRICTS, citizensIn, expandToDistrictIds, findArea } from './areaFixtures';
 import groundReportsApi from './groundReportsApi';
 
 const MIN_DELAY_MS = 300;
@@ -25,6 +30,15 @@ const MESSAGE_MAX_LENGTH = 160;
 const HAZARD_TYPES = ['FLOOD', 'LANDSLIDE', 'CYCLONE', 'DROUGHT'];
 const SEVERITIES = ['LOW', 'MEDIUM', 'HIGH', 'SEVERE'];
 const CHANNELS = ['PUSH', 'SMS', 'AUDIBLE'];
+
+// The server's FallbackPolicy (E3): failures are resent by SMS, 3 attempts in all.
+const FALLBACK_CHANNEL = 'SMS';
+const MAX_ATTEMPTS = 3;
+const UNREACHED_MAX_LIMIT = 50;
+
+// Made-up names for the unreached list, combined in turn.
+const FIRST_NAMES = ['Nimal', 'Kamala', 'Sunil', 'Dilani', 'Ruwan', 'Chamari', 'Asela', 'Ishara'];
+const LAST_NAMES = ['Perera', 'Fernando', 'Silva', 'Jayasena', 'Bandara', 'Wijesinghe'];
 
 // The server's ReportHazardTypeMapper: ground-impact reports suggest no type.
 const REPORT_TO_ALERT_TYPE = {
@@ -66,8 +80,15 @@ const OFFICER = {
 };
 
 const alerts = new Map();
-// Alert id -> how many citizens its broadcast went to.
+// Alert id -> how many citizens its current version went to.
 const recipients = new Map();
+// Alert id -> every district any version was sent to: its original
+// recipients are the citizens there (the server reads its delivery records).
+const reachedDistricts = new Map();
+// Alert id -> the failure shares its current version was sent with.
+const sentWithRates = new Map();
+// The share of each channel's sends that fail, as the server's DEMO_FAIL_* rates.
+let failRates = { PUSH: 0, SMS: 0, AUDIBLE: 0 };
 let nextReference = 1043;
 let nextId = 1;
 let pendingFailure = null;
@@ -146,27 +167,176 @@ function validateMessage(message) {
   return text;
 }
 
-// The server's delivery summary: every delivery of a broadcast ends DELIVERED.
-function summaryFor(alert) {
+// What the version's deliveries came to, from the failure shares it was sent
+// with: each channel's first failures are resent by SMS, and those still
+// failing after MAX_ATTEMPTS are FAILED. A citizen is unreached when every
+// channel failed them; failures are taken to fall on the same citizens (a
+// phone out of coverage fails on every channel), so that is the smallest
+// channel's failed count.
+function deliveryOutcome(alert) {
   const count = recipients.get(alert.id) ?? 0;
-  const perChannel = CHANNELS.map((channel) => ({
-    channel,
-    sent: count,
-    delivered: count,
-    failed: 0,
-  }));
+  const rates = sentWithRates.get(alert.id) ?? { PUSH: 0, SMS: 0, AUDIBLE: 0 };
+  const stillFailing = (channel) => rates[channel] * rates.SMS ** (MAX_ATTEMPTS - 1);
+  const perChannel = CHANNELS.map((channel) => {
+    const failed = Math.round(count * stillFailing(channel));
+    return { channel, sent: count, delivered: count - failed, failed };
+  });
   return {
-    version: alert.version,
+    count,
     perChannel,
-    totals: { sent: count * CHANNELS.length, delivered: count * CHANNELS.length, failed: 0 },
-    fallback: { channel: 'SMS', resent: 0 },
-    unreachedCount: 0,
+    resent: CHANNELS.reduce((sum, channel) => sum + Math.round(count * rates[channel]), 0),
+    unreached: Math.min(...perChannel.map(({ failed }) => failed)),
   };
 }
 
-function generateMessage(hazardType, severity) {
+// The server's delivery summary (§12.7).
+function summaryFor(alert) {
+  const { perChannel, resent, unreached } = deliveryOutcome(alert);
+  const total = (field) => perChannel.reduce((sum, row) => sum + row[field], 0);
+  return {
+    version: alert.version,
+    perChannel,
+    totals: { sent: total('sent'), delivered: total('delivered'), failed: total('failed') },
+    fallback: { channel: FALLBACK_CHANNEL, resent },
+    unreachedCount: unreached,
+  };
+}
+
+// Records who the alert's current version went to, and how failures fell.
+function recordSend(alert, count) {
+  recipients.set(alert.id, count);
+  sentWithRates.set(alert.id, { ...failRates });
+}
+
+// The server's page and limit rules (§12.16).
+function validatePaging({ page = 1, limit = 20 }) {
+  const errors = [];
+  if (!Number.isInteger(page) || page < 1) {
+    errors.push({ field: 'page', message: 'must be greater than or equal to 1' });
+  }
+  if (!Number.isInteger(limit) || limit < 1) {
+    errors.push({ field: 'limit', message: 'must be greater than or equal to 1' });
+  } else if (limit > UNREACHED_MAX_LIMIT) {
+    errors.push({
+      field: 'limit',
+      message: `must be less than or equal to ${UNREACHED_MAX_LIMIT}`,
+    });
+  }
+  if (errors.length > 0) throw validationError(errors);
+  return { page, limit };
+}
+
+// The n-th unreached citizen: a made-up person in one of the alert's districts.
+function unreachedCitizen(alert, n) {
+  const districts = districtIdsOf(alert.targets).map((districtId) =>
+    DISTRICTS.find(({ id }) => id === districtId),
+  );
+  const district = districts[n % districts.length];
+  const first = FIRST_NAMES[n % FIRST_NAMES.length];
+  const last = LAST_NAMES[Math.floor(n / FIRST_NAMES.length) % LAST_NAMES.length];
+  return {
+    id: `64f1a2b3c4d5e6f7a8${String(n).padStart(6, '0')}`,
+    name: `${first} ${last}`,
+    district: { id: district.id, name: district.name },
+    phone: n % 5 === 4 ? null : `+9477${String(1000000 + n).slice(-7)}`,
+  };
+}
+
+function advice(hazardType, severity) {
   const urgent = severity === 'HIGH' || severity === 'SEVERE';
-  return `${LABELS[hazardType]} Warning: ${severity}. ${ADVICE[hazardType][urgent ? 'urgent' : 'watch']}`;
+  return ADVICE[hazardType][urgent ? 'urgent' : 'watch'];
+}
+
+function generateMessage(hazardType, severity) {
+  return `${LABELS[hazardType]} Warning: ${severity}. ${advice(hazardType, severity)}`;
+}
+
+function updateMessage(hazardType, severity) {
+  return `UPDATE: ${LABELS[hazardType]} Warning now ${severity}. ${advice(hazardType, severity)}`;
+}
+
+function allClearMessage(hazardType) {
+  return `ALL CLEAR: The ${LABELS[hazardType]} warning has ended. It is now safe, but follow official guidance.`;
+}
+
+const ACTIVE_STATUSES = ['BROADCAST', 'UPDATED'];
+
+const districtIdsOf = (targets) =>
+  expandToDistrictIds(targets.map(({ id: areaId }) => findArea(areaId)));
+
+// The server's findActive (§12.13): the most recently issued BROADCAST or
+// UPDATED alert of the type sharing a district with the scope, never `excludeId`.
+function findActive(hazardType, districtIds, excludeId = null) {
+  const conflict = [...alerts.values()]
+    .filter(
+      (alert) =>
+        alert.id !== excludeId &&
+        ACTIVE_STATUSES.includes(alert.status) &&
+        alert.hazardType === hazardType &&
+        districtIdsOf(alert.targets).some((districtId) => districtIds.includes(districtId)),
+    )
+    .sort((a, b) => b.issuedAt.localeCompare(a.issuedAt))[0];
+  if (!conflict) return null;
+  const { id, referenceNo, severity, targets, version } = conflict;
+  return copy({ id, referenceNo, hazardType, severity, targets, version });
+}
+
+function refuseConflict(hazardType, districtIds, excludeId) {
+  const conflict = findActive(hazardType, districtIds, excludeId);
+  if (conflict) {
+    throw apiError(
+      409,
+      'ACTIVE_WARNING_EXISTS',
+      `An active ${hazardType} warning (${conflict.referenceNo}) already covers this scope – update it instead`,
+    );
+  }
+}
+
+function requireActive(alert, action = 'updated') {
+  if (!ACTIVE_STATUSES.includes(alert.status)) {
+    throw apiError(
+      409,
+      'INVALID_ALERT_TRANSITION',
+      `Only an active alert can be ${action} – current status: ${alert.status}`,
+    );
+  }
+}
+
+function markReached(alertId, districtIds) {
+  const reached = reachedDistricts.get(alertId) ?? new Set();
+  districtIds.forEach((districtId) => reached.add(districtId));
+  reachedDistricts.set(alertId, reached);
+}
+
+const originalRecipientCount = (alertId) => citizensIn([...(reachedDistricts.get(alertId) ?? [])]);
+
+// The checks the update preview and the update share (§12.13): at least one
+// change, a known severity, and a scope of registered areas (E1). Resolves
+// to the new severity and the new targets.
+function validateChange(alert, { severity, areaIds }) {
+  if (severity === undefined && areaIds === undefined) {
+    throw validationError([{ field: 'severity', message: 'change the severity or the scope' }]);
+  }
+  if (severity !== undefined && !SEVERITIES.includes(severity)) {
+    throw validationError([
+      { field: 'severity', message: `must be one of [${SEVERITIES.join(', ')}]` },
+    ]);
+  }
+  if (areaIds !== undefined && (!Array.isArray(areaIds) || areaIds.length === 0)) {
+    throw validationError([{ field: 'areaIds', message: 'must contain at least 1 items' }]);
+  }
+  const requested = areaIds === undefined ? null : [...new Set(areaIds)];
+  const unknown = (requested ?? []).filter((areaId) => !findArea(areaId));
+  if (unknown.length > 0) {
+    throw validationError([
+      { field: 'areaIds', message: `unknown area ids: ${unknown.join(', ')}` },
+    ]);
+  }
+  requireActive(alert);
+  const targets = requested
+    ? requested.map(findArea).map(({ kind, area }) => ({ kind, id: area.id, name: area.name }))
+    : alert.targets;
+  return { severity: severity ?? alert.severity, targets };
 }
 
 // A1.2: what a confirmed report suggests. The mock reports are all filed
@@ -248,6 +418,7 @@ async function preview(id, { hazardType, severity, areaIds } = {}) {
   requireDraft(alert, 'previewed');
 
   const areas = requested.map(findArea);
+  const districtIds = expandToDistrictIds(areas);
   const message = generateMessage(hazardType, severity);
   Object.assign(alert, {
     hazardType,
@@ -259,10 +430,10 @@ async function preview(id, { hazardType, severity, areaIds } = {}) {
 
   return {
     alert: copy(alert),
-    recipientCount: citizensIn(expandToDistrictIds(areas)),
+    recipientCount: citizensIn(districtIds),
     message,
     channels: CHANNELS.map((channel) => ({ channel, ready: true })),
-    activeWarning: null,
+    activeWarning: findActive(hazardType, districtIds),
   };
 }
 
@@ -297,8 +468,10 @@ async function broadcast(id, message) {
   }
 
   // Counted again, as the server does, in case the preview is stale.
-  const areas = alert.targets.map(({ id: areaId }) => findArea(areaId));
-  recipients.set(alert.id, citizensIn(expandToDistrictIds(areas)));
+  const districtIds = districtIdsOf(alert.targets);
+  refuseConflict(alert.hazardType, districtIds, alert.id);
+  recordSend(alert, citizensIn(districtIds));
+  markReached(alert.id, districtIds);
 
   const now = new Date().toISOString();
   Object.assign(alert, {
@@ -313,11 +486,88 @@ async function broadcast(id, message) {
   return { alert: copy(alert), summary: summaryFor(alert) };
 }
 
+// A2 (§12.13): what the update would send. Changes nothing.
+async function previewUpdate(id, changes = {}) {
+  await delay();
+  takeFailure();
+  const alert = findAlert(id);
+  const { severity, targets } = validateChange(alert, changes);
+  const districtIds = districtIdsOf(targets);
+
+  return {
+    alert: copy(alert),
+    nextVersion: alert.version + 1,
+    recipientCount: citizensIn(districtIds),
+    message: updateMessage(alert.hazardType, severity),
+    channels: CHANNELS.map((channel) => ({ channel, ready: true })),
+    activeWarning: findActive(alert.hazardType, districtIds, alert.id),
+  };
+}
+
+// A2.3 (§12.14): UPDATED, the next version, sent to the recalculated
+// recipients; then the new draft it replaces is discarded.
+async function update(id, { severity, areaIds, message, replacesDraftId } = {}) {
+  await delay();
+  takeFailure();
+  const alert = findAlert(id);
+  const text = validateMessage(message);
+  const changed = validateChange(alert, { severity, areaIds });
+  const key = (targets) =>
+    targets
+      .map(({ id: areaId }) => areaId)
+      .sort()
+      .join(',');
+  if (changed.severity === alert.severity && key(changed.targets) === key(alert.targets)) {
+    throw validationError([{ field: 'severity', message: 'change the severity or the scope' }]);
+  }
+
+  const districtIds = districtIdsOf(changed.targets);
+  const count = citizensIn(districtIds);
+  if (count === 0) {
+    throw apiError(
+      409,
+      'NO_RECIPIENTS_IN_SCOPE',
+      'No registered citizens are in the selected scope',
+    );
+  }
+  refuseConflict(alert.hazardType, districtIds, alert.id);
+
+  const now = new Date().toISOString();
+  Object.assign(alert, {
+    severity: changed.severity,
+    targets: changed.targets,
+    message: text,
+    status: 'UPDATED',
+    version: alert.version + 1,
+    updatedAt: now,
+  });
+  alert.statusHistory.push({ status: 'UPDATED', version: alert.version, at: now, by: OFFICER });
+  recordSend(alert, count);
+  markReached(alert.id, districtIds);
+  if (alerts.get(replacesDraftId)?.status === 'DRAFT') alerts.delete(replacesDraftId);
+
+  return { alert: copy(alert), summary: summaryFor(alert) };
+}
+
 async function getDeliverySummary(id) {
   await delay();
   takeFailure();
   const alert = findAlert(id);
   return { alert: copy(alert), summary: summaryFor(alert) };
+}
+
+// E3.3 (§12.16): one page of the citizens the current version reached on no
+// channel, by name.
+async function getUnreached(id, paging = {}) {
+  await delay();
+  takeFailure();
+  const alert = findAlert(id);
+  const { page, limit } = validatePaging(paging);
+  const total = alert.status === 'DRAFT' ? 0 : deliveryOutcome(alert).unreached;
+  const citizens = Array.from({ length: total }, (_, n) => unreachedCitizen(alert, n))
+    .sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id))
+    .slice((page - 1) * limit, page * limit);
+  return { version: alert.version, citizens, page, limit, total };
 }
 
 async function listDrafts() {
@@ -327,6 +577,42 @@ async function listDrafts() {
     .filter(({ status }) => status === 'DRAFT')
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   return { alerts: drafts.map(copy) };
+}
+
+// A3.1 (§12.11): the active warnings, most recently issued first.
+async function listActive() {
+  await delay();
+  takeFailure();
+  const active = [...alerts.values()]
+    .filter(({ status }) => ACTIVE_STATUSES.includes(status))
+    .sort((a, b) => b.issuedAt.localeCompare(a.issuedAt));
+  return {
+    alerts: active.map((alert) => ({
+      ...copy(alert),
+      originalRecipientCount: originalRecipientCount(alert.id),
+    })),
+  };
+}
+
+// A3.2 (§12.15): CANCELLED as the next version, the all-clear message sent to
+// the original recipients, not a recalculated scope.
+async function allClear(id) {
+  await delay();
+  takeFailure();
+  const alert = findAlert(id);
+  requireActive(alert, 'cancelled');
+
+  const now = new Date().toISOString();
+  Object.assign(alert, {
+    message: allClearMessage(alert.hazardType),
+    status: 'CANCELLED',
+    version: alert.version + 1,
+    updatedAt: now,
+  });
+  alert.statusHistory.push({ status: 'CANCELLED', version: alert.version, at: now, by: OFFICER });
+  recordSend(alert, originalRecipientCount(alert.id));
+
+  return { alert: copy(alert), summary: summaryFor(alert) };
 }
 
 async function discardDraft(id) {
@@ -341,11 +627,17 @@ async function discardDraft(id) {
 /**
  * Demo and test hooks, not part of the API: `failNext('network')` makes the
  * next call fail as if offline, `failNext('server')` as a 500, and
- * `failNext('validation')` as a 400 on areaIds (E1).
+ * `failNext('validation')` as a 400 on areaIds (E1). `failDeliveries` fakes
+ * delivery failures (E3).
  */
 export const mockControls = {
   failNext(kind) {
     pendingFailure = kind;
+  },
+  // The share (0-1) of each channel's sends that fail from the next broadcast
+  // or update on, e.g. { PUSH: 0.07, SMS: 0.25, AUDIBLE: 0.6 }; left out is 0.
+  failDeliveries(rates = {}) {
+    failRates = { PUSH: 0, SMS: 0, AUDIBLE: 0, ...rates };
   },
 };
 
@@ -356,6 +648,11 @@ export default {
   getById,
   broadcast,
   getDeliverySummary,
+  getUnreached,
   listDrafts,
   discardDraft,
+  previewUpdate,
+  update,
+  listActive,
+  allClear,
 };

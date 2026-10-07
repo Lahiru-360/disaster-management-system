@@ -46,11 +46,7 @@ export class MessageTemplate {
    * @returns {string}
    */
   static title(hazardType, severity) {
-    const label = MessageTemplate.#LABELS[hazardType];
-    if (!label) {
-      throw new Error(`MessageTemplate: unknown hazard type "${hazardType}"`);
-    }
-    return `${label} Warning: ${severity}`;
+    return `${MessageTemplate.#label(hazardType)} Warning: ${severity}`;
   }
 
   /**
@@ -60,12 +56,59 @@ export class MessageTemplate {
    * @returns {string}
    */
   static generate(hazardType, severity) {
+    const action = MessageTemplate.#advice(hazardType, severity);
+    return `${MessageTemplate.title(hazardType, severity)}. ${action}`;
+  }
+
+  /**
+   * The message for an update to an active warning (A2.3), e.g. "UPDATE: Flood
+   * Warning now SEVERE. Move to higher ground and follow official guidance.",
+   * at most 160 characters. The officer may edit it before confirming.
+   * @param {string} hazardType An AlertHazardType.
+   * @param {string} severity The new SeverityLevel.
+   * @returns {string}
+   */
+  static update(hazardType, severity) {
+    const action = MessageTemplate.#advice(hazardType, severity);
+    return `UPDATE: ${MessageTemplate.#label(hazardType)} Warning now ${severity}. ${action}`;
+  }
+
+  /**
+   * The inbox heading for an all-clear (A3.2), e.g. "Flood Warning: ALL CLEAR".
+   * @param {string} hazardType An AlertHazardType.
+   * @returns {string}
+   */
+  static allClearTitle(hazardType) {
+    return `${MessageTemplate.#label(hazardType)} Warning: ALL CLEAR`;
+  }
+
+  /**
+   * The all-clear message (A3.2), e.g. "ALL CLEAR: The Flood warning has
+   * ended. It is now safe, but follow official guidance.", at most 160
+   * characters. It isn't editable: the officer only confirms it.
+   * @param {string} hazardType An AlertHazardType.
+   * @returns {string}
+   */
+  static allClear(hazardType) {
+    return `ALL CLEAR: The ${MessageTemplate.#label(hazardType)} warning has ended. It is now safe, but follow official guidance.`;
+  }
+
+  static #label(hazardType) {
+    const label = MessageTemplate.#LABELS[hazardType];
+    if (!label) {
+      throw new Error(`MessageTemplate: unknown hazard type "${hazardType}"`);
+    }
+    return label;
+  }
+
+  // What to do for the type: the urgent or the prepare-and-watch wording.
+  // Refuses an unknown severity or type.
+  static #advice(hazardType, severity) {
     if (!Object.values(SeverityLevel).includes(severity)) {
       throw new Error(`MessageTemplate: unknown severity "${severity}"`);
     }
-    const heading = MessageTemplate.title(hazardType, severity);
+    MessageTemplate.#label(hazardType);
     const advice = MessageTemplate.#ADVICE[hazardType];
-    const action = MessageTemplate.#URGENT.includes(severity) ? advice.urgent : advice.watch;
-    return `${heading}. ${action}`;
+    return MessageTemplate.#URGENT.includes(severity) ? advice.urgent : advice.watch;
   }
 }

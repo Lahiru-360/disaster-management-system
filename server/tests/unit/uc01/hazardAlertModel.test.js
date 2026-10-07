@@ -29,7 +29,7 @@ beforeAll(async () => {
 });
 
 describe('HazardAlert model', () => {
-  it('DMS-120: a new draft is DRAFT, version 1, with nothing composed yet', async () => {
+  it('Domain: a new draft is DRAFT, version 1, with nothing composed yet', async () => {
     const alert = await HazardAlert.create(draftFields());
 
     expect(alert).toMatchObject({
@@ -53,7 +53,7 @@ describe('HazardAlert model', () => {
     expect(alert.createdAt).toBeInstanceOf(Date);
   });
 
-  it('DMS-120: stores a composed draft with district and basin targets', async () => {
+  it('Domain: stores a composed draft with district and basin targets', async () => {
     const targets = [
       { kind: 'District', area: new mongoose.Types.ObjectId() },
       { kind: 'RiverBasin', area: new mongoose.Types.ObjectId() },
@@ -72,20 +72,20 @@ describe('HazardAlert model', () => {
     expect(alert.targets.map((target) => target.toObject())).toEqual(targets);
   });
 
-  it('DMS-120: requires a reference number and its creator', async () => {
+  it('Domain: requires a reference number and its creator', async () => {
     expect(await validationErrorsOf(HazardAlert.create({ statusHistory: [] }))).toEqual([
       'createdBy',
       'referenceNo',
     ]);
   });
 
-  it('DMS-120: refuses a second alert with the same reference number', async () => {
+  it('Domain: refuses a second alert with the same reference number', async () => {
     await HazardAlert.create(draftFields());
 
     await expect(HazardAlert.create(draftFields())).rejects.toMatchObject({ code: 11000 });
   });
 
-  it('DMS-120: refuses values outside the alert enums', async () => {
+  it('Domain: refuses values outside the alert enums', async () => {
     expect(
       await validationErrorsOf(
         HazardAlert.create(
@@ -95,7 +95,7 @@ describe('HazardAlert model', () => {
     ).toEqual(['hazardType', 'severity', 'status']);
   });
 
-  it('DMS-120: accepts a 160-character message and refuses 161', async () => {
+  it('Main 8: accepts a 160-character message and refuses 161', async () => {
     await expect(
       HazardAlert.create(draftFields({ message: 'x'.repeat(160) })),
     ).resolves.toBeDefined();
@@ -107,7 +107,7 @@ describe('HazardAlert model', () => {
     ).toEqual(['message']);
   });
 
-  it('DMS-120: refuses a target that is neither a District nor a RiverBasin, or has no area', async () => {
+  it('Domain: refuses a target that is neither a District nor a RiverBasin, or has no area', async () => {
     expect(
       await validationErrorsOf(
         HazardAlert.create(
@@ -122,7 +122,7 @@ describe('HazardAlert model', () => {
     ).toEqual(['targets.0.kind', 'targets.1.area']);
   });
 
-  it('DMS-120: refuses a version below 1 and an incomplete history entry', async () => {
+  it('Domain: refuses a version below 1 and an incomplete history entry', async () => {
     expect(
       await validationErrorsOf(
         HazardAlert.create(
@@ -132,7 +132,7 @@ describe('HazardAlert model', () => {
     ).toEqual(['statusHistory.0.at', 'statusHistory.0.by', 'version']);
   });
 
-  it('DMS-120: populates each target from its own collection by kind', async () => {
+  it('Domain: populates each target from its own collection by kind', async () => {
     const colombo = await District.create({
       name: 'Colombo',
       province: 'Western',
@@ -157,7 +157,7 @@ describe('HazardAlert model', () => {
     ]);
   });
 
-  it('DMS-120: toJSON exposes id and drops _id and __v', async () => {
+  it('Domain: toJSON exposes id and drops _id and __v', async () => {
     const json = (await HazardAlert.create(draftFields())).toJSON();
 
     expect(json.id).toBeDefined();
@@ -166,7 +166,7 @@ describe('HazardAlert model', () => {
     expect(json.referenceNo).toBe('HA-1043');
   });
 
-  it('DMS-120: indexes by status and type, and by targeted area', () => {
+  it('Domain: indexes by status and type, and by targeted area', () => {
     const indexes = HazardAlert.schema.indexes().map(([fields]) => fields);
 
     expect(indexes).toContainEqual({ status: 1, hazardType: 1 });

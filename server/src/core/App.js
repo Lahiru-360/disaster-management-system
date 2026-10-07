@@ -10,8 +10,13 @@ import { hazardEventRoutes } from '../routes/HazardEventRoutes.js';
 import { hazardReportRoutes } from '../routes/HazardReportRoutes.js';
 import { healthRoutes } from '../routes/HealthRoutes.js';
 import { notificationRoutes } from '../routes/NotificationRoutes.js';
+import { operationalPictureRoutes } from '../routes/OperationalPictureRoutes.js';
 import { organisationRoutes } from '../routes/OrganisationRoutes.js';
 import { placeRoutes } from '../routes/PlaceRoutes.js';
+import { reliefStockRoutes } from '../routes/ReliefStockRoutes.js';
+import { rescueTeamRoutes } from '../routes/RescueTeamRoutes.js';
+import { shelterRoutes } from '../routes/ShelterRoutes.js';
+import { supplyDistributionRoutes } from '../routes/SupplyDistributionRoutes.js';
 import { uploadRoutes } from '../routes/UploadRoutes.js';
 
 // Builds the Express application: global middleware first, then every route
@@ -32,6 +37,11 @@ export class App {
       hazardReportRoutes,
       placeRoutes,
       hazardAlertRoutes,
+      operationalPictureRoutes,
+      shelterRoutes,
+      rescueTeamRoutes,
+      reliefStockRoutes,
+      supplyDistributionRoutes,
     ],
   ) {
     this.#registerMiddleware();
