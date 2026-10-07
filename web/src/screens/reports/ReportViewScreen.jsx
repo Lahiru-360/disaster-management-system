@@ -68,7 +68,9 @@ function startDownload({ fileUrl, fileName }) {
 // (DMS-154.5): Export PDF / Export CSV, then "Export ready – Download". Steps
 // 14-15 (DMS-155.5): Share… opens the Share report dialog, the confirmation
 // "Shared with UNICEF Sri Lanka (liaison@example.org)" follows, and the
-// report's shares are listed under the actions.
+// report's shares are listed under the actions. E4 (DMS-162.3): a share whose
+// email failed is listed FAILED with "Sharing failed – Retry", and Retry sends
+// that same share again.
 export default function ReportViewScreen() {
   const { reportId } = useParams();
   const passed = useLocation().state?.report;
@@ -89,6 +91,9 @@ export default function ReportViewScreen() {
   const [shareList, setShareList] = useState(null);
   const [shareNotice, setShareNotice] = useState(null);
   const [shareOpen, setShareOpen] = useState(false);
+  // The share being retried and the last failed retry.
+  const [retrying, setRetrying] = useState(null);
+  const [retryError, setRetryError] = useState(null);
 
   useEffect(() => {
     if (!canReport || fromNavigation) return undefined;
@@ -151,6 +156,48 @@ export default function ReportViewScreen() {
           retryable: status !== 404 && status !== 400,
         });
         setExporting(null);
+      },
+    );
+  };
+  // E4: the server recorded the share FAILED, so the list is read again to show
+  // it (its id isn't in the error) with Retry.
+  const handleShareFailed = () => {
+    setShareOpen(false);
+    setShareNotice(null);
+    reportsApi.listShares(report.id).then(
+      (items) => setShareList({ reportId: report.id, items }),
+      () => {},
+    );
+  };
+  const retryShare = (share) => {
+    const forReport = report.id;
+    setRetrying(share.shareId);
+    setRetryError(null);
+    reportsApi.retryShare(share.shareId).then(
+      (sent) => {
+        setShareList((current) => ({
+          reportId: forReport,
+          items: (current?.items ?? []).map((item) =>
+            item.shareId === sent.shareId ? sent : item,
+          ),
+        }));
+        setShareNotice({
+          reportId: forReport,
+          text: `Shared with ${sent.organisation.name} (${sent.recipientEmail})`,
+        });
+        setRetrying(null);
+      },
+      (retryFailure) => {
+        setRetryError({
+          shareId: share.shareId,
+          message: apiErrorMessage(retryFailure, 'The connection was lost.'),
+        });
+        setRetrying(null);
+        // The attempt was counted by the server, so read the list again.
+        reportsApi.listShares(forReport).then(
+          (items) => setShareList({ reportId: forReport, items }),
+          () => {},
+        );
       },
     );
   };
@@ -240,13 +287,19 @@ export default function ReportViewScreen() {
           ready={exported?.reportId === report.id ? exported : null}
           failure={exportError?.reportId === report.id ? exportError : null}
         />
-        <SharesList shares={shareList?.reportId === report.id ? shareList.items : []} />
+        <SharesList
+          shares={shareList?.reportId === report.id ? shareList.items : []}
+          onRetry={retryShare}
+          retrying={retrying}
+          retryError={retryError}
+        />
       </div>
       {shareOpen ? (
         <ShareDialog
           reportId={report.id}
           onClose={() => setShareOpen(false)}
           onShared={handleShared}
+          onFailed={handleShareFailed}
         />
       ) : null}
     </Screen>
