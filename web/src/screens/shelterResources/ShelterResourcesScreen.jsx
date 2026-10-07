@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import { areasApi, coordinationApi } from '../../api';
+import DispatchDialog from '../../components/shelterResources/DispatchDialog';
 import IncidentHeader from '../../components/shelterResources/IncidentHeader';
 import LogReliefSupplyDialog from '../../components/shelterResources/LogReliefSupplyDialog';
 import LiveOpsMap from '../../components/shelterResources/LiveOpsMap';
@@ -27,9 +28,9 @@ const errorMessage = (error, fallback) => error?.response?.data?.error?.message 
 // Coordination dashboard. A district officer sees their own district; a DMC
 // or duty officer picks one first, since the server requires it for them.
 // The dashboard refetches whenever the district or the organisation filter
-// changes, and again after the occupancy (DMS-141) and supply (DMS-143)
-// dialogs save, as the dispatch and shelter dialogs (DMS-142, DMS-144) will
-// once built.
+// changes, and again after the occupancy (DMS-141), dispatch (DMS-142) and
+// supply (DMS-143) dialogs save, as the shelter dialog (DMS-144) will once
+// built.
 export default function ShelterResourcesScreen() {
   const { user } = useAuth();
   const isDmc = [ROLES.DMC_OFFICER, ROLES.DUTY_OFFICER].includes(user?.role);
@@ -49,6 +50,8 @@ export default function ShelterResourcesScreen() {
   const [occupancyShelterId, setOccupancyShelterId] = useState(null);
   // Whether the Log Relief Supply dialog (steps 12-13) is open.
   const [logSupplyOpen, setLogSupplyOpen] = useState(false);
+  // Whether the Dispatch Rescue Team dialog (steps 6-9) is open.
+  const [dispatchOpen, setDispatchOpen] = useState(false);
 
   useEffect(() => {
     if (!isDmc) return;
@@ -82,6 +85,11 @@ export default function ShelterResourcesScreen() {
 
   const handleOccupancyUpdated = () => {
     setOccupancyShelterId(null);
+    loadPicture();
+  };
+
+  const handleDispatched = () => {
+    setDispatchOpen(false);
     loadPicture();
   };
 
@@ -141,7 +149,12 @@ export default function ShelterResourcesScreen() {
           ) : (
             <>
               <IncidentHeader incident={picture.incident} districtName={districtName}>
-                <Button variant="outline" fullWidth={false} disabled={!picture.incident}>
+                <Button
+                  variant="outline"
+                  fullWidth={false}
+                  disabled={!canWrite}
+                  onClick={() => setDispatchOpen(true)}
+                >
                   Dispatch Rescue Team
                 </Button>
                 <Button
@@ -197,6 +210,14 @@ export default function ShelterResourcesScreen() {
           initialShelterId={occupancyShelterId}
           onClose={() => setOccupancyShelterId(null)}
           onUpdated={handleOccupancyUpdated}
+        />
+      ) : null}
+
+      {dispatchOpen && picture ? (
+        <DispatchDialog
+          mapCenter={picture.shelters[0]?.location}
+          onClose={() => setDispatchOpen(false)}
+          onDispatched={handleDispatched}
         />
       ) : null}
 
