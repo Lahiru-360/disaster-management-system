@@ -127,6 +127,7 @@ Every error response — regardless of cause — returns the same outer shape:
 | `INVALID_TEAM_TRANSITION` | Marking a rescue team available while it is `DISPATCHED` or `ON_SITE` (§13.10.1). Always `409`. |
 | `EVENT_NOT_CLOSED` | Generating a post-event report for a hazard event that isn't `CLOSED` (§14.3). Always `409`; the message names the current status. |
 | `NO_DATA_FOR_SELECTION` | Generating a post-event report whose every requested section has no records for the range and districts (UC04 E2, §14.3). Always `404`; nothing is stored. |
+| `EXPORT_FAILED` | Exporting a post-event report (§14.8) when the PDF or CSV file couldn't be written (UC04 E3). Always `500`; nothing is uploaded or recorded, and the request is safe to retry. |
 
 New codes may be added for new resources; existing codes are never repurposed for a different meaning.
 
@@ -3640,7 +3641,7 @@ A failed notification never fails the request that triggered it.
 
 ## 14. Post-event reports endpoints
 
-UC04 Generate Post-Event Analysis Report. After a hazard event is **closed**, a DMC officer generates a statistical report for it with four sections: the alert timeline, citizens reached, shelter occupancy over time and resource distribution. Days with no records are flagged as **incomplete data** instead of being left out. This section covers generating a report and reading it back (UC04 main flow steps 1–11, DMS-153, with E1 and E2). Exporting (DMS-154), sharing (DMS-155) and filtering (DMS-156) add their own subsections.
+UC04 Generate Post-Event Analysis Report. After a hazard event is **closed**, a DMC officer generates a statistical report for it with four sections: the alert timeline, citizens reached, shelter occupancy over time and resource distribution. Days with no records are flagged as **incomplete data** instead of being left out. This section covers generating a report and reading it back (UC04 main flow steps 1–11, DMS-153, with E1 and E2), and exporting it (steps 12–13, DMS-154, with E3, 14.8). Sharing (DMS-155) and filtering (DMS-156) add their own subsections.
 
 **Status: draft (DMS-153.1).** The Analytics data subsection (14.7) needs sign-off from the owners of the data it reads: Anupa for hazard alerts and delivery records, Lahiru for occupancy and distribution records.
 
@@ -4068,6 +4069,145 @@ Post-event reports read other use cases' records **directly**: the delivery, occ
 | `statusHistory[].targets` | `[{ kind, area }]` | The alert's scope after this change, as stored on the alert. |
 
 Until they exist, every timeline entry shows the alert's current severity and areas (14.2).
+
+### 14.8 Export a report — `POST /api/post-event-reports/:id/exports`
+
+UC04 main flow steps 12–13 (DMS-154), with E3 (DMS-161). From the report view, the officer selects **Export PDF** (for reading) or **Export CSV** (for a spreadsheet). The server writes the stored report (14.4) to a file, uploads it to storage and records the export. The web then shows "Export ready – Download" and starts the download.
+
+Admits `dmc_officer` and `duty_officer`, like every endpoint in §14: any admitted officer can export any report. Exporting reads the stored report only. It never compiles the report again, and it changes neither the report nor the data the report was built from.
+
+**Request**
+
+```json
+{ "format": "PDF" }
+```
+
+| Field | Rule |
+|---|---|
+| `format` | **Required.** `PDF` or `CSV` (`ExportFormat`). Anything else → `400` on `format`: "must be one of [PDF, CSV]". |
+
+The report is the `:id` in the path. An id that isn't valid, or that no report has, is `404 NOT_FOUND`.
+
+The server then:
+
+1. **Finds** the report (404 if it doesn't exist).
+2. **Writes the file** with the exporter for the format (below). If the file can't be written, it answers `500 EXPORT_FAILED` (E3) and stops.
+3. **Uploads** it to the `reports/` folder of storage (§6) under a new random name: `reports/<uuid>.pdf` or `reports/<uuid>.csv`. If storage fails, it answers `502 STORAGE_UNAVAILABLE` (E3) and stops.
+4. **Records the export** as a `ReportExport { report, format, fileUrl, createdBy, createdAt }` and returns it.
+
+Nothing is recorded when step 2 or 3 fails, so the officer can simply send the same request again (E3.2). The report stays on screen while they do. Every successful request creates a **new** export with its own file, even for a format already exported. Earlier files are kept as an audit trail.
+
+**Success — `201 Created`**
+
+```json
+{
+  "success": true,
+  "data": {
+    "exportId": "66fc5b2c3d4e5f6a7b8c9f01",
+    "format": "CSV",
+    "fileUrl": "https://<project>.supabase.co/storage/v1/object/public/<bucket>/reports/0b6f3c1e-1d7a-4f4e-9a52-6c2f1e8d4b10.csv",
+    "createdAt": "2026-10-07T09:30:00.000Z"
+  }
+}
+```
+
+| Field | Type | Notes |
+|---|---|---|
+| `exportId` | string | The `ReportExport`'s id. |
+| `format` | `PDF` or `CSV` | As requested. |
+| `fileUrl` | string | Where to download the file. The *Download* link opens it. |
+| `createdAt` | ISO 8601 string | When the export was recorded. |
+
+**The PDF** (`application/pdf`, A4) has:
+
+- **A title page:** "Post-Event Report – \<event name\>", the hazard type, the date range ("8–20 Jun 2026"), the districts, and who generated the report and when.
+- **The incomplete-data banner** when the report has gaps (`hasGaps`), with one line per gap, e.g. "(!) 14–15 Jun: incomplete data – figures partial, not omitted (occupancy over time)".
+- **The summary figures** from `summary`, as the report view shows them, e.g. "Citizens reached 128,400 (94%)". A figure whose section wasn't requested is left out.
+- **One table per requested section**, in report order: the alert timeline entries; citizens reached per channel and per alert; each district's daily peak occupancy; and resource distribution by district, supply type and organisation. A day with no records reads "no data", never 0.
+
+**The CSV** (`text/csv`, UTF-8 with a byte-order mark so spreadsheets read the en dashes, comma-separated, CRLF line ends, quoted where needed) is one long table with a header row and **one row per data point**:
+
+```csv
+section,date,district,item,measure,value,incomplete
+summary,,,,alertsIssued,14,false
+summary,2026-06-12,,,peakOccupancy,4120,true
+alertTimeline,2026-06-08,,HA-0001 v1 BROADCAST,severity,SEVERE,false
+alertTimeline,2026-06-08,,,entries,3,false
+citizensReached,,,PUSH,deliveryRate,0.88587,false
+occupancyOverTime,2026-06-12,Gampaha,,peak,1730,false
+occupancyOverTime,2026-06-14,Gampaha,,peak,,true
+resourceDistribution,,Gampaha,WATER – Red Cross Sri Lanka,quantity,4200,false
+resourceDistribution,2026-06-10,,,quantity,1500,false
+```
+
+| Column | Meaning |
+|---|---|
+| `section` | `summary`, or the section key (14.2). Rows come in that order: the summary first, then each requested section in report order. |
+| `date` | The `YYYY-MM-DD` day the value belongs to, when it belongs to one. |
+| `district` | The district's name, when the value belongs to one. |
+| `item` | What the value is about within the section, as listed below. |
+| `measure` | Which value it is, as listed below. |
+| `value` | The number, unrounded, or the text. **Empty** for a day with no records. |
+| `incomplete` | `true` for a day inside one of the section's gaps (14.2), and for a summary figure whose section has a gap. Otherwise `false`. |
+
+| `section` | Rows (`item` → `measure`) |
+|---|---|
+| `summary` | One row per figure of the requested sections: `alertsIssued`, `citizensReached`, `citizensTargeted`, `reachedRate`, `peakOccupancy` (with `peakOccupancyDate` as its `date`) and `itemsDistributed`. |
+| `alertTimeline` | For each entry, `<referenceNo> v<version> <status>` → `at` (ISO 8601), `hazardType`, `severity` and `areas` (names joined with "; "), all on the entry's `date`. Then each day → `entries`. |
+| `citizensReached` | For each channel, `<channel>` → `attempted`, `delivered`, `failed` and `deliveryRate`. For each alert, `<referenceNo>` → `citizensReached`, and `<referenceNo> <channel>` → `attempted` and `delivered`. Then each day → `attempted` and `delivered`. |
+| `occupancyOverTime` | For each district and day → `peak`. Then for each district → `highestPeak`, on the day it happened. |
+| `resourceDistribution` | For each row, `<supplyType> – <organisation name>` in its district → `quantity`. Then each day → `quantity`. |
+
+**Failure — `400 Bad Request`** (`format` missing or not `PDF`/`CSV`)
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "Request validation failed.",
+    "errors": [{ "field": "format", "message": "must be one of [PDF, CSV]" }]
+  }
+}
+```
+
+**Failure — `500 Internal Server Error`** (E3: the file couldn't be written)
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "EXPORT_FAILED",
+    "message": "The export file could not be created. Please try again."
+  }
+}
+```
+
+**Failure — `502 Bad Gateway`** (E3: storage failed or was unreachable)
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "STORAGE_UNAVAILABLE",
+    "message": "Could not upload the file. Please try again."
+  }
+}
+```
+
+For both E3 failures the web shows "Export failed – try again" under the export buttons, keeps the report on screen, and *Retry* sends the same request.
+
+| Status | Code | When |
+|---|---|---|
+| `400` | `VALIDATION_ERROR` | `format` failed its rule. |
+| `401` | `AUTH_HEADER_MISSING`, `AUTH_HEADER_MALFORMED`, `TOKEN_EXPIRED`, `TOKEN_INVALID` | As in 14.6. |
+| `403` | `FORBIDDEN` | The caller isn't a `dmc_officer` or `duty_officer`. |
+| `404` | `NOT_FOUND` | No report has this id, or the id isn't valid. |
+| `500` | `EXPORT_FAILED` | The exporter couldn't write the file (E3). Nothing is uploaded or recorded; safe to retry. |
+| `502` | `STORAGE_UNAVAILABLE` | Storage failed or was unreachable while uploading (E3). Nothing is recorded; safe to retry. |
+| `500` | `INTERNAL_ERROR` | Any other unhandled server-side failure. |
+
+Checked by TC-19–TC-23 (DMS-154) and TC-44–TC-46 (E3, DMS-161).
 
 ---
 
