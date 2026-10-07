@@ -16,6 +16,12 @@ export class ShelterController extends BaseController {
 
     ApiResponse.success(res, { shelters }, 200);
   }
+
+  async updateOccupancy(req, res) {
+    const result = await this.#shelterService.updateOccupancy(req.user, req.params.id, req.body);
+
+    ApiResponse.success(res, result, 200);
+  }
 }
 
 export const shelterController = new ShelterController();

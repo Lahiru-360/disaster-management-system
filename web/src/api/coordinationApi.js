@@ -30,6 +30,17 @@ async function listShelters({ districtId } = {}) {
 }
 
 /**
+ * `PATCH /api/shelters/:id/occupancy` (§13.4.2, steps 3-5) - sets how many
+ * people are in the shelter. Resolves with `{ shelter, rate, status, flagged,
+ * alternateShelter, dmcAlerted }`. A value that isn't a whole number, 0 or more
+ * rejects with 400 VALIDATION_ERROR on `occupants` and saves nothing.
+ */
+async function updateOccupancy(shelterId, occupants) {
+  const response = await client.patch(`/shelters/${shelterId}/occupancy`, { occupants });
+  return response.data.data;
+}
+
+/**
  * `GET /api/rescue-teams` (§13.5) - the district's rescue teams, each with its
  * owning organisation and status, sorted by name.
  */
@@ -41,5 +52,6 @@ async function listRescueTeams({ districtId } = {}) {
 export default {
   getOperationalPicture,
   listShelters,
+  updateOccupancy,
   listRescueTeams,
 };
