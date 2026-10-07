@@ -95,6 +95,8 @@ describe('ShareService.share', () => {
       sharedBy: { id: 'u-1', name: 'Kasun Silva' },
       sharedAt: new Date(NOW),
       status: 'SENT',
+      attempts: 1,
+      failureReason: null,
     });
   });
 
@@ -112,6 +114,8 @@ describe('ShareService.share', () => {
       sharedBy: 'u-1',
       sharedAt: new Date(NOW),
       status: 'SENT',
+      attempts: 1,
+      failureReason: null,
     });
   });
 
@@ -139,7 +143,7 @@ describe('ShareService.share', () => {
     expect(organisationModel.findById).not.toHaveBeenCalled();
   });
 
-  it('DMS-155.4: a failed email records no share', async () => {
+  it('TC-47 E4: a failed email records a FAILED share with the reason, then answers 502', async () => {
     const { service, emailService, shareModel } = setup();
     emailService.send.mockRejectedValue(
       new ApiError(502, 'EMAIL_UNAVAILABLE', 'Could not send the email. Please try again.'),
@@ -148,6 +152,12 @@ describe('ShareService.share', () => {
     const err = await shareOf(service);
 
     expect(err.code).toBe('EMAIL_UNAVAILABLE');
-    expect(shareModel.create).not.toHaveBeenCalled();
+    expect(shareModel.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: 'FAILED',
+        attempts: 1,
+        failureReason: 'Could not send the email. Please try again.',
+      }),
+    );
   });
 });

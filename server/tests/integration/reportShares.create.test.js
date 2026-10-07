@@ -167,6 +167,8 @@ describe('POST /api/post-event-reports/:id/shares — sharing', () => {
       sharedBy: { id: String(officer._id), name: 'Ruwan Jayasinghe' },
       sharedAt: expect.any(String),
       status: 'SENT',
+      attempts: 1,
+      failureReason: null,
     });
     expect(sentEmails()).toHaveLength(1);
     expect(sentEmails()[0].to).toBe('liaison@example.org');
@@ -339,7 +341,7 @@ describe('POST /api/post-event-reports/:id/shares — rejected requests', () => 
     expect(await ReportExport.countDocuments()).toBe(0);
   });
 
-  it('DMS-155.6: when the email cannot be sent, the answer is 502 EMAIL_UNAVAILABLE and the export is kept', async () => {
+  it('TC-47 E4: when the email cannot be sent, the answer is 502 EMAIL_UNAVAILABLE, the share is FAILED and the export is kept', async () => {
     jest
       .spyOn(emailService, 'send')
       .mockRejectedValue(
@@ -350,8 +352,16 @@ describe('POST /api/post-event-reports/:id/shares — rejected requests', () => 
 
     expect(res.status).toBe(502);
     expect(res.body.error.code).toBe('EMAIL_UNAVAILABLE');
-    expect(await ReportShare.countDocuments()).toBe(0);
     expect(await ReportExport.countDocuments()).toBe(1);
+    const [failed] = await ReportShare.find().lean();
+    expect(failed).toEqual(
+      expect.objectContaining({
+        status: 'FAILED',
+        attempts: 1,
+        failureReason: 'Could not send the email. Please try again.',
+        recipientEmail: 'liaison@example.org',
+      }),
+    );
   });
 });
 

@@ -53,6 +53,21 @@ const reportShareSchema = new mongoose.Schema(
       required: true,
       default: ShareStatus.SENT,
     },
+    // How many times sending has been tried: 1 for the first try, then one
+    // more for each retry of a FAILED share (E4).
+    attempts: {
+      type: Number,
+      required: true,
+      min: 1,
+      default: 1,
+    },
+    // Why the latest try failed; null unless the share is FAILED.
+    failureReason: {
+      type: String,
+      trim: true,
+      maxlength: 500,
+      default: null,
+    },
   },
   {
     timestamps: true,

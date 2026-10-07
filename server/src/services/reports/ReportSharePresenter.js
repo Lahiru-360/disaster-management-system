@@ -41,6 +41,8 @@ export class ReportSharePresenter {
       sharedBy: json.sharedBy ? { id: String(json.sharedBy._id), name: json.sharedBy.name } : null,
       sharedAt: json.sharedAt,
       status: json.status,
+      attempts: json.attempts,
+      failureReason: json.failureReason ?? null,
     };
   }
 }
