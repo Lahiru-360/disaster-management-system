@@ -1,7 +1,7 @@
-import { useId, useState } from 'react';
+import { useId, useRef, useState } from 'react';
 
 import { coordinationApi } from '../../api';
-import { apiErrorMessage } from '../../utils/apiErrors';
+import { apiErrorMessage, mapFieldErrors } from '../../utils/apiErrors';
 import {
   occupancyPercent,
   SHELTER_STATUS_LABELS,
@@ -31,7 +31,9 @@ function parseOccupants(text) {
 // it will have while typing. The preview uses the server's thresholds
 // (utils/shelterStatus) but only previews: Update sends the number, and the
 // server's `{ shelter, rate, status }` answer is what `onUpdated` receives.
-// Mounted only while open, so each opening starts fresh.
+// E1 (DMS-147): when the server refuses the number (negative, not whole, ...),
+// its message shows under the field, the typed value stays for correction and
+// nothing was saved - the flow resumes at step 3. Mounted only while open, so each opening starts fresh.
 export default function UpdateOccupancyDialog({ shelters, initialShelterId, onClose, onUpdated }) {
   const titleId = useId();
   const startAt = shelters.find((s) => s.id === initialShelterId) ?? shelters[0];
@@ -40,6 +42,8 @@ export default function UpdateOccupancyDialog({ shelters, initialShelterId, onCl
   const [occupantsText, setOccupantsText] = useState(String(startAt?.currentOccupancy ?? ''));
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
+  const [occupantsError, setOccupantsError] = useState(null);
+  const occupantsRef = useRef(null);
 
   const shelter = shelters.find((s) => s.id === shelterId);
   const occupants = parseOccupants(occupantsText);
@@ -51,6 +55,7 @@ export default function UpdateOccupancyDialog({ shelters, initialShelterId, onCl
     setShelterId(event.target.value);
     setOccupantsText(String(next?.currentOccupancy ?? ''));
     setError(null);
+    setOccupantsError(null);
   };
 
   const handleSubmit = async (event) => {
@@ -58,13 +63,24 @@ export default function UpdateOccupancyDialog({ shelters, initialShelterId, onCl
     if (submitting || !shelter || occupantsText.trim() === '') return;
     setSubmitting(true);
     setError(null);
+    setOccupantsError(null);
     try {
       // Sent as typed, not pre-checked here: the server owns E1's validation.
       const result = await coordinationApi.updateOccupancy(shelter.id, Number(occupantsText));
       onUpdated(result);
     } catch (failure) {
-      setError(apiErrorMessage(failure, 'The occupancy could not be updated. Try again.'));
+      const { byField, others } = mapFieldErrors(failure, ['occupants']);
+      const fieldMessage = byField.occupants ?? null;
+      setOccupantsError(fieldMessage);
+      // Anything that isn't about the number (offline, 403, ...) is a Notice.
+      if (others.length > 0) {
+        setError(others.join(' '));
+      } else if (!fieldMessage) {
+        setError(apiErrorMessage(failure, 'The occupancy could not be updated. Try again.'));
+      }
       setSubmitting(false);
+      // The input was disabled while saving; focus it once it is enabled again.
+      if (fieldMessage) setTimeout(() => occupantsRef.current?.focus(), 0);
     }
   };
 
@@ -95,10 +111,13 @@ export default function UpdateOccupancyDialog({ shelters, initialShelterId, onCl
             inputMode="numeric"
             min="0"
             step="1"
+            ref={occupantsRef}
             value={occupantsText}
+            error={occupantsError}
             onChange={(event) => {
               setOccupantsText(event.target.value);
               setError(null);
+              setOccupantsError(null);
             }}
             disabled={submitting}
             containerClassName="mb-3"

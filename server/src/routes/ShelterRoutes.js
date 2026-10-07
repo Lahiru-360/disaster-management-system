@@ -27,6 +27,7 @@ export class ShelterRoutes extends BaseRoutes {
       '/:id/occupancy',
       authMiddleware.requireAuth,
       authMiddleware.requireRole(Role.DISTRICT_OFFICER),
+      RequestValidator.body(CoordinationValidator.occupancyBody),
       shelterController.updateOccupancy,
     );
   }
