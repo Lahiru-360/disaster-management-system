@@ -3,8 +3,8 @@
 // errors, so swapping in the real client changes no calling code. It applies
 // the server's own rules - the 160-character message, unknown areas (E1),
 // DRAFT-only edits, broadcasts and discards (A4), one active warning per hazard
-// type and district, and updates only of an active one (A2) - so the screen
-// meets the same errors,
+// type and district, and updates (A2) and all-clears (A3) only of an active
+// one - so the screen meets the same errors,
 // counts citizens per district from ./areaFixtures.js (each once, even through
 // a basin), and generates the server's messages. A broadcast delivers on every
 // channel, as the server does with its demo failure rates at 0. Escalating a
@@ -68,8 +68,11 @@ const OFFICER = {
 };
 
 const alerts = new Map();
-// Alert id -> how many citizens its broadcast went to.
+// Alert id -> how many citizens its current version went to.
 const recipients = new Map();
+// Alert id -> every district any version was sent to: its original
+// recipients are the citizens there (the server reads its delivery records).
+const reachedDistricts = new Map();
 let nextReference = 1043;
 let nextId = 1;
 let pendingFailure = null;
@@ -179,6 +182,10 @@ function updateMessage(hazardType, severity) {
   return `UPDATE: ${LABELS[hazardType]} Warning now ${severity}. ${advice(hazardType, severity)}`;
 }
 
+function allClearMessage(hazardType) {
+  return `ALL CLEAR: The ${LABELS[hazardType]} warning has ended. It is now safe, but follow official guidance.`;
+}
+
 const ACTIVE_STATUSES = ['BROADCAST', 'UPDATED'];
 
 const districtIdsOf = (targets) =>
@@ -212,15 +219,23 @@ function refuseConflict(hazardType, districtIds, excludeId) {
   }
 }
 
-function requireActive(alert) {
+function requireActive(alert, action = 'updated') {
   if (!ACTIVE_STATUSES.includes(alert.status)) {
     throw apiError(
       409,
       'INVALID_ALERT_TRANSITION',
-      `Only an active alert can be updated – current status: ${alert.status}`,
+      `Only an active alert can be ${action} – current status: ${alert.status}`,
     );
   }
 }
+
+function markReached(alertId, districtIds) {
+  const reached = reachedDistricts.get(alertId) ?? new Set();
+  districtIds.forEach((districtId) => reached.add(districtId));
+  reachedDistricts.set(alertId, reached);
+}
+
+const originalRecipientCount = (alertId) => citizensIn([...(reachedDistricts.get(alertId) ?? [])]);
 
 // The checks the update preview and the update share (§12.13): at least one
 // change, a known severity, and a scope of registered areas (E1). Resolves
@@ -383,6 +398,7 @@ async function broadcast(id, message) {
   const districtIds = districtIdsOf(alert.targets);
   refuseConflict(alert.hazardType, districtIds, alert.id);
   recipients.set(alert.id, citizensIn(districtIds));
+  markReached(alert.id, districtIds);
 
   const now = new Date().toISOString();
   Object.assign(alert, {
@@ -454,6 +470,7 @@ async function update(id, { severity, areaIds, message, replacesDraftId } = {}) 
   });
   alert.statusHistory.push({ status: 'UPDATED', version: alert.version, at: now, by: OFFICER });
   recipients.set(alert.id, count);
+  markReached(alert.id, districtIds);
   if (alerts.get(replacesDraftId)?.status === 'DRAFT') alerts.delete(replacesDraftId);
 
   return { alert: copy(alert), summary: summaryFor(alert) };
@@ -473,6 +490,42 @@ async function listDrafts() {
     .filter(({ status }) => status === 'DRAFT')
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   return { alerts: drafts.map(copy) };
+}
+
+// A3.1 (§12.11): the active warnings, most recently issued first.
+async function listActive() {
+  await delay();
+  takeFailure();
+  const active = [...alerts.values()]
+    .filter(({ status }) => ACTIVE_STATUSES.includes(status))
+    .sort((a, b) => b.issuedAt.localeCompare(a.issuedAt));
+  return {
+    alerts: active.map((alert) => ({
+      ...copy(alert),
+      originalRecipientCount: originalRecipientCount(alert.id),
+    })),
+  };
+}
+
+// A3.2 (§12.15): CANCELLED as the next version, the all-clear message sent to
+// the original recipients, not a recalculated scope.
+async function allClear(id) {
+  await delay();
+  takeFailure();
+  const alert = findAlert(id);
+  requireActive(alert, 'cancelled');
+
+  const now = new Date().toISOString();
+  Object.assign(alert, {
+    message: allClearMessage(alert.hazardType),
+    status: 'CANCELLED',
+    version: alert.version + 1,
+    updatedAt: now,
+  });
+  alert.statusHistory.push({ status: 'CANCELLED', version: alert.version, at: now, by: OFFICER });
+  recipients.set(alert.id, originalRecipientCount(alert.id));
+
+  return { alert: copy(alert), summary: summaryFor(alert) };
 }
 
 async function discardDraft(id) {
@@ -506,4 +559,6 @@ export default {
   discardDraft,
   previewUpdate,
   update,
+  listActive,
+  allClear,
 };

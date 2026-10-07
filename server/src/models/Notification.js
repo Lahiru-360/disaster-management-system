@@ -76,6 +76,8 @@ const notificationSchema = new mongoose.Schema(
 notificationSchema.index({ alert: 1, alertVersion: 1, citizen: 1, channel: 1 }, { unique: true });
 // The delivery summary groups one alert's records by status.
 notificationSchema.index({ alert: 1, status: 1 });
+// The all-clear's original recipients: the distinct citizens of one alert (A3).
+notificationSchema.index({ alert: 1, citizen: 1 });
 
 // Kept thin on purpose: the schema above is the whole model. How a delivery's
 // status may change is the Notification class in domain/alerts.

@@ -28,9 +28,12 @@ export class HazardAlertController extends BaseController {
     ApiResponse.success(res, data, 201);
   }
 
-  // GET /api/hazard-alerts?status=draft - UC01 A4 (§12.11).
+  // GET /api/hazard-alerts?status=draft|active - UC01 A4 and A3.1 (§12.11).
   async list(req, res) {
-    const alerts = await this.#warningService.listDrafts();
+    const alerts =
+      req.query.status === 'active'
+        ? await this.#warningService.listActive()
+        : await this.#warningService.listDrafts();
 
     ApiResponse.success(res, { alerts }, 200);
   }
@@ -84,6 +87,13 @@ export class HazardAlertController extends BaseController {
   // PATCH /api/hazard-alerts/:id - UC01 A2.3, steps 9-14 (§12.14).
   async update(req, res) {
     const result = await this.#broadcastService.update(req.params.id, req.user, req.body);
+
+    ApiResponse.success(res, result, 200);
+  }
+
+  // POST /api/hazard-alerts/:id/all-clear - UC01 A3.2-A3.3 (§12.15).
+  async allClear(req, res) {
+    const result = await this.#broadcastService.allClear(req.params.id, req.user);
 
     ApiResponse.success(res, result, 200);
   }
