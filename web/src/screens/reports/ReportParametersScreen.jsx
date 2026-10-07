@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
 
 import { reportsApi } from '../../api';
+import RecentReports from '../../components/reports/RecentReports';
 import ReportParametersForm from '../../components/reports/ReportParametersForm';
 import Button from '../../components/ui/Button';
 import EmptyState from '../../components/ui/EmptyState';
@@ -36,7 +37,9 @@ const isNoData = (error) => error?.response?.data?.error?.code === 'NO_DATA_FOR_
 
 // UC04 main flow steps 1-5 (DMS-153.9): Reports → Post-Event Analysis. Lists
 // the closed events, pre-fills the chosen one's period and districts, and
-// generates the report, which then opens in the report view.
+// generates the report, which then opens in the report view. A3 (DMS-158.1):
+// the chosen event's Recent reports are listed under the form, so a report
+// closed without exporting can be opened again.
 export default function ReportParametersScreen() {
   const { user } = useAuth();
   const canReport = [ROLES.DMC_OFFICER, ROLES.DUTY_OFFICER].includes(user?.role);
@@ -49,6 +52,8 @@ export default function ReportParametersScreen() {
   const [error, setError] = useState(null);
   const [fieldErrors, setFieldErrors] = useState({});
   const [noData, setNoData] = useState(false);
+  // The chosen event's recent reports (§14.5), kept with the event they are for.
+  const [recent, setRecent] = useState(null);
 
   useEffect(() => {
     if (!canReport) return;
@@ -58,6 +63,27 @@ export default function ReportParametersScreen() {
         setEventsError(apiErrorMessage(loadError, 'Closed events could not be loaded.')),
       );
   }, [canReport]);
+
+  const recentFor = values?.eventId;
+  useEffect(() => {
+    if (!canReport || !recentFor) return undefined;
+    let cancelled = false;
+    reportsApi.listRecent(recentFor).then(
+      (reports) => {
+        if (!cancelled) setRecent({ eventId: recentFor, reports });
+      },
+      (loadError) => {
+        if (cancelled) return;
+        setRecent({
+          eventId: recentFor,
+          error: apiErrorMessage(loadError, 'Recent reports could not be loaded.'),
+        });
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [canReport, recentFor]);
 
   const selectEvent = (eventId) => {
     const event = events.find((item) => item.id === eventId);
@@ -157,6 +183,13 @@ export default function ReportParametersScreen() {
             onSubmit={generate}
             submitting={submitting}
           />
+          {values?.eventId ? (
+            <RecentReports
+              reports={recent?.eventId === values.eventId ? (recent.reports ?? null) : null}
+              error={recent?.eventId === values.eventId ? (recent.error ?? null) : null}
+              onOpen={(report) => navigate(`/reports/${report.id}`)}
+            />
+          ) : null}
         </div>
       )}
     </Screen>

@@ -68,7 +68,9 @@ function startDownload({ fileUrl, fileName }) {
 // (DMS-154.5): Export PDF / Export CSV, then "Export ready – Download". Steps
 // 14-15 (DMS-155.5): Share… opens the Share report dialog, the confirmation
 // "Shared with UNICEF Sri Lanka (liaison@example.org)" follows, and the
-// report's shares are listed under the actions.
+// report's shares are listed under the actions. A3 (DMS-158.1): Close leaves
+// the report without exporting; nothing is stored except the report itself,
+// which can be reopened from Recent reports on the parameters screen.
 export default function ReportViewScreen() {
   const { reportId } = useParams();
   const passed = useLocation().state?.report;
@@ -165,9 +167,9 @@ export default function ReportViewScreen() {
       items: [share, ...(current?.reportId === report.id ? current.items : [])],
     }));
   };
-  const newReport = (
+  const closeReport = (
     <Button variant="outline" fullWidth={false} onClick={() => navigate('/reports')}>
-      New report
+      Close
     </Button>
   );
 
@@ -185,7 +187,7 @@ export default function ReportViewScreen() {
   if (!report) {
     return (
       <Screen>
-        <ScreenHeader title="Post-Event Report" rightSlot={newReport} />
+        <ScreenHeader title="Post-Event Report" rightSlot={closeReport} />
         {error ? (
           <Notice variant="error" className="mt-4">
             {error}
@@ -202,7 +204,7 @@ export default function ReportViewScreen() {
     <Screen>
       <ScreenHeader
         title={`Post-Event Report – ${report.event.name} – ${districtCount} district${districtCount === 1 ? '' : 's'}`}
-        rightSlot={newReport}
+        rightSlot={closeReport}
       />
       <p className="mt-1 text-[13px] text-muted">
         {formatDayRange(report.dateFrom, report.dateTo)} ·{' '}
