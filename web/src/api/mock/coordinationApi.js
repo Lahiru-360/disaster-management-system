@@ -567,6 +567,80 @@ async function dispatchTeam({ teamId, incidentLocation, priority }) {
   return { dispatch: { ...dispatch } };
 }
 
+// E3 (§13.9.1): the incident is queued as an UNASSIGNED dispatch - no team, no
+// deadline - and the DMC is asked for support unless the caller says not to.
+async function queueUnassigned({ incidentLocation, priority, supportRequested = true }) {
+  await delay();
+  takeFailure();
+  if (!PRIORITIES.includes(priority)) {
+    const error = apiError(400, 'VALIDATION_ERROR', 'Request validation failed.');
+    error.response.data.error.errors = [{ field: 'priority', message: 'must be a Priority' }];
+    throw error;
+  }
+
+  const createdAt = new Date().toISOString();
+  const by = DEMO_OFFICER;
+  const dispatch = {
+    id: `66fb0c1b2c3d4e5f6a7b8e${String(dispatches.length + 1).padStart(2, '0')}`,
+    status: 'UNASSIGNED',
+    team: null,
+    district: GAMPAHA,
+    incident: { id: INCIDENT.id, name: INCIDENT.name },
+    incidentLocation: { label: null, ...incidentLocation },
+    priority,
+    supportRequested,
+    createdBy: by,
+    createdAt,
+    ackDeadline: null,
+    declineReason: null,
+    statusHistory: [{ status: 'UNASSIGNED', at: createdAt, by }],
+  };
+  dispatches.push(dispatch);
+  return { dispatch: { ...dispatch } };
+}
+
+// E3 (§13.9.2): a free team takes a queued incident. Mirrors the server: a team
+// that is no longer AVAILABLE is 409 TEAM_NOT_AVAILABLE and the incident stays
+// queued; one that is not UNASSIGNED any more is 409 INVALID_DISPATCH_TRANSITION.
+async function assignTeam(dispatchId, teamId) {
+  await delay();
+  takeFailure();
+  const dispatch = dispatches.find((d) => d.id === dispatchId);
+  if (!dispatch) throw apiError(404, 'NOT_FOUND', 'Dispatch not found.');
+  const team = teams.find((t) => t.id === teamId);
+  if (!team) throw apiError(404, 'NOT_FOUND', 'Rescue team not found.');
+  if (dispatch.status !== 'UNASSIGNED') {
+    throw apiError(
+      409,
+      'INVALID_DISPATCH_TRANSITION',
+      `This dispatch is ${dispatch.status} and can't be assigned a team.`,
+    );
+  }
+  if (team.status !== 'AVAILABLE') {
+    throw apiError(
+      409,
+      'TEAM_NOT_AVAILABLE',
+      `${team.name} is ${team.status} and can't take a new dispatch.`,
+    );
+  }
+
+  const now = new Date();
+  dispatch.status = 'ASSIGNED';
+  dispatch.team = { id: team.id, name: team.name, organisation: team.organisation };
+  dispatch.ackDeadline = new Date(now.getTime() + ACK_TIMEOUT_MINUTES * 60 * 1000).toISOString();
+  dispatch.statusHistory.push({ status: 'ASSIGNED', at: now.toISOString(), by: DEMO_OFFICER });
+
+  team.status = 'DISPATCHED';
+  team.currentTask = {
+    dispatchId: dispatch.id,
+    status: 'ASSIGNED',
+    priority: dispatch.priority,
+    incidentLocation: dispatch.incidentLocation,
+  };
+  team.updatedAt = now.toISOString();
+  return { dispatch: { ...dispatch } };
+}
+
 // Newest first, optionally only some statuses, as the server's list (§13.7.3).
 async function listDispatches({ districtId, status } = {}) {
   await delay();
@@ -589,11 +663,20 @@ async function listRescueTeams({ districtId } = {}) {
  * Demo hooks, not part of the API: `failNext('network')` makes the next call
  * fail as if offline; `failNext('forbidden')` answers the next call with the
  * 403 a district officer gets for another district; `declineLatest(reason)`
- * plays the team lead declining the newest assignment from the field app.
+ * plays the team lead declining the newest assignment from the field app;
+ * `freeATeam()` plays a busy team finishing its job and coming available.
  */
 export const mockControls = {
   failNext(kind) {
     pendingFailure = kind;
+  },
+  // A team coming free (a lead completing a job): the first team still
+  // DISPATCHED is AVAILABLE again, so a queued incident can be assigned.
+  freeATeam() {
+    const team = teams.find((t) => t.status === 'DISPATCHED');
+    if (!team) return;
+    team.status = 'AVAILABLE';
+    team.currentTask = null;
   },
   // The team lead declining the newest ASSIGNED dispatch from the field app
   // (A3): the dispatch is DECLINED with the reason and the team is AVAILABLE
@@ -624,6 +707,8 @@ export default {
   logDistribution,
   listAvailableTeams,
   dispatchTeam,
+  queueUnassigned,
+  assignTeam,
   listDispatches,
   listRescueTeams,
 };

@@ -119,9 +119,38 @@ async function dispatchTeam({ teamId, incidentLocation, priority }) {
 }
 
 /**
+ * `POST /api/dispatches/unassigned` (§13.9.1, E3) - no team is available, so the
+ * incident is queued as an UNASSIGNED dispatch and, unless `supportRequested`
+ * is false, every DMC officer is asked for rescue support. Resolves with
+ * `{ dispatch }`, with `team: null` and `ackDeadline: null`. Rejects with 409
+ * NO_ACTIVE_INCIDENT when the district has no incident.
+ */
+async function queueUnassigned({ incidentLocation, priority, supportRequested = true }) {
+  const response = await client.post('/dispatches/unassigned', {
+    incidentLocation,
+    priority,
+    supportRequested,
+  });
+  return response.data.data;
+}
+
+/**
+ * `POST /api/dispatches/:id/assign` (§13.9.2, E3) - gives a queued incident a
+ * team that is free now. Resolves with `{ dispatch }`, ASSIGNED, with a new
+ * `ackDeadline`. Rejects with 409 TEAM_NOT_AVAILABLE when the team was taken
+ * meanwhile, and 409 INVALID_DISPATCH_TRANSITION when the incident is no
+ * longer in the queue.
+ */
+async function assignTeam(dispatchId, teamId) {
+  const response = await client.post(`/dispatches/${dispatchId}/assign`, { teamId });
+  return response.data.data;
+}
+
+/**
  * `GET /api/dispatches` (§13.7.3) - the district's dispatches, newest first,
  * at most 100. `status` is one DispatchStatus or an array of them; the console
- * asks for `['DECLINED']` to prompt a reassignment (A3.2). A district officer
+ * asks for `['DECLINED']` to prompt a reassignment (A3.2) and `['UNASSIGNED']`
+ * for the unassigned queue (E3). A district officer
  * may leave out `districtId` (their own).
  */
 async function listDispatches({ districtId, status } = {}) {
@@ -151,6 +180,8 @@ export default {
   logDistribution,
   listAvailableTeams,
   dispatchTeam,
+  queueUnassigned,
+  assignTeam,
   listDispatches,
   listRescueTeams,
 };
