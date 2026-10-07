@@ -30,6 +30,7 @@ export class RescueTeamService {
    */
   async list(user, { districtId } = {}) {
     const district = await this.#districtScope.readableDistrict(user, districtId);
+    await this.#dispatchService.markOverdueUnresponsive({ district });
     const docs = await this.#rescueTeamModel
       .find({ district })
       .sort({ name: 1 })

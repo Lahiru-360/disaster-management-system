@@ -89,6 +89,9 @@ export class OperationalPictureService {
       ...(incident ? { distributedAt: { $gte: incident.startDate } } : {}),
     };
 
+    // A team that never answered shows as unavailable, not still dispatched.
+    await this.#dispatchService.markOverdueUnresponsive({ district: district._id });
+
     const [shelterDocs, teamDocs, stockDocs, recentDocs, distributedByOrganisation] =
       await Promise.all([
         this.#shelterModel
