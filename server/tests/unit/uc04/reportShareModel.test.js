@@ -85,4 +85,19 @@ describe('ReportShare model', () => {
 
     expect(Object.keys(errors)).toEqual(['message']);
   });
+
+  it('DMS-162.1: starts at one attempt with no failure reason', async () => {
+    const saved = await ReportShare.create(shareFields());
+
+    expect(saved.attempts).toBe(1);
+    expect(saved.failureReason).toBeNull();
+  });
+
+  it('DMS-162.1: refuses fewer than one attempt and a failure reason over 500 characters', async () => {
+    const errors = await errorsOf(
+      new ReportShare(shareFields({ attempts: 0, failureReason: 'x'.repeat(501) })),
+    );
+
+    expect(Object.keys(errors).sort()).toEqual(['attempts', 'failureReason']);
+  });
 });

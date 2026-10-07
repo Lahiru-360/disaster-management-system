@@ -161,3 +161,99 @@ describe('ShareService.share', () => {
     );
   });
 });
+
+describe('ShareService.retry (E4)', () => {
+  const failedShare = (fields = {}) => ({
+    status: 'FAILED',
+    attempts: 1,
+    failureReason: 'Could not send the email. Please try again.',
+    report: 'r-1',
+    recipientEmail: 'liaison@example.org',
+    message: 'Post-event summary',
+    sharedAt: new Date('2026-10-07T09:00:00.000Z'),
+    sharedBy: { _id: 'u-1', name: 'Kasun Silva' },
+    export: { _id: 'x-1', format: 'PDF', fileUrl: 'https://files/reports/a.pdf' },
+    organisation: { _id: 'o-1', name: 'UNICEF Sri Lanka' },
+    save: jest.fn(async () => undefined),
+    toObject() {
+      const plain = Object.entries(this).filter(([, value]) => typeof value !== 'function');
+      return { _id: 's-1', ...Object.fromEntries(plain) };
+    },
+    ...fields,
+  });
+
+  const setupRetry = (share) => {
+    const ctx = setup();
+    ctx.shareModel.findById = jest.fn(() => ({ populate: async () => share }));
+    return ctx;
+  };
+
+  it('TC-48 E4: a retry that works makes the same share SENT with a new time and attempts + 1', async () => {
+    const share = failedShare();
+    const { service, emailService } = setupRetry(share);
+
+    const result = await service.retry('5f1d7f3e9b1e8a0017a3c111');
+
+    expect(emailService.send).toHaveBeenCalledTimes(1);
+    expect(share.save).toHaveBeenCalledTimes(1);
+    expect(result).toEqual(
+      expect.objectContaining({
+        shareId: 's-1',
+        status: 'SENT',
+        attempts: 2,
+        failureReason: null,
+        sharedAt: new Date(NOW),
+      }),
+    );
+  });
+
+  it('TC-49 E4: a retry that fails again stays FAILED, raises attempts and keeps sharedAt', async () => {
+    const share = failedShare();
+    const { service, emailService } = setupRetry(share);
+    emailService.send.mockRejectedValue(new Error('socket hang up'));
+
+    await expect(service.retry('5f1d7f3e9b1e8a0017a3c111')).rejects.toMatchObject({
+      status: 502,
+      code: 'EMAIL_UNAVAILABLE',
+    });
+
+    expect(share).toEqual(
+      expect.objectContaining({
+        status: 'FAILED',
+        attempts: 2,
+        failureReason: 'socket hang up',
+        sharedAt: new Date('2026-10-07T09:00:00.000Z'),
+      }),
+    );
+    expect(share.save).toHaveBeenCalledTimes(1);
+  });
+
+  it('TC-50 E4: a SENT share is 409 INVALID_SHARE_TRANSITION, with nothing sent or saved', async () => {
+    const share = failedShare({ status: 'SENT' });
+    const { service, emailService } = setupRetry(share);
+
+    await expect(service.retry('5f1d7f3e9b1e8a0017a3c111')).rejects.toMatchObject({
+      status: 409,
+      code: 'INVALID_SHARE_TRANSITION',
+    });
+
+    expect(emailService.send).not.toHaveBeenCalled();
+    expect(share.save).not.toHaveBeenCalled();
+  });
+
+  it('DMS-162.4: a share no one has, or an invalid id, is 404', async () => {
+    const { service, shareModel } = setupRetry(null);
+
+    await expect(service.retry('5f1d7f3e9b1e8a0017a3c111')).rejects.toMatchObject({ status: 404 });
+    await expect(service.retry('not-an-id')).rejects.toMatchObject({ status: 404 });
+    expect(shareModel.findById).toHaveBeenCalledTimes(1);
+  });
+
+  it('DMS-162.4: names the sharer in the retried email, or a DMC officer if the account is gone', async () => {
+    const { service, emailService } = setupRetry(failedShare({ sharedBy: null }));
+
+    await service.retry('5f1d7f3e9b1e8a0017a3c111');
+
+    expect(emailService.send.mock.calls[0][0].text).toContain('a DMC officer');
+  });
+});
