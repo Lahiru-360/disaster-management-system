@@ -251,6 +251,7 @@ export class DispatchService {
    */
   async list(user, { districtId, status = [] } = {}) {
     const district = await this.#districtScope.readableDistrict(user, districtId);
+    await this.markOverdueUnresponsive({ district });
     const filter = { district };
     if (status.length > 0) filter.status = { $in: status };
 
@@ -270,10 +271,14 @@ export class DispatchService {
    * @returns {Promise<{ team: object|null, dispatches: object[] }>}
    */
   async listMine(user) {
+    const own = await this.#rescueTeamModel.exists({ lead: user._id });
+    if (!own) return { team: null, dispatches: [] };
+    // An unanswered assignment shows as expired now, not at the next job tick,
+    // and the team is read after, so its status agrees.
+    await this.markOverdueUnresponsive({ team: own._id });
     const team = await this.#rescueTeamModel
-      .findOne({ lead: user._id })
+      .findById(own._id)
       .populate(CoordinationPresenter.TEAM_POPULATE);
-    if (!team) return { team: null, dispatches: [] };
 
     const [open, lastClosed] = await Promise.all([
       this.#dispatchModel
@@ -378,11 +383,14 @@ export class DispatchService {
   // domain class checks the move; the update only applies if the status is
   // still the one the move started from, so two taps can't both win.
   async #leadMoves(user, dispatchId, action, ...args) {
-    const doc = await this.#findDispatch(dispatchId);
+    let doc = await this.#findDispatch(dispatchId);
     const team = await this.#rescueTeamModel.findById(doc.team);
     if (!team || String(team.lead) !== String(user._id)) {
       throw new ApiError(403, 'FORBIDDEN', 'Only the lead of the assigned team can do this.');
     }
+    // Past its deadline the dispatch is UNRESPONSIVE before the move is tried,
+    // so a late answer is refused even if the timeout job hasn't run yet.
+    if (await this.#markUnresponsive(doc)) doc = await this.#findDispatch(dispatchId);
 
     const dispatch = Dispatch.fromDocument(doc);
     const from = dispatch.status;
@@ -413,6 +421,59 @@ export class DispatchService {
       await this.#rescueTeamModel.updateOne({ _id: team._id }, { $set: teamUpdate });
     }
     return { updated, team };
+  }
+
+  /**
+   * UC03 E4.1 (contract §13.10): marks every ASSIGNED dispatch in `scope`
+   * whose acknowledgement deadline has passed as UNRESPONSIVE, sets its team
+   * UNAVAILABLE and tells the officer who created it. Run by the timeout job
+   * over everything (`scope` empty), and lazily by reads and actions over
+   * the part they touch - a district, a team - so the state is right between
+   * job ticks.
+   * @param {object} [scope] A filter on Dispatch, e.g. `{ district }` or `{ team }`.
+   * @returns {Promise<number>} How many this call marked.
+   */
+  async markOverdueUnresponsive(scope = {}) {
+    const overdue = await this.#dispatchModel.find({
+      ...scope,
+      status: DispatchStatus.ASSIGNED,
+      ackDeadline: { $lt: this.#clock.now() },
+    });
+    let marked = 0;
+    for (const doc of overdue) {
+      if (await this.#markUnresponsive(doc)) marked += 1;
+    }
+    return marked;
+  }
+
+  // One overdue dispatch. The update only applies while it is still ASSIGNED,
+  // so when the job and a request race, or the lead answers at the last
+  // moment, exactly one of them moves it and only that one notifies.
+  async #markUnresponsive(doc) {
+    const dispatch = Dispatch.fromDocument(doc);
+    const now = this.#clock.now();
+    if (!dispatch.isOverdue(now)) return false;
+
+    const { teamStatus } = dispatch.markUnresponsive(now);
+    const [entry] = dispatch.statusHistory.slice(-1);
+    const updated = await this.#dispatchModel.findOneAndUpdate(
+      { _id: doc._id, status: DispatchStatus.ASSIGNED },
+      { $set: { status: dispatch.status }, $push: { statusHistory: entry } },
+      { returnDocument: 'after' },
+    );
+    if (!updated) return false;
+
+    const team = await this.#rescueTeamModel.findByIdAndUpdate(
+      doc.team,
+      { $set: { status: teamStatus } },
+      { returnDocument: 'after' },
+    );
+    await this.#notifyCreator(updated, {
+      type: NotificationType.DISPATCH_UNRESPONSIVE,
+      title: `No response from ${team?.name ?? 'the team'}`,
+      body: `No response from ${team?.name ?? 'the team'} – reassign`,
+    });
+    return true;
   }
 
   async #findTeam(teamId) {

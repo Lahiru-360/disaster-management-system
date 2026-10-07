@@ -25,7 +25,7 @@ import SectionLabel from '../../components/ui/SectionLabel';
 import Select from '../../components/ui/Select';
 import { ROLES } from '../../constants/roles';
 import useAuth from '../../hooks/useAuth';
-import useDeclinedDispatches from '../../hooks/useDeclinedDispatches';
+import useUnansweredDispatches from '../../hooks/useUnansweredDispatches';
 
 const errorMessage = (error, fallback) => error?.response?.data?.error?.message ?? fallback;
 
@@ -61,7 +61,8 @@ export default function ShelterResourcesScreen() {
   // Whether the Log Relief Supply dialog (steps 12-13) is open.
   const [logSupplyOpen, setLogSupplyOpen] = useState(false);
   // Whether the Dispatch Rescue Team dialog (steps 6-9) is open, and for what:
-  // `reassigning` is the declined dispatch it was reopened for (A3.3).
+  // `reassigning` is the declined or unresponsive dispatch it was reopened for
+  // (A3.3, E4.2).
   const [dispatchOpen, setDispatchOpen] = useState(false);
   const [reassigning, setReassigning] = useState(null);
   // The queued incident the dialog was reopened to give a team (E3).
@@ -125,7 +126,7 @@ export default function ShelterResourcesScreen() {
 
   const handleDispatched = () => {
     setDispatchOpen(false);
-    if (reassigning) handledDecline(reassigning);
+    if (reassigning) handledUnanswered(reassigning);
     setReassigning(null);
     setAssigning(null);
     loadPicture();
@@ -136,22 +137,22 @@ export default function ShelterResourcesScreen() {
   // support. A declined dispatch that led here has been dealt with too.
   const handleQueued = () => {
     setDispatchOpen(false);
-    if (reassigning) handledDecline(reassigning);
+    if (reassigning) handledUnanswered(reassigning);
     setReassigning(null);
     loadUnassigned();
   };
 
-  // A declined dispatch has been dealt with (reassigned or dismissed): drop its
+  // A declined or unresponsive dispatch has been dealt with (reassigned or dismissed): drop its
   // prompt, and the inbox link's `?dispatch=` that pointed at it.
-  function handledDecline(dispatch) {
-    dismissDecline(dispatch.id);
+  function handledUnanswered(dispatch) {
+    dismissUnanswered(dispatch.id);
     if (searchParams.get('dispatch') === dispatch.id) {
       setSearchParams({}, { replace: true });
     }
   }
 
-  // A3.3: choose another team for the declined dispatch's incident, with the
-  // team that declined left out.
+  // A3.3, E4.2: choose another team for the dispatch's incident, with the team
+  // that declined or never answered left out.
   const openReassign = (dispatch) => {
     setReassigning(dispatch);
     setDispatchOpen(true);
@@ -169,6 +170,23 @@ export default function ShelterResourcesScreen() {
     setAssigning(null);
   };
 
+  // E4: an UNAVAILABLE team (it never answered) goes back in the available list.
+  const [markingTeamId, setMarkingTeamId] = useState(null);
+  const [markError, setMarkError] = useState(null);
+
+  const handleMarkAvailable = async (team) => {
+    setMarkingTeamId(team.id);
+    setMarkError(null);
+    try {
+      await coordinationApi.markTeamAvailable(team.id);
+      await loadPicture();
+    } catch (error) {
+      setMarkError(errorMessage(error, `${team.name} could not be marked available.`));
+    } finally {
+      setMarkingTeamId(null);
+    }
+  };
+
   const handleShelterRegistered = () => {
     setRegisterOpen(false);
     loadPicture();
@@ -183,16 +201,18 @@ export default function ShelterResourcesScreen() {
   // an incident is active (the server refuses otherwise); the DMC just reads.
   const canWrite = !isDmc && Boolean(picture?.incident);
 
-  // A3.2: while the dashboard is open, ask every 15 s whether a team declined.
+  // A3.2, E4.2: while the dashboard is open, ask every 15 s whether a team
+  // declined or never answered.
   const [searchParams, setSearchParams] = useSearchParams();
-  const { declined, dismiss: dismissDecline } = useDeclinedDispatches({
+  const { unanswered, dismiss: dismissUnanswered } = useUnansweredDispatches({
     enabled: canWrite,
     userId: user?.id,
     focusId: searchParams.get('dispatch'),
-    onNewDecline: loadPicture,
+    onNewDispatch: loadPicture,
   });
 
-  // What the Dispatch dialog opens with: a declined dispatch to reassign (A3.3),
+  // What the Dispatch dialog opens with: a declined or unresponsive dispatch to
+  // reassign (A3.3, E4.2),
   // a queued incident to give a team (E3), or nothing for a new dispatch.
   let dispatchInitial;
   if (reassigning) {
@@ -284,9 +304,9 @@ export default function ShelterResourcesScreen() {
 
               {canWrite ? (
                 <ReassignPrompt
-                  dispatches={declined}
+                  dispatches={unanswered}
                   onReassign={openReassign}
-                  onDismiss={handledDecline}
+                  onDismiss={handledUnanswered}
                 />
               ) : null}
 
@@ -312,7 +332,16 @@ export default function ShelterResourcesScreen() {
 
               <section>
                 <SectionLabel className="mb-2">Rescue Teams</SectionLabel>
-                <RescueTeamsTable teams={picture.teams} />
+                {markError ? (
+                  <Notice variant="error" className="mb-2">
+                    {markError}
+                  </Notice>
+                ) : null}
+                <RescueTeamsTable
+                  teams={picture.teams}
+                  onMarkAvailable={canWrite ? handleMarkAvailable : undefined}
+                  busyId={markingTeamId}
+                />
               </section>
 
               <section>

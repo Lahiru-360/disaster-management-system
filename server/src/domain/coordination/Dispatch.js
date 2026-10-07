@@ -24,6 +24,9 @@ export class Dispatch {
       acknowledge: { to: DispatchStatus.ACKNOWLEDGED, team: null },
       // A3: the team never left, so it is free again.
       decline: { to: DispatchStatus.DECLINED, team: TeamStatus.AVAILABLE },
+      // E4: nobody answered before the deadline, so the team can't be counted
+      // on until an officer marks it available again.
+      markUnresponsive: { to: DispatchStatus.UNRESPONSIVE, team: TeamStatus.UNAVAILABLE },
     },
     [DispatchStatus.ACKNOWLEDGED]: {
       markOnSite: { to: DispatchStatus.ON_SITE, team: TeamStatus.ON_SITE },
@@ -38,6 +41,7 @@ export class Dispatch {
     assign: 'assigned a team',
     acknowledge: 'acknowledged',
     decline: 'declined',
+    markUnresponsive: 'marked unresponsive',
     markOnSite: 'marked on site',
     complete: 'completed',
   };
@@ -175,6 +179,40 @@ export class Dispatch {
     const result = this.#move('decline', by, at);
     this.#declineReason = trimmed;
     return result;
+  }
+
+  /**
+   * Whether the lead has run out of time to answer (UC03 E4): the dispatch is
+   * still ASSIGNED and `now` is after the acknowledgement deadline. At exactly
+   * the deadline there is still time, so it is not overdue.
+   * @param {Date} now
+   * @returns {boolean}
+   */
+  isOverdue(now) {
+    return (
+      this.#status === DispatchStatus.ASSIGNED &&
+      this.#ackDeadline !== null &&
+      new Date(now).getTime() > this.#ackDeadline.getTime()
+    );
+  }
+
+  /**
+   * UC03 E4.1: nobody answered before the deadline. Only an overdue ASSIGNED
+   * dispatch can be marked; the team becomes UNAVAILABLE. Recorded in the
+   * history with no author, since the system does it, not a person.
+   * @param {Date} at When it is being marked.
+   * @returns {{ teamStatus: string|null }}
+   * @throws {InvalidDispatchTransitionError} From any status but ASSIGNED.
+   * @throws {Error} When the deadline hasn't passed yet.
+   */
+  markUnresponsive(at) {
+    if (!this.can('markUnresponsive')) {
+      throw new InvalidDispatchTransitionError(this.#status, 'marked unresponsive');
+    }
+    if (!this.isOverdue(at)) {
+      throw new Error('A dispatch can only be marked unresponsive after its deadline');
+    }
+    return this.#move('markUnresponsive', null, at);
   }
 
   /**
