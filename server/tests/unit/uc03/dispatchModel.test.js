@@ -56,6 +56,27 @@ describe('Dispatch model', () => {
     ]);
   });
 
+  it('E3: an UNASSIGNED dispatch needs no team or deadline, and asks for no support by default', async () => {
+    const doc = dispatch({
+      team: undefined,
+      status: DispatchStatus.UNASSIGNED,
+      ackDeadline: undefined,
+    });
+
+    expect(await errorsOf(doc)).toEqual({});
+    expect(doc.team).toBeNull();
+    expect(doc.ackDeadline).toBeNull();
+    expect(doc.supportRequested).toBe(false);
+  });
+
+  it('E3: only an UNASSIGNED dispatch may go without a team', async () => {
+    for (const status of Object.values(DispatchStatus).filter(
+      (s) => s !== DispatchStatus.UNASSIGNED,
+    )) {
+      expect(Object.keys(await errorsOf(dispatch({ team: undefined, status })))).toEqual(['team']);
+    }
+  });
+
   it('Main 6: refuses a priority or status outside its enum, and a location off the globe', async () => {
     const errors = await errorsOf(
       dispatch({ priority: 'URGENT', status: 'LOST', incidentLocation: { lat: 91, lng: 0 } }),
