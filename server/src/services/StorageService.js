@@ -9,6 +9,7 @@ export class StorageService {
     'image/png': '.png',
     'image/jpeg': '.jpg',
     'application/pdf': '.pdf',
+    'text/csv': '.csv',
   };
 
   #client;
