@@ -67,6 +67,7 @@
     "src/services/ShelterService.js",
     "src/services/RescueTeamService.js",
     "src/services/DispatchService.js",
+    "src/jobs/DispatchTimeoutJob.js",
     "src/controllers/OperationalPictureController.js",
     "src/controllers/ShelterController.js",
     "src/controllers/RescueTeamController.js",
