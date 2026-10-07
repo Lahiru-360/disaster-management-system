@@ -98,6 +98,9 @@
     "src/services/PostEventReportService.js",
     "src/validators/PostEventReportValidator.js",
     "src/controllers/PostEventReportController.js",
-    "src/routes/PostEventReportRoutes.js"
+    "src/routes/PostEventReportRoutes.js",
+    "src/enums/ExportFormat.js",
+    "src/models/ReportExport.js",
+    "src/services/ExportService.js"
   ]
 }
