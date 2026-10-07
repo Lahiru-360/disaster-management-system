@@ -1,4 +1,5 @@
 import Joi from 'joi';
+import { DispatchStatus } from '../enums/DispatchStatus.js';
 import { Priority } from '../enums/Priority.js';
 import { SupplyType } from '../enums/SupplyType.js';
 
@@ -25,6 +26,22 @@ export class CoordinationValidator {
       .pattern(/^[0-9a-fA-F]{24}(,[0-9a-fA-F]{24})*$/)
       .messages({ 'string.pattern.base': '{#label} must be comma-separated ids' })
       .custom((value) => value.split(',')),
+  });
+
+  // The officer console's dispatch list (§13.7.3): one DispatchStatus or
+  // several separated by commas, e.g. "DECLINED,UNRESPONSIVE". Handed on as an array.
+  static dispatchListQuery = Joi.object({
+    districtId: objectId,
+    status: Joi.string()
+      .custom((value, helpers) => {
+        const statuses = value.split(',');
+        return statuses.every((status) => Object.values(DispatchStatus).includes(status))
+          ? statuses
+          : helpers.error('dispatch.status');
+      })
+      .messages({
+        'dispatch.status': `{#label} must be DispatchStatus values separated by commas (${Object.values(DispatchStatus).join(', ')})`,
+      }),
   });
 
   // UC03 steps 8-9 (§13.7.2).

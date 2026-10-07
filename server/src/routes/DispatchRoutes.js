@@ -23,6 +23,17 @@ export class DispatchRoutes extends BaseRoutes {
       dispatchController.dispatch,
     );
 
+    // Console: the district's dispatches, e.g. the declined ones to reassign.
+    // requireRole admits duty officers too, since a duty officer is a DMC
+    // officer; which district each may read is the service's check.
+    router.get(
+      '/',
+      authMiddleware.requireAuth,
+      authMiddleware.requireRole(Role.DISTRICT_OFFICER, Role.DMC_OFFICER),
+      RequestValidator.query(CoordinationValidator.dispatchListQuery),
+      dispatchController.list,
+    );
+
     // Field app: the lead's assignments, before /:id so "mine" is never an id.
     router.get(
       '/mine',

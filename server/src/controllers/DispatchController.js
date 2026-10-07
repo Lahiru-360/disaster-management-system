@@ -24,6 +24,12 @@ export class DispatchController extends BaseController {
     ApiResponse.success(res, { dispatch }, 201);
   }
 
+  async list(req, res) {
+    const dispatches = await this.#dispatchService.list(req.user, req.query);
+
+    ApiResponse.success(res, { dispatches }, 200);
+  }
+
   async listMine(req, res) {
     const mine = await this.#dispatchService.listMine(req.user);
 

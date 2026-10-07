@@ -3183,9 +3183,38 @@ For the officer console: the unassigned queue (13.9), and the decline and timeou
 | Query param | Rule |
 |---|---|
 | `districtId` | As in 13.3. |
-| `status` | Optional. One `DispatchStatus`, or several separated by commas, e.g. `DECLINED,UNRESPONSIVE`. |
+| `status` | Optional. One `DispatchStatus`, or several separated by commas, e.g. `DECLINED,UNRESPONSIVE`. Any other value → `400 VALIDATION_ERROR` on `status`. Left out, every status is listed. |
 
-**Success — `200 OK`**: `{ "dispatches": [ ... ] }`, dispatch objects newest first, at most 100.
+**Success — `200 OK`**: `{ "dispatches": [ ... ] }`, the district's dispatch objects (13.2), newest first by `createdAt`, at most 100. Nothing matching is `200` with `[]`. This is a read, so it works without an active incident.
+
+```json
+{
+  "success": true,
+  "data": {
+    "dispatches": [
+      {
+        "id": "66fb0c1b2c3d4e5f6a7b8e01",
+        "status": "DECLINED",
+        "declineReason": "Vehicle unavailable",
+        "team": { "id": "66fb0b1b2c3d4e5f6a7b8d01", "name": "Team Alpha", "organisation": { "id": "66f7c1a2b3c4d5e6f7a8b9d5", "name": "SL Army", "type": "ARMED_FORCES" } },
+        "incidentLocation": { "lat": 6.9555, "lng": 79.9865, "label": "Biyagama – flooded road" },
+        "priority": "HIGH",
+        "createdBy": { "id": "66f1a2b3c4d5e6f7a8b9c0d6", "name": "Dilani Wickramasinghe" },
+        "...": "the rest of the dispatch object"
+      }
+    ]
+  }
+}
+```
+
+The console uses it for the reassign prompt: a `DECLINED` dispatch ("Team Alpha declined (Vehicle unavailable) – choose another team", 13.8) reopens the Dispatch dialog with the same `incidentLocation` and `priority`, asking 13.6 with `excludeTeamIds` set to the declined `team.id`.
+
+| Status | Code | When |
+|---|---|---|
+| `400` | `VALIDATION_ERROR` | `districtId` missing for a DMC officer or malformed, or a `status` that isn't a `DispatchStatus` (or a comma-separated list of them). |
+| `401` | `AUTH_HEADER_MISSING`, `AUTH_HEADER_MALFORMED`, `TOKEN_EXPIRED`, `TOKEN_INVALID` | As in 13.13. |
+| `403` | `FORBIDDEN` | A role other than `district_officer` or a DMC officer, or a district officer asking for another district. |
+| `404` | `NOT_FOUND` | A DMC officer asked for a district that doesn't exist. |
 
 #### 13.7.4 Dispatch detail — `GET /api/dispatches/:id`
 

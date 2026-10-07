@@ -25,6 +25,9 @@ export class DispatchService {
   static #OPEN = [DispatchStatus.ASSIGNED, DispatchStatus.ACKNOWLEDGED, DispatchStatus.ON_SITE];
   static #CLOSED = [DispatchStatus.COMPLETED, DispatchStatus.DECLINED, DispatchStatus.UNRESPONSIVE];
 
+  // How many dispatches the console's list returns (§13.7.3).
+  static #LIST_LIMIT = 100;
+
   #dispatchModel;
   #rescueTeamModel;
   #districtScope;
@@ -134,6 +137,28 @@ export class DispatchService {
 
     await this.#notifyLead(team, doc);
     return this.#present(doc);
+  }
+
+  /**
+   * The officer console's dispatch list (contract §13.7.3): the dispatches of
+   * the district the caller may see, optionally only some statuses, newest
+   * first, at most 100. The console polls it for declined or unresponsive
+   * dispatches (A3, E4).
+   * @param {object} user The signed-in district or DMC officer.
+   * @param {{ districtId?: string, status?: string[] }} [query] Validated by the route.
+   * @returns {Promise<object[]>} Dispatch objects (§13.2).
+   */
+  async list(user, { districtId, status = [] } = {}) {
+    const district = await this.#districtScope.readableDistrict(user, districtId);
+    const filter = { district };
+    if (status.length > 0) filter.status = { $in: status };
+
+    const docs = await this.#dispatchModel
+      .find(filter)
+      .sort({ createdAt: -1 })
+      .limit(DispatchService.#LIST_LIMIT)
+      .populate(CoordinationPresenter.DISPATCH_POPULATE);
+    return docs.map((doc) => CoordinationPresenter.dispatch(doc));
   }
 
   /**
