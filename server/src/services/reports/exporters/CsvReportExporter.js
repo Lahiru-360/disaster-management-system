@@ -10,7 +10,7 @@ export class CsvReportExporter extends ReportExporter {
   static #HEADER = ['section', 'date', 'district', 'item', 'measure', 'value', 'incomplete'];
 
   // Spreadsheets read UTF-8 (the en dashes in names) only with a byte-order mark.
-  static #BOM = '﻿';
+  static #BOM = '\uFEFF';
 
   static #SECTION_ROWS = {
     [ReportSectionKey.ALERT_TIMELINE]: (result, add) => {
