@@ -1,13 +1,16 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import { areasApi, coordinationApi } from '../../api';
+import DispatchDialog from '../../components/shelterResources/DispatchDialog';
 import IncidentHeader from '../../components/shelterResources/IncidentHeader';
+import LogReliefSupplyDialog from '../../components/shelterResources/LogReliefSupplyDialog';
 import LiveOpsMap from '../../components/shelterResources/LiveOpsMap';
 import OrganisationFilter from '../../components/shelterResources/OrganisationFilter';
 import RescueTeamsTable from '../../components/shelterResources/RescueTeamsTable';
 import ShelterStatusTable from '../../components/shelterResources/ShelterStatusTable';
 import SummaryCards from '../../components/shelterResources/SummaryCards';
 import SupplyLogTable from '../../components/shelterResources/SupplyLogTable';
+import UpdateOccupancyDialog from '../../components/shelterResources/UpdateOccupancyDialog';
 import Button from '../../components/ui/Button';
 import EmptyState from '../../components/ui/EmptyState';
 import Loader from '../../components/ui/Loader';
@@ -25,8 +28,9 @@ const errorMessage = (error, fallback) => error?.response?.data?.error?.message 
 // Coordination dashboard. A district officer sees their own district; a DMC
 // or duty officer picks one first, since the server requires it for them.
 // The dashboard refetches whenever the district or the organisation filter
-// changes, and will again once the dispatch, supply and shelter dialogs
-// (DMS-141 to DMS-144) can call back into it.
+// changes, and again after the occupancy (DMS-141), dispatch (DMS-142) and
+// supply (DMS-143) dialogs save, as the shelter dialog (DMS-144) will once
+// built.
 export default function ShelterResourcesScreen() {
   const { user } = useAuth();
   const isDmc = [ROLES.DMC_OFFICER, ROLES.DUTY_OFFICER].includes(user?.role);
@@ -41,6 +45,13 @@ export default function ShelterResourcesScreen() {
 
   const [picture, setPicture] = useState(null);
   const [pictureError, setPictureError] = useState(null);
+
+  // The shelter whose row opened the Update Shelter Occupancy dialog (step 3).
+  const [occupancyShelterId, setOccupancyShelterId] = useState(null);
+  // Whether the Log Relief Supply dialog (steps 12-13) is open.
+  const [logSupplyOpen, setLogSupplyOpen] = useState(false);
+  // Whether the Dispatch Rescue Team dialog (steps 6-9) is open.
+  const [dispatchOpen, setDispatchOpen] = useState(false);
 
   useEffect(() => {
     if (!isDmc) return;
@@ -71,6 +82,25 @@ export default function ShelterResourcesScreen() {
     if (!ready) return;
     loadPicture();
   }, [ready, loadPicture]);
+
+  const handleOccupancyUpdated = () => {
+    setOccupancyShelterId(null);
+    loadPicture();
+  };
+
+  const handleDispatched = () => {
+    setDispatchOpen(false);
+    loadPicture();
+  };
+
+  const handleSupplyLogged = () => {
+    setLogSupplyOpen(false);
+    loadPicture();
+  };
+
+  // Only a district officer updates occupancy or logs supplies, and only while
+  // an incident is active (the server refuses otherwise); the DMC just reads.
+  const canWrite = !isDmc && Boolean(picture?.incident);
 
   const districtName = isDmc
     ? districts?.find((d) => d.id === districtId)?.name
@@ -119,10 +149,20 @@ export default function ShelterResourcesScreen() {
           ) : (
             <>
               <IncidentHeader incident={picture.incident} districtName={districtName}>
-                <Button variant="outline" fullWidth={false} disabled={!picture.incident}>
+                <Button
+                  variant="outline"
+                  fullWidth={false}
+                  disabled={!canWrite}
+                  onClick={() => setDispatchOpen(true)}
+                >
                   Dispatch Rescue Team
                 </Button>
-                <Button variant="outline" fullWidth={false} disabled={!picture.incident}>
+                <Button
+                  variant="outline"
+                  fullWidth={false}
+                  disabled={!canWrite}
+                  onClick={() => setLogSupplyOpen(true)}
+                >
                   Log Relief Supply
                 </Button>
                 <Button variant="outline" fullWidth={false} disabled={!picture.incident}>
@@ -144,7 +184,10 @@ export default function ShelterResourcesScreen() {
 
               <section>
                 <SectionLabel className="mb-2">Shelter Status</SectionLabel>
-                <ShelterStatusTable shelters={picture.shelters} />
+                <ShelterStatusTable
+                  shelters={picture.shelters}
+                  onSelect={canWrite ? (row) => setOccupancyShelterId(row.id) : undefined}
+                />
               </section>
 
               <section>
@@ -160,6 +203,31 @@ export default function ShelterResourcesScreen() {
           )}
         </div>
       )}
+
+      {occupancyShelterId && picture ? (
+        <UpdateOccupancyDialog
+          shelters={picture.shelters}
+          initialShelterId={occupancyShelterId}
+          onClose={() => setOccupancyShelterId(null)}
+          onUpdated={handleOccupancyUpdated}
+        />
+      ) : null}
+
+      {dispatchOpen && picture ? (
+        <DispatchDialog
+          mapCenter={picture.shelters[0]?.location}
+          onClose={() => setDispatchOpen(false)}
+          onDispatched={handleDispatched}
+        />
+      ) : null}
+
+      {logSupplyOpen && picture ? (
+        <LogReliefSupplyDialog
+          shelters={picture.shelters}
+          onClose={() => setLogSupplyOpen(false)}
+          onLogged={handleSupplyLogged}
+        />
+      ) : null}
     </Screen>
   );
 }

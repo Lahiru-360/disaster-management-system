@@ -1,3 +1,4 @@
+import { dispatchController } from '../controllers/DispatchController.js';
 import { rescueTeamController } from '../controllers/RescueTeamController.js';
 import { Role } from '../enums/Role.js';
 import { authMiddleware } from '../middleware/AuthMiddleware.js';
@@ -20,6 +21,15 @@ export class RescueTeamRoutes extends BaseRoutes {
       authMiddleware.requireRole(Role.DISTRICT_OFFICER, Role.DMC_OFFICER),
       RequestValidator.query(CoordinationValidator.districtQuery),
       rescueTeamController.list,
+    );
+
+    // UC03 step 7: the nearest available teams, for the officer dispatching.
+    router.get(
+      '/available',
+      authMiddleware.requireAuth,
+      authMiddleware.requireRole(Role.DISTRICT_OFFICER),
+      RequestValidator.query(CoordinationValidator.availableQuery),
+      dispatchController.findAvailableTeams,
     );
   }
 }

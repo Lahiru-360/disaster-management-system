@@ -74,9 +74,32 @@ async function update(id, { severity, areaIds, message, replacesDraftId }) {
   return response.data.data;
 }
 
+// A3.1 (§12.11): every BROADCAST or UPDATED alert, most recently issued
+// first, each with originalRecipientCount; resolves with { alerts }.
+async function listActive() {
+  const response = await client.get('/hazard-alerts', { params: { status: 'active' } });
+  return response.data.data;
+}
+
+// A3.2-A3.3 (§12.15): ends the active alert and sends the all-clear to its
+// original recipients; resolves with { alert, summary } for the all-clear.
+async function allClear(id) {
+  const response = await client.post(`/hazard-alerts/${id}/all-clear`, {});
+  return response.data.data;
+}
+
 // Step 14: the per-channel counts; resolves with { alert, summary }.
 async function getDeliverySummary(id) {
   const response = await client.get(`/hazard-alerts/${id}/delivery-summary`);
+  return response.data.data;
+}
+
+// E3.3 (§12.16): one page of the citizens the current version reached on no
+// channel; resolves with { version, citizens, page, limit, total }.
+async function getUnreached(id, { page, limit } = {}) {
+  const response = await client.get(`/hazard-alerts/${id}/unreached`, {
+    params: { page, limit },
+  });
   return response.data.data;
 }
 
@@ -87,8 +110,11 @@ export default {
   getById,
   broadcast,
   getDeliverySummary,
+  getUnreached,
   listDrafts,
   discardDraft,
   previewUpdate,
   update,
+  listActive,
+  allClear,
 };

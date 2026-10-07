@@ -51,7 +51,19 @@ export class HazardAlertRoutes extends BaseRoutes {
       RequestValidator.body(HazardAlertValidator.updatePreviewSchema),
       hazardAlertController.previewUpdate,
     );
+    router.post(
+      '/:id/all-clear',
+      ...officer,
+      RequestValidator.body(HazardAlertValidator.allClearSchema),
+      hazardAlertController.allClear,
+    );
     router.get('/:id/delivery-summary', ...officer, hazardAlertController.deliverySummary);
+    router.get(
+      '/:id/unreached',
+      ...officer,
+      RequestValidator.query(HazardAlertValidator.unreachedQuery),
+      hazardAlertController.unreached,
+    );
     router.get('/:id', ...officer, hazardAlertController.getById);
     router.patch(
       '/:id',

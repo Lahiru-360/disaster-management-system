@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { fallbackPolicy as defaultFallbackPolicy } from '../domain/alerts/FallbackPolicy.js';
 import { HazardAlert } from '../domain/alerts/HazardAlert.js';
 import { InvalidAlertTransitionError } from '../domain/alerts/InvalidAlertTransitionError.js';
 import { MessageTemplate } from '../domain/alerts/MessageTemplate.js';
@@ -6,6 +7,7 @@ import { Notification } from '../domain/alerts/Notification.js';
 import { AlertStatus } from '../enums/AlertStatus.js';
 import { NotificationKind } from '../enums/NotificationKind.js';
 import { NotificationType } from '../enums/NotificationType.js';
+import { SeverityLevel } from '../enums/SeverityLevel.js';
 import { HazardAlert as HazardAlertModel } from '../models/HazardAlert.js';
 import { Notification as NotificationModel } from '../models/Notification.js';
 import { ApiError } from '../utils/ApiError.js';
@@ -20,14 +22,17 @@ import { AudibleChannel } from './notifications/AudibleChannel.js';
 import { PushChannel } from './notifications/PushChannel.js';
 import { SmsChannel } from './notifications/SmsChannel.js';
 
-// UC01 Issue Hazard Warning, broadcasting (main flow steps 11-14) and sending
-// an update (A2.3): the WarningController's work in the sequence diagram's
-// Broadcast and Update sections. It moves the alert to BROADCAST, or to
-// UPDATED with the next version, then, for every recipient and every channel,
+// UC01 Issue Hazard Warning, broadcasting (main flow steps 11-14), sending an
+// update (A2.3) and the all-clear (A3.2): the WarningController's work in the
+// sequence diagram's Broadcast and Update-or-all-clear sections. It moves the
+// alert to BROADCAST, or to UPDATED or CANCELLED with the next version, then,
+// for every recipient and every channel,
 // creates a delivery record as QUEUED, sends it through that channel's
 // strategy and records the result. The channels are an injected list
-// (Strategy), so adding one changes nothing here (Open/Closed). A channel that
-// fails or throws is recorded as FAILED and never stops the others.
+// (Strategy), so adding one changes nothing here (Open/Closed). A send that
+// fails or throws is resent through the fallback channel as the injected
+// FallbackPolicy allows (E3), is recorded as FAILED if it still fails, and
+// never stops the others.
 export class BroadcastService {
   // Delivery records are written in batches of this many (~500 citizens × 3
   // channels broadcast in one or two round trips).
@@ -41,6 +46,7 @@ export class BroadcastService {
   #warnings;
   #summary;
   #channels;
+  #fallback;
   #clock;
 
   constructor({
@@ -52,6 +58,7 @@ export class BroadcastService {
     warnings = defaultWarningService,
     summary = defaultDeliverySummary,
     channels = [new PushChannel(), new SmsChannel(), new AudibleChannel()],
+    fallback = defaultFallbackPolicy,
     clock = systemClock,
   } = {}) {
     this.#alertModel = alertModel;
@@ -62,6 +69,7 @@ export class BroadcastService {
     this.#warnings = warnings;
     this.#summary = summary;
     this.#channels = channels;
+    this.#fallback = fallback;
     this.#clock = clock;
   }
 
@@ -140,27 +148,47 @@ export class BroadcastService {
     const districtIds = await this.#currentDistricts(alert);
     const recipients = await this.#recipientsWithoutConflict(alert, districtIds);
 
-    // Only one change to a version can win: the update matches the version read.
-    const updatedDoc = await this.#alertModel.findOneAndUpdate(
-      { _id: doc._id, status: { $in: HazardAlert.ACTIVE_STATUSES }, version: previousVersion },
-      alert.toFields(),
-      { returnDocument: 'after' },
-    );
-    if (!updatedDoc) {
-      const current = await this.#alertModel.findById(doc._id).select('status version').lean();
-      throw new InvalidAlertTransitionError(
-        HazardAlert.ACTIVE_STATUSES.includes(current?.status)
-          ? `The alert was changed by someone else – current version: ${current.version}`
-          : `Only an active alert can be updated – current status: ${current?.status}`,
-        current?.status,
-      );
-    }
+    const updatedDoc = await this.#saveActiveChange(doc._id, alert, previousVersion, 'updated');
 
     await this.#deliver(alert, recipients, NotificationKind.UPDATE);
     await this.#putInInboxes(alert, recipients);
     if (replacesDraftId) await this.#discardReplacedDraft(replacesDraftId);
     return {
       alert: await HazardAlertPresenter.present(updatedDoc),
+      summary: await this.#summary.forAlert(alert.id, alert.version),
+    };
+  }
+
+  /**
+   * A3.2-A3.3 (contract §12.15): ends an active warning with an all-clear to
+   * its original recipients - everyone it was sent to, not a recalculated
+   * scope - as deliveries of kind ALL_CLEAR for the next version, then
+   * resumes at step 14 with that version's delivery summary.
+   * @param {string} alertId
+   * @param {{ id: string }} officer The signed-in DMC or duty officer.
+   * @returns {Promise<{ alert: object, summary: object }>} The alert object, now
+   *   CANCELLED, and the delivery summary of the all-clear.
+   * @throws {ApiError} 404 for an unknown alert; 409 if it isn't active (or a
+   *   colleague changed it first).
+   */
+  async allClear(alertId, officer) {
+    const doc = await this.#findDoc(alertId);
+    const alert = HazardAlert.fromDocument(doc);
+    const previousVersion = alert.version;
+    // A DRAFT may have no type yet: cancel refuses it before the text matters.
+    const message = alert.isActive() ? MessageTemplate.allClear(alert.hazardType) : null;
+    alert.cancel(officer, this.#clock.now(), message);
+
+    const recipients = await this.#citizenRegistry.findOriginalRecipients(alert.id);
+    const cancelledDoc = await this.#saveActiveChange(doc._id, alert, previousVersion, 'cancelled');
+
+    await this.#deliver(alert, recipients, NotificationKind.ALL_CLEAR);
+    await this.#putInInboxes(alert, recipients, {
+      title: MessageTemplate.allClearTitle(alert.hazardType),
+      severity: SeverityLevel.LOW,
+    });
+    return {
+      alert: await HazardAlertPresenter.present(cancelledDoc),
       summary: await this.#summary.forAlert(alert.id, alert.version),
     };
   }
@@ -178,6 +206,45 @@ export class BroadcastService {
       alert: await HazardAlertPresenter.present(doc),
       summary: await this.#summary.forAlert(doc.id, doc.version),
     };
+  }
+
+  // Saves a change to an active alert. Only one change to a version can win:
+  // the write matches the version read, and the loser is told what changed.
+  async #saveActiveChange(id, alert, previousVersion, action) {
+    const savedDoc = await this.#alertModel.findOneAndUpdate(
+      { _id: id, status: { $in: HazardAlert.ACTIVE_STATUSES }, version: previousVersion },
+      alert.toFields(),
+      { returnDocument: 'after' },
+    );
+    if (!savedDoc) {
+      const current = await this.#alertModel.findById(id).select('status version').lean();
+      throw new InvalidAlertTransitionError(
+        HazardAlert.ACTIVE_STATUSES.includes(current?.status)
+          ? `The alert was changed by someone else – current version: ${current.version}`
+          : `Only an active alert can be ${action} – current status: ${current?.status}`,
+        current?.status,
+      );
+    }
+    return savedDoc;
+  }
+
+  /**
+   * E3.3, "[View list]" (contract §12.16): one page of the citizens the
+   * alert's current version reached on no channel. A DRAFT has sent nothing,
+   * so its list is empty.
+   * @param {string} alertId
+   * @param {{ page: number, limit: number }} paging Validated, defaults applied.
+   * @returns {Promise<{ version: number, citizens: object[], page: number,
+   *   limit: number, total: number }>}
+   * @throws {ApiError} 404 for an unknown or malformed id.
+   */
+  async unreached(alertId, { page, limit }) {
+    const doc = await this.#findDoc(alertId);
+    const { citizens, total } = await this.#summary.unreachedCitizens(doc.id, doc.version, {
+      page,
+      limit,
+    });
+    return { version: doc.version, citizens, page, limit, total };
   }
 
   // The recipient × channel loop, a batch at a time: create each delivery as
@@ -221,13 +288,19 @@ export class BroadcastService {
     }
   }
 
-  // One send: the channel's result on the delivery, a throw recorded as FAILED.
+  // One delivery, per the sequence diagram's opt [failed E3] fragment: the
+  // first send, then resends through the fallback channel while it fails and
+  // the policy allows another attempt. Only the last result is recorded.
   async #send({ strategy, notification }) {
-    let result;
-    try {
-      result = await strategy.send(notification);
-    } catch (error) {
-      result = { status: 'FAILED', reason: error.message };
+    let result = await BroadcastService.#attempt(strategy, notification);
+    const fallback = this.#channels.find((channel) => channel.channel === this.#fallback.channel);
+    while (
+      result.status === 'FAILED' &&
+      fallback &&
+      this.#fallback.allowsResend(notification.attempts)
+    ) {
+      notification.resendVia(fallback.channel);
+      result = await BroadcastService.#attempt(fallback, notification);
     }
     const at = this.#clock.now();
     if (result.status === 'DELIVERED') notification.markDelivered(at);
@@ -235,15 +308,26 @@ export class BroadcastService {
     else notification.markFailed(result.reason, at);
   }
 
+  // One attempt through one channel; a throw counts as a failed attempt.
+  static async #attempt(strategy, notification) {
+    try {
+      return await strategy.send(notification);
+    } catch (error) {
+      return { status: 'FAILED', reason: error.message };
+    }
+  }
+
   // The citizen-side stand-in for the mocked push, SMS and audible alert: an
-  // inbox item each, coloured by severity in the app. NotificationService
-  // never throws, so the inbox can't fail the broadcast.
-  async #putInInboxes(alert, recipients) {
+  // inbox item each, coloured by severity in the app. The all-clear overrides
+  // the title and severity. NotificationService never throws, so the inbox
+  // can't fail the broadcast.
+  async #putInInboxes(alert, recipients, overrides = {}) {
     const payload = {
       type: NotificationType.HAZARD_ALERT,
       title: MessageTemplate.title(alert.hazardType, alert.severity),
       body: alert.message,
       severity: alert.severity,
+      ...overrides,
     };
     await Promise.all(
       recipients.map((recipient) => this.#notifications.notifyUser(recipient.id, payload)),

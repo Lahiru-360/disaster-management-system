@@ -1,4 +1,5 @@
 import { SupplyType } from '../../enums/SupplyType.js';
+import { InsufficientStockError } from './InsufficientStockError.js';
 
 // What one Organisation holds of one supply type in one district (UC03).
 // What was given out is a SupplyDistribution, kept apart from the holding.
@@ -66,5 +67,20 @@ export class ReliefStock {
 
   get quantityAvailable() {
     return this.#quantityAvailable;
+  }
+
+  /**
+   * UC03 step 13: takes a distributed quantity out of the stock. A whole
+   * number from 1 to what is available; anything else is E5 and leaves the
+   * stock as it was. Saving it is the service's job, with a guard so two
+   * logs can't both take the last of it.
+   * @param {number} quantity
+   * @throws {InsufficientStockError} 400 VALIDATION_ERROR on quantity, showing what is available.
+   */
+  withdraw(quantity) {
+    if (!Number.isInteger(quantity) || quantity < 1 || quantity > this.#quantityAvailable) {
+      throw new InsufficientStockError(this.#quantityAvailable, this.#unit);
+    }
+    this.#quantityAvailable -= quantity;
   }
 }

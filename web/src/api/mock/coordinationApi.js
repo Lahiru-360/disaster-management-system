@@ -169,6 +169,7 @@ const presentTeam = (record) => ({
   ...record,
   baseLocation: { ...record.baseLocation },
   currentLocation: { ...record.currentLocation },
+  currentTask: record.currentTask ? { ...record.currentTask } : null,
 });
 
 // The mock knows one district; any other is empty (no shelters, no incident).
@@ -247,6 +248,179 @@ async function listShelters({ districtId } = {}) {
   return inDistrict(districtId) ? shelters.map(presentShelter) : [];
 }
 
+// Steps 3-5. Mirrors the server: a whole number, 0 or more, is valid (0 is an
+// empty shelter, more than capacity shows as FULL); anything else is a 400 on
+// `occupants` and changes nothing (E1). A2's suggestion and E2's DMC alert
+// are not simulated here yet, so `alternateShelter` and `dmcAlerted` stay as
+// the contract's "not flagged" shape.
+async function updateOccupancy(shelterId, occupants) {
+  await delay();
+  takeFailure();
+  const record = shelters.find((s) => s.id === shelterId);
+  if (!record) throw apiError(404, 'NOT_FOUND', 'Shelter not found.');
+  if (typeof occupants !== 'number' || !Number.isInteger(occupants) || occupants < 0) {
+    const error = apiError(400, 'VALIDATION_ERROR', 'Request validation failed.');
+    error.response.data.error.errors = [
+      { field: 'occupants', message: 'must be a whole number, 0 or more' },
+    ];
+    throw error;
+  }
+
+  record.currentOccupancy = occupants;
+  record.updatedAt = new Date().toISOString();
+  const saved = presentShelter(record);
+  return {
+    shelter: saved,
+    rate: saved.rate,
+    status: saved.status,
+    flagged: ['NEAR_CAPACITY', 'FULL'].includes(saved.status),
+    alternateShelter: null,
+    dmcAlerted: false,
+  };
+}
+
+const presentStock = (row) => ({ ...row, organisation: { ...row.organisation } });
+
+// `GET /api/relief-stock`: sorted by organisation name, then supply type.
+async function listStock({ districtId, organisationId, supplyType } = {}) {
+  await delay();
+  takeFailure();
+  if (!inDistrict(districtId)) return [];
+  return stock
+    .filter((row) => !organisationId || row.organisation.id === organisationId)
+    .filter((row) => !supplyType || row.supplyType === supplyType)
+    .sort(
+      (a, b) =>
+        a.organisation.name.localeCompare(b.organisation.name) ||
+        a.supplyType.localeCompare(b.supplyType),
+    )
+    .map(presentStock);
+}
+
+// Steps 12-13. Mirrors the server: a whole number from 1 to what is available
+// is logged and taken out of the stock; anything else is a 400 on `quantity`
+// that shows what is available (E5), and changes nothing.
+async function logDistribution({ shelterId, stockId, quantity }) {
+  await delay();
+  takeFailure();
+  const row = stock.find((s) => s.id === stockId);
+  const receiving = shelters.find((s) => s.id === shelterId);
+  if (!row || !receiving) {
+    throw apiError(404, 'NOT_FOUND', row ? 'Shelter not found.' : 'Stock not found.');
+  }
+  if (!Number.isInteger(quantity) || quantity < 1 || quantity > row.quantityAvailable) {
+    const error = apiError(400, 'VALIDATION_ERROR', 'Request validation failed.');
+    error.response.data.error.errors = [
+      {
+        field: 'quantity',
+        message:
+          row.quantityAvailable === 0
+            ? `no stock available (0 ${row.unit})`
+            : `must be between 1 and ${row.quantityAvailable} (available)`,
+      },
+    ];
+    throw error;
+  }
+
+  const now = new Date().toISOString();
+  row.quantityAvailable -= quantity;
+  row.updatedAt = now;
+  const logged = {
+    id: `66fb0e1b2c3d4e5f6a7b9${String(distributions.length + 1).padStart(3, '0')}`,
+    shelter: { id: receiving.id, name: receiving.name },
+    stockId: row.id,
+    organisation: row.organisation,
+    district: GAMPAHA,
+    supplyType: row.supplyType,
+    unit: row.unit,
+    quantity,
+    distributedAt: now,
+    loggedBy: DEMO_OFFICER,
+  };
+  distributions.push(logged);
+  return { distribution: { ...logged }, stock: presentStock(row) };
+}
+
+const PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
+const ACK_TIMEOUT_MINUTES = 5;
+const EARTH_RADIUS_KM = 6371;
+
+// Straight-line distance, as the server's GeoDistance.
+function haversineKm(a, b) {
+  const rad = (degrees) => (degrees * Math.PI) / 180;
+  const dLat = rad(b.lat - a.lat);
+  const dLng = rad(b.lng - a.lng);
+  const h =
+    Math.sin(dLat / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLng / 2) ** 2;
+  return 2 * EARTH_RADIUS_KM * Math.asin(Math.sqrt(h));
+}
+
+const dispatches = [];
+
+// Step 7: the AVAILABLE teams, nearest the incident first (ties by name), each
+// with its distance to one decimal. An empty list is E3, not an error.
+async function listAvailableTeams({ lat, lng, districtId, excludeTeamIds = [] }) {
+  await delay();
+  takeFailure();
+  if (!inDistrict(districtId)) return [];
+  return teams
+    .filter((t) => t.status === 'AVAILABLE' && !excludeTeamIds.includes(t.id))
+    .map((t) => ({ team: t, km: haversineKm(t.currentLocation, { lat, lng }) }))
+    .sort((a, b) => a.km - b.km || a.team.name.localeCompare(b.team.name))
+    .map(({ team: t, km }) => ({ ...presentTeam(t), distanceKm: Math.round(km * 10) / 10 }));
+}
+
+// Steps 8-9. Mirrors the server: an AVAILABLE team becomes DISPATCHED and an
+// ASSIGNED dispatch is created with its acknowledgement deadline. A team that
+// is no longer AVAILABLE is 409 TEAM_NOT_AVAILABLE and nothing changes.
+async function dispatchTeam({ teamId, incidentLocation, priority }) {
+  await delay();
+  takeFailure();
+  const team = teams.find((t) => t.id === teamId);
+  if (!team) throw apiError(404, 'NOT_FOUND', 'Rescue team not found.');
+  if (!PRIORITIES.includes(priority)) {
+    const error = apiError(400, 'VALIDATION_ERROR', 'Request validation failed.');
+    error.response.data.error.errors = [{ field: 'priority', message: 'must be a Priority' }];
+    throw error;
+  }
+  if (team.status !== 'AVAILABLE') {
+    throw apiError(
+      409,
+      'TEAM_NOT_AVAILABLE',
+      `${team.name} is ${team.status} and can't take a new dispatch.`,
+    );
+  }
+
+  const createdAt = new Date();
+  const by = DEMO_OFFICER;
+  const dispatch = {
+    id: `66fb0c1b2c3d4e5f6a7b8e${String(dispatches.length + 1).padStart(2, '0')}`,
+    status: 'ASSIGNED',
+    team: { id: team.id, name: team.name, organisation: team.organisation },
+    district: GAMPAHA,
+    incident: { id: INCIDENT.id, name: INCIDENT.name },
+    incidentLocation: { label: null, ...incidentLocation },
+    priority,
+    supportRequested: false,
+    createdBy: by,
+    createdAt: createdAt.toISOString(),
+    ackDeadline: new Date(createdAt.getTime() + ACK_TIMEOUT_MINUTES * 60 * 1000).toISOString(),
+    declineReason: null,
+    statusHistory: [{ status: 'ASSIGNED', at: createdAt.toISOString(), by }],
+  };
+  dispatches.push(dispatch);
+
+  team.status = 'DISPATCHED';
+  team.currentTask = {
+    dispatchId: dispatch.id,
+    status: 'ASSIGNED',
+    priority,
+    incidentLocation: dispatch.incidentLocation,
+  };
+  team.updatedAt = dispatch.createdAt;
+  return { dispatch: { ...dispatch } };
+}
+
 async function listRescueTeams({ districtId } = {}) {
   await delay();
   takeFailure();
@@ -267,5 +441,10 @@ export const mockControls = {
 export default {
   getOperationalPicture,
   listShelters,
+  updateOccupancy,
+  listStock,
+  logDistribution,
+  listAvailableTeams,
+  dispatchTeam,
   listRescueTeams,
 };
