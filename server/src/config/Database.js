@@ -20,12 +20,17 @@ export class Database {
     }
   }
 
-  registerShutdownHooks() {
-    process.on('SIGINT', () => this.#shutdown('SIGINT'));
-    process.on('SIGTERM', () => this.#shutdown('SIGTERM'));
+  /**
+   * Closes the connection and exits on SIGINT or SIGTERM.
+   * @param {() => void|Promise<void>} [beforeClose] Run first, e.g. to stop background jobs.
+   */
+  registerShutdownHooks(beforeClose) {
+    process.on('SIGINT', () => this.#shutdown('SIGINT', beforeClose));
+    process.on('SIGTERM', () => this.#shutdown('SIGTERM', beforeClose));
   }
 
-  async #shutdown(signal) {
+  async #shutdown(signal, beforeClose) {
+    await beforeClose?.();
     console.log(`${signal} received, closing MongoDB connection`);
     await mongoose.connection.close();
     process.exit(0);

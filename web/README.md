@@ -211,7 +211,9 @@ All tabs share the same tokens, so logging out in one tab logs out the others.
 
 ## Deploying
 
-The production build (`dist/`) is static files. Because the app routes in the browser, the host must serve `index.html` for every path (a "rewrite all routes to /index.html" rule, e.g. a Render static site rewrite of `/*` to `/index.html`). Otherwise reloading `/hazard-warnings` returns a 404. Set `VITE_API_BASE_URL` and `VITE_USE_MOCK=false` in the host's build environment: Vite writes them into the build, so they can't be changed after it.
+The production build (`dist/`) is static files. Because the app routes in the browser, the host must serve `index.html` for every path (a "rewrite all routes to /index.html" rule). Otherwise reloading `/hazard-warnings` returns a 404. Set `VITE_API_BASE_URL` and `VITE_USE_MOCK=false` in the host's build environment: Vite writes them into the build, so they can't be changed after it.
+
+The demo portal is hosted on **Vercel**, imported from the `develop` branch with the root directory set to `web` and the Vite preset (build `vite build`, output `dist`). `vercel.json` in this folder holds the rewrite, so deep links reload correctly. Other hosts need the same rule in their own format (a Render static site: rewrite `/*` to `/index.html`). A change to `VITE_API_BASE_URL` needs a redeploy.
 
 ## Troubleshooting
 

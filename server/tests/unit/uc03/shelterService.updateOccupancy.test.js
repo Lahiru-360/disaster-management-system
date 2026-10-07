@@ -67,7 +67,7 @@ describe('ShelterService.updateOccupancy', () => {
       status: ShelterStatus.NEAR_CAPACITY,
       flagged: true,
       alternateShelter: null,
-      dmcAlerted: false,
+      dmcAlerted: true, // the only shelter in the district, so none has space (E2, DMS-148)
       shelter: {
         id: shelter.id,
         name: 'Gampaha Central College',
