@@ -72,7 +72,7 @@ const recipientsOf = async (id, version) =>
   );
 
 describe('UC01 A2: an active warning already covers the scope', () => {
-  it('DMS-123: TC-20 the preview of a new draft returns the active warning on the same district', async () => {
+  it('A2: TC-20 the preview of a new draft returns the active warning on the same district', async () => {
     await citizensIn(areas.colombo, 1);
     const active = await activeWarning([areas.colombo]);
     const draft = await startDraft();
@@ -90,7 +90,7 @@ describe('UC01 A2: an active warning already covers the scope', () => {
     });
   });
 
-  it('DMS-123: TC-21 a basin warning is found from a district it spans', async () => {
+  it('A2: TC-21 a basin warning is found from a district it spans', async () => {
     await citizensIn(areas.gampaha, 1);
     const active = await activeWarning([areas.kelani]);
     const draft = await startDraft();
@@ -100,7 +100,7 @@ describe('UC01 A2: an active warning already covers the scope', () => {
     expect(res.body.data.activeWarning).toMatchObject({ id: active.id });
   });
 
-  it('DMS-123: TC-21 a district warning is found from a basin that spans it', async () => {
+  it('A2: TC-21 a district warning is found from a basin that spans it', async () => {
     await citizensIn(areas.colombo, 1);
     const active = await activeWarning([areas.colombo]);
     const draft = await startDraft();
@@ -110,7 +110,7 @@ describe('UC01 A2: an active warning already covers the scope', () => {
     expect(res.body.data.activeWarning).toMatchObject({ id: active.id });
   });
 
-  it('DMS-123: TC-22 a different hazard type on the same district is no conflict', async () => {
+  it('A2: TC-22 a different hazard type on the same district is no conflict', async () => {
     await citizensIn(areas.colombo, 1);
     await activeWarning([areas.colombo], { hazardType: 'CYCLONE' });
     const draft = await startDraft();
@@ -122,7 +122,7 @@ describe('UC01 A2: an active warning already covers the scope', () => {
     expect(res.status).toBe(200);
   });
 
-  it('DMS-123: a district with no overlap is no conflict', async () => {
+  it('A2: a district with no overlap is no conflict', async () => {
     await citizensIn(areas.colombo, 1);
     await citizensIn(areas.kalutara, 1);
     await activeWarning([areas.kelani]);
@@ -133,7 +133,7 @@ describe('UC01 A2: an active warning already covers the scope', () => {
     expect(res.body.data.activeWarning).toBeNull();
   });
 
-  it('DMS-123: a CANCELLED warning is ignored, and a new one can be broadcast', async () => {
+  it('A2: a CANCELLED warning is ignored, and a new one can be broadcast', async () => {
     await citizensIn(areas.colombo, 1);
     const cancelled = await activeWarning([areas.colombo]);
     await HazardAlert.updateOne({ _id: cancelled.id }, { status: 'CANCELLED' });
@@ -146,7 +146,7 @@ describe('UC01 A2: an active warning already covers the scope', () => {
     expect(res.status).toBe(200);
   });
 
-  it('DMS-123: TC-23 broadcasting a new draft while a conflict exists is 409 and sends nothing', async () => {
+  it('A2: TC-23 broadcasting a new draft while a conflict exists is 409 and sends nothing', async () => {
     await citizensIn(areas.colombo, 2);
     const active = await activeWarning([areas.kelani]);
     const draft = await startDraft();
@@ -163,7 +163,7 @@ describe('UC01 A2: an active warning already covers the scope', () => {
     expect(await Notification.countDocuments({ alert: draft })).toBe(0);
   });
 
-  it('DMS-123: TC-23 an UPDATED warning still blocks a duplicate broadcast', async () => {
+  it('A2: TC-23 an UPDATED warning still blocks a duplicate broadcast', async () => {
     await citizensIn(areas.colombo, 1);
     const active = await activeWarning([areas.colombo]);
     await update(active.id, { severity: 'SEVERE' });
@@ -178,7 +178,7 @@ describe('UC01 A2: an active warning already covers the scope', () => {
 });
 
 describe('UC01 A2: POST /api/hazard-alerts/:id/update-preview', () => {
-  it('DMS-123: recalculates the recipients, writes the update message, and changes nothing', async () => {
+  it('A2: recalculates the recipients, writes the update message, and changes nothing', async () => {
     await citizensIn(areas.colombo, 2);
     await citizensIn(areas.gampaha, 3);
     const active = await activeWarning([areas.colombo]);
@@ -208,7 +208,7 @@ describe('UC01 A2: POST /api/hazard-alerts/:id/update-preview', () => {
     });
   });
 
-  it('DMS-123: returns another active warning the new scope would duplicate', async () => {
+  it('A2: returns another active warning the new scope would duplicate', async () => {
     await citizensIn(areas.colombo, 1);
     await citizensIn(areas.gampaha, 1);
     const active = await activeWarning([areas.colombo]);
@@ -219,7 +219,7 @@ describe('UC01 A2: POST /api/hazard-alerts/:id/update-preview', () => {
     expect(res.body.data.activeWarning).toMatchObject({ id: other.id });
   });
 
-  it('DMS-123: neither severity nor areaIds is 400 on severity', async () => {
+  it('A2: neither severity nor areaIds is 400 on severity', async () => {
     await citizensIn(areas.colombo, 1);
     const active = await activeWarning([areas.colombo]);
 
@@ -232,7 +232,7 @@ describe('UC01 A2: POST /api/hazard-alerts/:id/update-preview', () => {
     });
   });
 
-  it('DMS-123: an unknown severity or area id is 400 (E1)', async () => {
+  it('A2: an unknown severity or area id is 400 (E1)', async () => {
     await citizensIn(areas.colombo, 1);
     const active = await activeWarning([areas.colombo]);
     const unknown = new mongoose.Types.ObjectId().toString();
@@ -251,7 +251,7 @@ describe('UC01 A2: POST /api/hazard-alerts/:id/update-preview', () => {
     expect(empty.body.error.errors[0].field).toBe('areaIds');
   });
 
-  it('DMS-123: a DRAFT is 409 INVALID_ALERT_TRANSITION', async () => {
+  it('A2: a DRAFT is 409 INVALID_ALERT_TRANSITION', async () => {
     const draft = await startDraft();
 
     const res = await previewUpdate(draft, { severity: 'SEVERE' });
@@ -263,7 +263,7 @@ describe('UC01 A2: POST /api/hazard-alerts/:id/update-preview', () => {
     });
   });
 
-  it('DMS-123: an unknown alert is 404, and a citizen is 403', async () => {
+  it('A2: an unknown alert is 404, and a citizen is 403', async () => {
     await citizensIn(areas.colombo, 1);
     const active = await activeWarning([areas.colombo]);
     const citizen = await createUser({ homeDistrict: areas.colombo });
@@ -279,7 +279,7 @@ describe('UC01 A2: POST /api/hazard-alerts/:id/update-preview', () => {
 });
 
 describe('UC01 A2: PATCH /api/hazard-alerts/:id', () => {
-  it('DMS-123: TC-24 sets UPDATED, version 2, the new severity and scope, and a history entry', async () => {
+  it('A2: TC-24 sets UPDATED, version 2, the new severity and scope, and a history entry', async () => {
     await citizensIn(areas.colombo, 1);
     await citizensIn(areas.gampaha, 1);
     const active = await activeWarning([areas.colombo]);
@@ -308,7 +308,7 @@ describe('UC01 A2: PATCH /api/hazard-alerts/:id', () => {
     ]);
   });
 
-  it('DMS-123: TC-24 versions go 1 → 2 → 3, one history entry each', async () => {
+  it('A2: TC-24 versions go 1 → 2 → 3, one history entry each', async () => {
     await citizensIn(areas.colombo, 1);
     const active = await activeWarning([areas.colombo]);
 
@@ -328,7 +328,7 @@ describe('UC01 A2: PATCH /api/hazard-alerts/:id', () => {
     ).toEqual([2, 3]);
   });
 
-  it('DMS-123: TC-25 the update goes to the recalculated recipients as kind UPDATE for the new version', async () => {
+  it('A2: TC-25 the update goes to the recalculated recipients as kind UPDATE for the new version', async () => {
     const [leaves] = await citizensIn(areas.colombo, 1);
     const [stays] = await citizensIn(areas.gampaha, 1);
     const [joins] = await citizensIn(areas.kalutara, 1);
@@ -344,7 +344,7 @@ describe('UC01 A2: PATCH /api/hazard-alerts/:id', () => {
     expect(updates.every((record) => record.kind === 'UPDATE')).toBe(true);
   });
 
-  it('DMS-123: TC-25 the delivery summary is for the new version', async () => {
+  it('A2: TC-25 the delivery summary is for the new version', async () => {
     await citizensIn(areas.colombo, 1);
     await citizensIn(areas.gampaha, 2);
     const active = await activeWarning([areas.colombo]);
@@ -361,7 +361,7 @@ describe('UC01 A2: PATCH /api/hazard-alerts/:id', () => {
     expect(reopened.body.data.summary).toMatchObject({ version: 2, totals: { sent: 9 } });
   });
 
-  it('DMS-123: the new draft that found the conflict is discarded once the update is sent', async () => {
+  it('A2: the new draft that found the conflict is discarded once the update is sent', async () => {
     await citizensIn(areas.colombo, 1);
     const active = await activeWarning([areas.colombo]);
     const draft = await startDraft();
@@ -373,7 +373,7 @@ describe('UC01 A2: PATCH /api/hazard-alerts/:id', () => {
     expect(await HazardAlert.findById(draft)).toBeNull();
   });
 
-  it('DMS-123: an update that changes nothing is 400 and sends nothing', async () => {
+  it('A2: an update that changes nothing is 400 and sends nothing', async () => {
     await citizensIn(areas.colombo, 1);
     const active = await activeWarning([areas.colombo]);
 
@@ -390,7 +390,7 @@ describe('UC01 A2: PATCH /api/hazard-alerts/:id', () => {
     ['missing', undefined],
     ['blank', '   '],
     ['161-character', 'x'.repeat(161)],
-  ])('DMS-123: a %s message is 400 on message', async (_case, message) => {
+  ])('A2: a %s message is 400 on message', async (_case, message) => {
     await citizensIn(areas.colombo, 1);
     const active = await activeWarning([areas.colombo]);
 
@@ -400,7 +400,7 @@ describe('UC01 A2: PATCH /api/hazard-alerts/:id', () => {
     expect(res.body.error.errors.map(({ field }) => field)).toEqual(['message']);
   });
 
-  it('DMS-123: an empty replacesDraftId is 400', async () => {
+  it('A2: an empty replacesDraftId is 400', async () => {
     await citizensIn(areas.colombo, 1);
     const active = await activeWarning([areas.colombo]);
 
@@ -410,7 +410,7 @@ describe('UC01 A2: PATCH /api/hazard-alerts/:id', () => {
     expect(res.body.error.errors[0].field).toBe('replacesDraftId');
   });
 
-  it('DMS-123: a DRAFT or CANCELLED alert is 409 and nothing is sent', async () => {
+  it('A2: a DRAFT or CANCELLED alert is 409 and nothing is sent', async () => {
     await citizensIn(areas.colombo, 1);
     await citizensIn(areas.kalutara, 1);
     const draft = await startDraft();
@@ -430,7 +430,7 @@ describe('UC01 A2: PATCH /api/hazard-alerts/:id', () => {
     expect(await Notification.countDocuments({ kind: 'UPDATE' })).toBe(0);
   });
 
-  it('DMS-123: a new scope with no citizens is 409 NO_RECIPIENTS_IN_SCOPE and keeps the draft (E2)', async () => {
+  it('A2: a new scope with no citizens is 409 NO_RECIPIENTS_IN_SCOPE and keeps the draft (E2)', async () => {
     await citizensIn(areas.colombo, 1);
     const active = await activeWarning([areas.colombo]);
     const draft = await startDraft();
@@ -443,7 +443,7 @@ describe('UC01 A2: PATCH /api/hazard-alerts/:id', () => {
     expect(await HazardAlert.findById(draft)).not.toBeNull();
   });
 
-  it('DMS-123: a new scope another active warning covers is 409 ACTIVE_WARNING_EXISTS', async () => {
+  it('A2: a new scope another active warning covers is 409 ACTIVE_WARNING_EXISTS', async () => {
     await citizensIn(areas.colombo, 1);
     await citizensIn(areas.gampaha, 1);
     const active = await activeWarning([areas.colombo]);
@@ -459,7 +459,7 @@ describe('UC01 A2: PATCH /api/hazard-alerts/:id', () => {
     expect(await Notification.countDocuments({ kind: 'UPDATE' })).toBe(0);
   });
 
-  it('DMS-123: an unknown alert is 404, and a citizen is 403', async () => {
+  it('A2: an unknown alert is 404, and a citizen is 403', async () => {
     await citizensIn(areas.colombo, 1);
     const active = await activeWarning([areas.colombo]);
     const citizen = await createUser({ homeDistrict: areas.colombo });

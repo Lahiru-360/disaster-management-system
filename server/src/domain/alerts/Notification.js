@@ -13,8 +13,10 @@ const idOf = (value) => {
 // One delivery of a hazard warning to one citizen on one channel (UC01 class
 // diagram). It holds the delivery state machine: QUEUED → SENT → DELIVERED or
 // FAILED, where a channel may also report DELIVERED or FAILED straight from
-// QUEUED. DELIVERED and FAILED are final here; the SMS fallback (E3) adds its
-// retry on top. It never saves itself - BroadcastService does that with
+// QUEUED. DELIVERED and FAILED are final. A failed send is resent through the
+// fallback channel (E3) before it is recorded: resendVia() counts the attempt
+// while the delivery is still QUEUED, and only the last attempt's result is
+// marked. It never saves itself - BroadcastService does that with
 // deliveryChanges().
 //
 // Times are passed in rather than read here, so the service's injected clock
@@ -30,6 +32,7 @@ export class Notification {
   #channel;
   #status;
   #attempts;
+  #fallbackChannel;
   #sentAt;
   #deliveredAt;
   #failureReason;
@@ -47,6 +50,7 @@ export class Notification {
     channel,
     status = DeliveryStatus.QUEUED,
     attempts = 1,
+    fallbackChannel = null,
     sentAt = null,
     deliveredAt = null,
     failureReason = null,
@@ -62,6 +66,7 @@ export class Notification {
     this.#channel = channel;
     this.#status = status;
     this.#attempts = attempts;
+    this.#fallbackChannel = fallbackChannel;
     this.#sentAt = sentAt;
     this.#deliveredAt = deliveredAt;
     this.#failureReason = failureReason;
@@ -98,6 +103,20 @@ export class Notification {
   markFailed(reason, at) {
     this.#leaveQueue(DeliveryStatus.FAILED, at);
     this.#failureReason = reason ?? 'Delivery failed';
+  }
+
+  /**
+   * E3.2: one more attempt, through the fallback channel, after a failed send.
+   * The caller (BroadcastService, under FallbackPolicy) decides whether it is
+   * allowed; this only refuses a delivery that already has a final result.
+   * @param {string} channel The fallback channel, e.g. "SMS".
+   */
+  resendVia(channel) {
+    if (this.#status !== DeliveryStatus.QUEUED) {
+      throw new Error(`Notification: cannot resend a ${this.#status} delivery`);
+    }
+    this.#attempts += 1;
+    this.#fallbackChannel = channel;
   }
 
   /** True once nothing more will happen to this delivery. */
@@ -149,6 +168,11 @@ export class Notification {
     return this.#attempts;
   }
 
+  /** The channel it was resent through (E3), or null if it never was. */
+  get fallbackChannel() {
+    return this.#fallbackChannel;
+  }
+
   get sentAt() {
     return this.#sentAt;
   }
@@ -166,6 +190,7 @@ export class Notification {
     return {
       status: this.#status,
       attempts: this.#attempts,
+      fallbackChannel: this.#fallbackChannel,
       sentAt: this.#sentAt,
       deliveredAt: this.#deliveredAt,
       failureReason: this.#failureReason,

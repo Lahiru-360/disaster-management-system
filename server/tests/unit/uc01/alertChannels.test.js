@@ -16,14 +16,14 @@ const sequence =
     values.shift();
 
 describe('FakeTransport', () => {
-  it('DMS-121: accepts and records every message by default', async () => {
+  it('Main 13: accepts and records every message by default', async () => {
     const transport = new FakeTransport();
 
     await expect(transport.deliver({ to: 'c1' })).resolves.toBe(true);
     expect(transport.sent).toEqual([{ to: 'c1' }]);
   });
 
-  it('DMS-121: fails the configured share of sends, recording only the accepted ones', async () => {
+  it('Main 13: fails the configured share of sends, recording only the accepted ones', async () => {
     const transport = new FakeTransport({ failRate: 0.5, random: sequence(0.2, 0.7, 0.49, 0.5) });
 
     const results = [];
@@ -35,7 +35,7 @@ describe('FakeTransport', () => {
     expect(transport.sent.map((message) => message.to)).toEqual(['b', 'd']);
   });
 
-  it('DMS-121: a rate of 1 fails everything and 0 nothing', async () => {
+  it('Main 13: a rate of 1 fails everything and 0 nothing', async () => {
     await expect(new FakeTransport({ failRate: 1, random: () => 0.999 }).deliver({})).resolves.toBe(
       false,
     );
@@ -50,7 +50,7 @@ describe.each([
   [SmsChannel, 'SMS', 'SMS gateway did not accept the message'],
   [AudibleChannel, 'AUDIBLE', 'Audible alert was not delivered'],
 ])('%p', (ChannelClass, channel, failureReason) => {
-  it(`DMS-121: is a NotificationChannel strategy for ${channel}`, () => {
+  it(`Main 13: is a NotificationChannel strategy for ${channel}`, () => {
     const strategy = new ChannelClass();
 
     expect(strategy).toBeInstanceOf(NotificationChannel);
@@ -58,7 +58,7 @@ describe.each([
     expect(strategy.name).toBe(ChannelClass.name);
   });
 
-  it(`DMS-121: a ${channel} send the transport accepts is DELIVERED and recorded`, async () => {
+  it(`Main 13: a ${channel} send the transport accepts is DELIVERED and recorded`, async () => {
     const transport = new FakeTransport();
     const strategy = new ChannelClass({ transport });
 
@@ -66,7 +66,7 @@ describe.each([
     expect(transport.sent).toEqual([{ channel, alertId: 'a1', alertVersion: 2, citizenId: 'c1' }]);
   });
 
-  it(`DMS-121: a ${channel} send the transport refuses is FAILED with its reason`, async () => {
+  it(`Main 13: a ${channel} send the transport refuses is FAILED with its reason`, async () => {
     const strategy = new ChannelClass({ transport: new FakeTransport({ failRate: 1 }) });
 
     await expect(strategy.send(delivery(channel))).resolves.toEqual({
@@ -75,7 +75,7 @@ describe.each([
     });
   });
 
-  it(`DMS-121: by default the ${channel} channel never fails (rate 0 when unset)`, async () => {
+  it(`Main 13: by default the ${channel} channel never fails (rate 0 when unset)`, async () => {
     await expect(new ChannelClass().send(delivery(channel))).resolves.toEqual({
       status: 'DELIVERED',
     });
@@ -83,11 +83,11 @@ describe.each([
 });
 
 describe('AlertChannel', () => {
-  it('DMS-121: is abstract', () => {
+  it('Main 13: is abstract', () => {
     expect(() => new AlertChannel()).toThrow('AlertChannel is abstract');
   });
 
-  it('DMS-121: a channel with no failure reason of its own uses the generic one', async () => {
+  it('Main 13: a channel with no failure reason of its own uses the generic one', async () => {
     class PagerChannel extends AlertChannel {
       static channel = 'PAGER';
     }

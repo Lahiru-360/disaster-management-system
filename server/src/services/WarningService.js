@@ -17,7 +17,7 @@ import { HazardAlertPresenter } from './HazardAlertPresenter.js';
 import { ReferenceNumberGenerator } from './ReferenceNumberGenerator.js';
 
 // UC01 Issue Hazard Warning, composing (main flow steps 1-8), previewing an
-// update (A2) and backing out (A4): the WarningController's work in the
+// update (A2), listing the active warnings (A3.1) and backing out (A4): the WarningController's work in the
 // sequence diagram up to the confirmation.
 // The controller hands it validated input; it asks the HazardAlert domain
 // class for every change, AreaRegistry for the scope, CitizenRegistry for the
@@ -261,6 +261,25 @@ export class WarningService {
       .find({ status: AlertStatus.DRAFT })
       .sort({ updatedAt: -1, _id: -1 });
     return Promise.all(docs.map((doc) => HazardAlertPresenter.present(doc)));
+  }
+
+  /**
+   * A3.1: every active warning (BROADCAST or UPDATED), whoever issued it, most
+   * recently issued first, each with how many citizens its all-clear would
+   * reach (contract §12.11).
+   * @returns {Promise<object[]>} Alert objects with originalRecipientCount.
+   */
+  async listActive() {
+    const docs = await this.#alertModel
+      .find({ status: { $in: HazardAlert.ACTIVE_STATUSES } })
+      .sort({ issuedAt: -1, _id: -1 });
+    const counts = await this.#citizenRegistry.countOriginalRecipients(docs.map((doc) => doc.id));
+    return Promise.all(
+      docs.map(async (doc) => ({
+        ...(await HazardAlertPresenter.present(doc)),
+        originalRecipientCount: counts.get(doc.id) ?? 0,
+      })),
+    );
   }
 
   /**

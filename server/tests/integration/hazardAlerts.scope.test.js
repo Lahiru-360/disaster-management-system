@@ -40,7 +40,7 @@ const expectDraftUnchanged = async (id) => {
 };
 
 describe('UC01 E1: invalid target scope', () => {
-  it('DMS-126: TC-32 an empty scope is 400 VALIDATION_ERROR on areaIds', async () => {
+  it('E1: TC-32 an empty scope is 400 VALIDATION_ERROR on areaIds', async () => {
     const id = await startDraft();
 
     const res = await preview(id, []);
@@ -53,7 +53,7 @@ describe('UC01 E1: invalid target scope', () => {
     await expectDraftUnchanged(id);
   });
 
-  it('DMS-126: TC-32 a missing scope is 400 on areaIds', async () => {
+  it('E1: TC-32 a missing scope is 400 on areaIds', async () => {
     const id = await startDraft();
 
     const res = await request(app)
@@ -65,7 +65,7 @@ describe('UC01 E1: invalid target scope', () => {
     expect(res.body.error.errors).toEqual([{ field: 'areaIds', message: 'is required' }]);
   });
 
-  it('DMS-126: TC-33 an unknown area id is 400, and the message names it', async () => {
+  it('E1: TC-33 an unknown area id is 400, and the message names it', async () => {
     const id = await startDraft();
     const unknown = new mongoose.Types.ObjectId().toString();
 
@@ -78,7 +78,7 @@ describe('UC01 E1: invalid target scope', () => {
     await expectDraftUnchanged(id);
   });
 
-  it('DMS-126: TC-33 an id of something that is not an area (a user) is unknown', async () => {
+  it('E1: TC-33 an id of something that is not an area (a user) is unknown', async () => {
     const id = await startDraft();
 
     const res = await preview(id, [duty.id]);
@@ -89,7 +89,7 @@ describe('UC01 E1: invalid target scope', () => {
     ]);
   });
 
-  it('DMS-126: TC-34 a malformed ObjectId is 400, named with the unknown ones', async () => {
+  it('E1: TC-34 a malformed ObjectId is 400, named with the unknown ones', async () => {
     const id = await startDraft();
 
     const res = await preview(id, ['colombo']);
@@ -106,7 +106,7 @@ describe('UC01 E1: invalid target scope', () => {
     ['null', [null]],
     ['an object', [{ id: 'x' }]],
     ['a valid id beside a number', ['__colombo__', 7]],
-  ])('DMS-126: TC-34 a list holding %s is 400 on areaIds as a whole', async (_case, ids) => {
+  ])('E1: TC-34 a list holding %s is 400 on areaIds as a whole', async (_case, ids) => {
     const id = await startDraft();
     const areaIds = ids.map((value) => (value === '__colombo__' ? areas.colombo.id : value));
 
@@ -119,7 +119,7 @@ describe('UC01 E1: invalid target scope', () => {
     await expectDraftUnchanged(id);
   });
 
-  it('DMS-126: TC-35 valid and invalid ids together are 400 naming only the bad ones, nothing saved', async () => {
+  it('E1: TC-35 valid and invalid ids together are 400 naming only the bad ones, nothing saved', async () => {
     const id = await startDraft();
     const unknown = new mongoose.Types.ObjectId().toString();
 
@@ -132,7 +132,7 @@ describe('UC01 E1: invalid target scope', () => {
     await expectDraftUnchanged(id);
   });
 
-  it('DMS-126: a river basin id is accepted as a scope', async () => {
+  it('E1: a river basin id is accepted as a scope', async () => {
     const id = await startDraft();
 
     const res = await preview(id, [areas.kelani.id]);
@@ -143,7 +143,7 @@ describe('UC01 E1: invalid target scope', () => {
     ]);
   });
 
-  it('DMS-126: E1.2 the officer corrects the scope and the preview then succeeds', async () => {
+  it('E1.2: the officer corrects the scope and the preview then succeeds', async () => {
     const id = await startDraft();
     await preview(id, [new mongoose.Types.ObjectId().toString()]);
 
@@ -153,7 +153,7 @@ describe('UC01 E1: invalid target scope', () => {
     expect(res.body.data.alert).toMatchObject({ hazardType: 'FLOOD', severity: 'SEVERE' });
   });
 
-  it('DMS-126: a scope area removed after the preview is 400 on broadcast, and nothing is sent', async () => {
+  it('E1: a scope area removed after the preview is 400 on broadcast, and nothing is sent', async () => {
     await createUser({ homeDistrict: areas.kalutara });
     const id = await startDraft();
     await preview(id, [areas.kalutara.id]);
