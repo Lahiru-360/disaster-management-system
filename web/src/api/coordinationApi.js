@@ -95,6 +95,20 @@ async function dispatchTeam({ teamId, incidentLocation, priority }) {
 }
 
 /**
+ * `GET /api/dispatches` (§13.7.3) - the district's dispatches, newest first,
+ * at most 100. `status` is one DispatchStatus or an array of them; the console
+ * asks for `['DECLINED']` to prompt a reassignment (A3.2). A district officer
+ * may leave out `districtId` (their own).
+ */
+async function listDispatches({ districtId, status } = {}) {
+  const statuses = [status].flat().filter(Boolean);
+  const response = await client.get('/dispatches', {
+    params: { districtId, status: statuses.length > 0 ? statuses.join(',') : undefined },
+  });
+  return response.data.data.dispatches;
+}
+
+/**
  * `GET /api/rescue-teams` (§13.5) - the district's rescue teams, each with its
  * owning organisation and status, sorted by name.
  */
@@ -111,5 +125,6 @@ export default {
   logDistribution,
   listAvailableTeams,
   dispatchTeam,
+  listDispatches,
   listRescueTeams,
 };

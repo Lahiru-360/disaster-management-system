@@ -1,4 +1,4 @@
-import { useId, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 
 import { coordinationApi } from '../../api';
 import { apiErrorMessage } from '../../utils/apiErrors';
@@ -30,18 +30,26 @@ const minutesBetween = (fromIso, toIso) =>
 // dialog confirms the deadline; `onDispatched` receives the server's
 // `{ dispatch }` when it is closed. Mounted only while open, so each opening
 // starts fresh.
-export default function DispatchDialog({ mapCenter, onClose, onDispatched }) {
+//
+// A3.3 (DMS-146): `initial` reopens it for a declined dispatch - `{
+// incidentLocation, priority, excludeTeamIds }` - with the same location and
+// priority filled in, the teams already listed for that point and the
+// declined team left out of every list.
+export default function DispatchDialog({ mapCenter, initial, onClose, onDispatched }) {
   const titleId = useId();
   const teamsRequest = useRef(0);
 
-  const [placeLabel, setPlaceLabel] = useState('');
+  const excludeTeamIds = initial?.excludeTeamIds ?? [];
+  const [placeLabel, setPlaceLabel] = useState(initial?.incidentLocation?.label ?? '');
   const [mapOpen, setMapOpen] = useState(false);
-  const [picked, setPicked] = useState(null);
-  const [priority, setPriority] = useState(DEFAULT_PRIORITY);
+  const [picked, setPicked] = useState(
+    initial ? { lat: initial.incidentLocation.lat, lng: initial.incidentLocation.lng } : null,
+  );
+  const [priority, setPriority] = useState(initial?.priority ?? DEFAULT_PRIORITY);
 
   // null until a point is picked; then the AVAILABLE teams, nearest first.
   const [teams, setTeams] = useState(null);
-  const [teamsLoading, setTeamsLoading] = useState(false);
+  const [teamsLoading, setTeamsLoading] = useState(Boolean(initial));
   const [teamsError, setTeamsError] = useState(null);
   const [teamId, setTeamId] = useState('');
 
@@ -49,13 +57,11 @@ export default function DispatchDialog({ mapCenter, onClose, onDispatched }) {
   const [error, setError] = useState(null);
   const [sent, setSent] = useState(null);
 
-  // Reads the teams for a point. Only the latest request counts, so a slow
+  // Asks for the teams at a point. Only the latest request counts, so a slow
   // answer for an earlier pin can't replace the list for the current one.
-  const loadTeams = (point) => {
+  const requestTeams = (point) => {
     const request = (teamsRequest.current += 1);
-    setTeamsLoading(true);
-    setTeamsError(null);
-    return coordinationApi.listAvailableTeams(point).then(
+    return coordinationApi.listAvailableTeams({ ...point, excludeTeamIds }).then(
       (list) => {
         if (request !== teamsRequest.current) return;
         setTeams(list);
@@ -69,6 +75,20 @@ export default function DispatchDialog({ mapCenter, onClose, onDispatched }) {
       },
     );
   };
+
+  // Shows the loading state, then the teams for the point.
+  const loadTeams = (point) => {
+    setTeamsLoading(true);
+    setTeamsError(null);
+    return requestTeams(point);
+  };
+
+  // Reopened for a declined dispatch: list the teams for its point straight
+  // away (the loading state is already on, from the first render).
+  useEffect(() => {
+    if (initial) requestTeams(initial.incidentLocation);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once, on opening
+  }, []);
 
   const handlePick = (lat, lng) => {
     setPicked({ lat, lng });
