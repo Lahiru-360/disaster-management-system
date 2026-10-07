@@ -54,6 +54,7 @@
     "src/models/RescueTeam.js",
     "src/models/ReliefStock.js",
     "src/models/SupplyDistribution.js",
+    "src/models/OccupancyRecord.js",
     "src/domain/coordination/**/*.js",
     "src/services/CoordinationPresenter.js",
     "src/services/OperationalPictureService.js",
