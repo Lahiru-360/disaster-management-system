@@ -35,11 +35,19 @@ const minutesBetween = (fromIso, toIso) =>
 // incidentLocation, priority, excludeTeamIds }` - with the same location and
 // priority filled in, the teams already listed for that point and the
 // declined team left out of every list.
-export default function DispatchDialog({ mapCenter, initial, onClose, onDispatched }) {
+//
+// E3 (DMS-149): with no team available the dialog says "No team available" and
+// offers "Request DMC support", which queues the incident as an unassigned
+// dispatch and asks the DMC for help; `onQueued` receives `{ dispatch }` when
+// it is closed. `initial.queuedDispatchId` reopens it for an incident already
+// in that queue: dispatching then assigns the chosen team to it instead of
+// creating a dispatch, and there is nothing more to request.
+export default function DispatchDialog({ mapCenter, initial, onClose, onDispatched, onQueued }) {
   const titleId = useId();
   const teamsRequest = useRef(0);
 
   const excludeTeamIds = initial?.excludeTeamIds ?? [];
+  const queuedDispatchId = initial?.queuedDispatchId ?? null;
   const [placeLabel, setPlaceLabel] = useState(initial?.incidentLocation?.label ?? '');
   const [mapOpen, setMapOpen] = useState(false);
   const [picked, setPicked] = useState(
@@ -56,6 +64,7 @@ export default function DispatchDialog({ mapCenter, initial, onClose, onDispatch
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
   const [sent, setSent] = useState(null);
+  const [queued, setQueued] = useState(null);
 
   // Asks for the teams at a point. Only the latest request counts, so a slow
   // answer for an earlier pin can't replace the list for the current one.
@@ -96,18 +105,24 @@ export default function DispatchDialog({ mapCenter, initial, onClose, onDispatch
     loadTeams({ lat, lng });
   };
 
+  const incidentLocation = () => {
+    const label = placeLabel.trim();
+    return { ...picked, ...(label ? { label } : {}) };
+  };
+
   const handleSubmit = async (event) => {
     event.preventDefault();
     if (submitting || !picked || !teamId) return;
     setSubmitting(true);
     setError(null);
     try {
-      const label = placeLabel.trim();
-      const result = await coordinationApi.dispatchTeam({
-        teamId,
-        incidentLocation: { ...picked, ...(label ? { label } : {}) },
-        priority,
-      });
+      const result = queuedDispatchId
+        ? await coordinationApi.assignTeam(queuedDispatchId, teamId)
+        : await coordinationApi.dispatchTeam({
+            teamId,
+            incidentLocation: incidentLocation(),
+            priority,
+          });
       setSent(result);
     } catch (failure) {
       setError(apiErrorMessage(failure, 'The team could not be dispatched. Try again.'));
@@ -117,9 +132,31 @@ export default function DispatchDialog({ mapCenter, initial, onClose, onDispatch
     }
   };
 
+  // E3.2: no team is free, so queue the incident and ask the DMC for support.
+  const handleRequestSupport = async () => {
+    if (submitting || !picked) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      setQueued(
+        await coordinationApi.queueUnassigned({
+          incidentLocation: incidentLocation(),
+          priority,
+          supportRequested: true,
+        }),
+      );
+    } catch (failure) {
+      setError(apiErrorMessage(failure, 'Support could not be requested. Try again.'));
+      setSubmitting(false);
+    }
+  };
+
   if (sent) {
     const { dispatch } = sent;
-    const minutes = minutesBetween(dispatch.createdAt, dispatch.ackDeadline);
+    // Counted from the move to ASSIGNED - for a queued incident that is later
+    // than createdAt (E3).
+    const assignedAt = dispatch.statusHistory?.at(-1)?.at ?? dispatch.createdAt;
+    const minutes = minutesBetween(assignedAt, dispatch.ackDeadline);
     return (
       <Modal open onClose={() => onDispatched(sent)} labelledBy={titleId}>
         <h2 id={titleId} className="text-lg font-semibold text-ink">
@@ -138,6 +175,30 @@ export default function DispatchDialog({ mapCenter, initial, onClose, onDispatch
         </p>
         <div className="mt-6 flex justify-end">
           <Button fullWidth={false} onClick={() => onDispatched(sent)}>
+            Done
+          </Button>
+        </div>
+      </Modal>
+    );
+  }
+
+  if (queued) {
+    const { dispatch } = queued;
+    return (
+      <Modal open onClose={() => onQueued(queued)} labelledBy={titleId}>
+        <h2 id={titleId} className="text-lg font-semibold text-ink">
+          Support requested
+        </h2>
+        <p className="mt-2 text-[15px] leading-6 text-muted">
+          The DMC has been asked to support{' '}
+          <strong className="text-ink">
+            {dispatch.incidentLocation.label ?? 'the pinned location'}
+          </strong>{' '}
+          ({dispatch.priority.toLowerCase()} priority). The incident is in the unassigned queue;
+          dispatch it from there as soon as a team is free.
+        </p>
+        <div className="mt-6 flex justify-end">
+          <Button fullWidth={false} onClick={() => onQueued(queued)}>
             Done
           </Button>
         </div>
@@ -214,7 +275,24 @@ export default function DispatchDialog({ mapCenter, initial, onClose, onDispatch
           ) : !teams ? (
             <p className="text-[13px] text-muted">Pin the incident on the map to see the teams.</p>
           ) : teams.length === 0 ? (
-            <Notice>No team available.</Notice>
+            <div className="flex flex-col items-start gap-3">
+              <Notice className="w-full">
+                No team available.
+                {queuedDispatchId
+                  ? ' The incident stays in the unassigned queue until one is free.'
+                  : ' Request DMC support and the incident waits in the unassigned queue.'}
+              </Notice>
+              {queuedDispatchId ? null : (
+                <Button
+                  variant="outline"
+                  fullWidth={false}
+                  loading={submitting}
+                  onClick={handleRequestSupport}
+                >
+                  Request DMC support
+                </Button>
+              )}
+            </div>
           ) : (
             <ul className="divide-y divide-line rounded-lg border border-line">
               {teams.map((team) => (
