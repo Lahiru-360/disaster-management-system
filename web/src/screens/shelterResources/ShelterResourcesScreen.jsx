@@ -13,6 +13,7 @@ import RescueTeamsTable from '../../components/shelterResources/RescueTeamsTable
 import ShelterStatusTable from '../../components/shelterResources/ShelterStatusTable';
 import SummaryCards from '../../components/shelterResources/SummaryCards';
 import SupplyLogTable from '../../components/shelterResources/SupplyLogTable';
+import UnassignedIncidentsTable from '../../components/shelterResources/UnassignedIncidentsTable';
 import UpdateOccupancyDialog from '../../components/shelterResources/UpdateOccupancyDialog';
 import Button from '../../components/ui/Button';
 import EmptyState from '../../components/ui/EmptyState';
@@ -34,6 +35,8 @@ const errorMessage = (error, fallback) => error?.response?.data?.error?.message 
 // The dashboard refetches whenever the district or the organisation filter
 // changes, and again after the occupancy (DMS-141), dispatch (DMS-142) and
 // supply (DMS-143) dialogs save, and after a shelter is registered (DMS-144).
+// The unassigned incidents (E3, DMS-149) are read with it and again once an
+// incident is queued or a team is assigned to one.
 export default function ShelterResourcesScreen() {
   const { user } = useAuth();
   const isDmc = [ROLES.DMC_OFFICER, ROLES.DUTY_OFFICER].includes(user?.role);
@@ -49,6 +52,10 @@ export default function ShelterResourcesScreen() {
   const [picture, setPicture] = useState(null);
   const [pictureError, setPictureError] = useState(null);
 
+  // E3: the district's UNASSIGNED dispatches; null until the first answer.
+  const [unassigned, setUnassigned] = useState(null);
+  const [unassignedError, setUnassignedError] = useState(null);
+
   // The shelter whose row opened the Update Shelter Occupancy dialog (step 3).
   const [occupancyShelterId, setOccupancyShelterId] = useState(null);
   // Whether the Log Relief Supply dialog (steps 12-13) is open.
@@ -57,6 +64,8 @@ export default function ShelterResourcesScreen() {
   // `reassigning` is the declined dispatch it was reopened for (A3.3).
   const [dispatchOpen, setDispatchOpen] = useState(false);
   const [reassigning, setReassigning] = useState(null);
+  // The queued incident the dialog was reopened to give a team (E3).
+  const [assigning, setAssigning] = useState(null);
   // Whether the Register shelter dialog (A1) is open.
   const [registerOpen, setRegisterOpen] = useState(false);
 
@@ -85,10 +94,28 @@ export default function ShelterResourcesScreen() {
     );
   }, [isDmc, districtId, organisationId]);
 
+  const loadUnassigned = useCallback(
+    () =>
+      coordinationApi
+        .listDispatches({ districtId: isDmc ? districtId : undefined, status: ['UNASSIGNED'] })
+        .then(
+          (loaded) => {
+            setUnassigned(loaded);
+            setUnassignedError(null);
+          },
+          (error) =>
+            setUnassignedError(
+              errorMessage(error, 'The unassigned incidents could not be loaded.'),
+            ),
+        ),
+    [isDmc, districtId],
+  );
+
   useEffect(() => {
     if (!ready) return;
     loadPicture();
-  }, [ready, loadPicture]);
+    loadUnassigned();
+  }, [ready, loadPicture, loadUnassigned]);
 
   // A flagged update keeps its dialog open on the suggestion (A2); anything else is done.
   const handleOccupancyUpdated = (result) => {
@@ -100,7 +127,18 @@ export default function ShelterResourcesScreen() {
     setDispatchOpen(false);
     if (reassigning) handledDecline(reassigning);
     setReassigning(null);
+    setAssigning(null);
     loadPicture();
+    loadUnassigned();
+  };
+
+  // E3.2: no team was free, so the incident is queued and the DMC asked for
+  // support. A declined dispatch that led here has been dealt with too.
+  const handleQueued = () => {
+    setDispatchOpen(false);
+    if (reassigning) handledDecline(reassigning);
+    setReassigning(null);
+    loadUnassigned();
   };
 
   // A declined dispatch has been dealt with (reassigned or dismissed): drop its
@@ -119,9 +157,16 @@ export default function ShelterResourcesScreen() {
     setDispatchOpen(true);
   };
 
+  // E3: a team is free, so give it to a queued incident from the list.
+  const openAssign = (dispatch) => {
+    setAssigning(dispatch);
+    setDispatchOpen(true);
+  };
+
   const closeDispatch = () => {
     setDispatchOpen(false);
     setReassigning(null);
+    setAssigning(null);
   };
 
   const handleShelterRegistered = () => {
@@ -146,6 +191,23 @@ export default function ShelterResourcesScreen() {
     focusId: searchParams.get('dispatch'),
     onNewDecline: loadPicture,
   });
+
+  // What the Dispatch dialog opens with: a declined dispatch to reassign (A3.3),
+  // a queued incident to give a team (E3), or nothing for a new dispatch.
+  let dispatchInitial;
+  if (reassigning) {
+    dispatchInitial = {
+      incidentLocation: reassigning.incidentLocation,
+      priority: reassigning.priority,
+      excludeTeamIds: [reassigning.team.id],
+    };
+  } else if (assigning) {
+    dispatchInitial = {
+      incidentLocation: assigning.incidentLocation,
+      priority: assigning.priority,
+      queuedDispatchId: assigning.id,
+    };
+  }
 
   const districtName = isDmc
     ? districts?.find((d) => d.id === districtId)?.name
@@ -254,6 +316,20 @@ export default function ShelterResourcesScreen() {
               </section>
 
               <section>
+                <SectionLabel className="mb-2">Unassigned Incidents</SectionLabel>
+                {unassignedError ? (
+                  <Notice variant="error">{unassignedError}</Notice>
+                ) : !unassigned ? (
+                  <Loader />
+                ) : (
+                  <UnassignedIncidentsTable
+                    dispatches={unassigned}
+                    onDispatch={canWrite ? openAssign : undefined}
+                  />
+                )}
+              </section>
+
+              <section>
                 <SectionLabel className="mb-2">Recent Relief Supply Logs</SectionLabel>
                 <SupplyLogTable distributions={picture.recentDistributions} />
               </section>
@@ -275,17 +351,10 @@ export default function ShelterResourcesScreen() {
       {dispatchOpen && picture ? (
         <DispatchDialog
           mapCenter={picture.shelters[0]?.location}
-          initial={
-            reassigning
-              ? {
-                  incidentLocation: reassigning.incidentLocation,
-                  priority: reassigning.priority,
-                  excludeTeamIds: [reassigning.team.id],
-                }
-              : undefined
-          }
+          initial={dispatchInitial}
           onClose={closeDispatch}
           onDispatched={handleDispatched}
+          onQueued={handleQueued}
         />
       ) : null}
 

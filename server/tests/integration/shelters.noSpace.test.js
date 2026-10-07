@@ -2,6 +2,7 @@ import request from 'supertest';
 import { app } from '../../src/core/App.js';
 import { EventStatus } from '../../src/enums/EventStatus.js';
 import { Role } from '../../src/enums/Role.js';
+import { DistrictCapacityAlert } from '../../src/models/DistrictCapacityAlert.js';
 import { HazardEvent } from '../../src/models/HazardEvent.js';
 import { Shelter } from '../../src/models/Shelter.js';
 import { UserNotification } from '../../src/models/UserNotification.js';
@@ -30,6 +31,13 @@ const update = (shelter, occupants) =>
     .patch(`/api/shelters/${shelter.id}/occupancy`)
     .set('Authorization', bearerFor(officer))
     .send({ occupants });
+
+// The once-an-hour window leans on the alert record's unique district index to
+// refuse a second record; the test database must have built it before the
+// first update, or a second alert can slip through.
+beforeAll(async () => {
+  await DistrictCapacityAlert.init();
+});
 
 beforeEach(async () => {
   areas = await seedAreas();
