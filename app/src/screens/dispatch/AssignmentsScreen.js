@@ -4,6 +4,7 @@ import { FlatList, RefreshControl, Text } from 'react-native';
 
 import { dispatchesApi } from '../../api';
 import AssignmentCard from '../../components/dispatch/AssignmentCard';
+import DeclineSheet from '../../components/dispatch/DeclineSheet';
 import EmptyState from '../../components/ui/EmptyState';
 import Loader from '../../components/ui/Loader';
 import Notice from '../../components/ui/Notice';
@@ -26,6 +27,10 @@ export default function AssignmentsScreen() {
   const [actionError, setActionError] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [busyId, setBusyId] = useState(null);
+  // The assignment whose Decline sheet is open (A3.1), and how sending it went.
+  const [declining, setDeclining] = useState(null);
+  const [declineSending, setDeclineSending] = useState(false);
+  const [declineError, setDeclineError] = useState(null);
 
   const load = useCallback(
     () =>
@@ -67,6 +72,35 @@ export default function AssignmentsScreen() {
     setBusyId(null);
   }
 
+  function openDecline(dispatch) {
+    setActionError(null);
+    setDeclineError(null);
+    setDeclining(dispatch);
+  }
+
+  // A3.1-A3.2: send the reason. A refused reason (400) stays in the sheet to be
+  // corrected; any other refusal - the deadline passed, or it was acknowledged
+  // meanwhile (409) - closes it and shows the server's message, since there is
+  // nothing left to decline.
+  async function sendDecline(reason) {
+    setDeclineSending(true);
+    setDeclineError(null);
+    try {
+      await dispatchesApi.decline(declining.id, reason);
+      setDeclining(null);
+    } catch (failure) {
+      const message = errorMessage(failure, 'The assignment could not be declined. Try again.');
+      if (failure?.response?.status === 400 || !failure?.response) {
+        setDeclineError(message);
+      } else {
+        setDeclining(null);
+        setActionError(message);
+      }
+    }
+    await load();
+    setDeclineSending(false);
+  }
+
   const team = mine?.team ?? null;
 
   return (
@@ -105,6 +139,7 @@ export default function AssignmentsScreen() {
                   'The assignment could not be acknowledged. Try again.',
                 )
               }
+              onDecline={openDecline}
               onOnSite={(dispatch) =>
                 act(
                   dispatch,
@@ -137,6 +172,14 @@ export default function AssignmentsScreen() {
           contentContainerClassName="pb-6"
         />
       )}
+
+      <DeclineSheet
+        visible={declining !== null}
+        submitting={declineSending}
+        error={declineError}
+        onDecline={sendDecline}
+        onClose={() => setDeclining(null)}
+      />
     </Screen>
   );
 }

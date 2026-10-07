@@ -1,4 +1,5 @@
 import Joi from 'joi';
+import { DispatchStatus } from '../enums/DispatchStatus.js';
 import { Priority } from '../enums/Priority.js';
 import { SupplyType } from '../enums/SupplyType.js';
 
@@ -27,6 +28,22 @@ export class CoordinationValidator {
       .custom((value) => value.split(',')),
   });
 
+  // The officer console's dispatch list (§13.7.3): one DispatchStatus or
+  // several separated by commas, e.g. "DECLINED,UNRESPONSIVE". Handed on as an array.
+  static dispatchListQuery = Joi.object({
+    districtId: objectId,
+    status: Joi.string()
+      .custom((value, helpers) => {
+        const statuses = value.split(',');
+        return statuses.every((status) => Object.values(DispatchStatus).includes(status))
+          ? statuses
+          : helpers.error('dispatch.status');
+      })
+      .messages({
+        'dispatch.status': `{#label} must be DispatchStatus values separated by commas (${Object.values(DispatchStatus).join(', ')})`,
+      }),
+  });
+
   // UC03 steps 8-9 (§13.7.2).
   static dispatchBody = Joi.object({
     teamId: objectId.required(),
@@ -38,6 +55,11 @@ export class CoordinationValidator {
     priority: Joi.string()
       .valid(...Object.values(Priority))
       .required(),
+  });
+
+  // UC03 A3.1 (§13.8): why the lead turns the assignment down.
+  static declineBody = Joi.object({
+    reason: Joi.string().trim().min(1).max(200).required(),
   });
 
   // UC03 Log Relief Supply dialog (§13.11.1).
