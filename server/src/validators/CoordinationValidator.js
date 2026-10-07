@@ -136,6 +136,12 @@ export class CoordinationValidator {
     }),
   });
 
+  // UC03 A2.3 (§13.4.4): the shelter new arrivals are sent to. Whether it is
+  // another shelter of the same district, and has space, is the service's call.
+  static redirectBody = Joi.object({
+    toShelterId: objectId.required().messages({ 'any.required': '{#label} is required' }),
+  });
+
   // UC03 E1: a whole number of people, 0 or more (an empty shelter). A JSON
   // number only - "12" is refused rather than converted - and one message for
   // every way it can be wrong, as the contract shows (§13.4.2).

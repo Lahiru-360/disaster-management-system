@@ -36,9 +36,14 @@ const COLUMNS = [
     key: 'status',
     header: 'Status',
     render: (row) => (
-      <StatusBadge tone={SHELTER_STATUS_TONES[row.status]}>
-        {SHELTER_STATUS_LABELS[row.status]}
-      </StatusBadge>
+      <div className="flex flex-col items-start gap-1">
+        <StatusBadge tone={SHELTER_STATUS_TONES[row.status]}>
+          {SHELTER_STATUS_LABELS[row.status]}
+        </StatusBadge>
+        {row.redirectingTo ? (
+          <span className="text-[12px] text-muted">Redirecting to {row.redirectingTo.name}</span>
+        ) : null}
+      </div>
     ),
   },
 ];

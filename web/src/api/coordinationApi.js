@@ -42,6 +42,18 @@ async function registerShelter({ name, location, capacity }) {
 }
 
 /**
+ * `POST /api/shelters/:id/redirects` (§13.4.4, A2.3) - sends new arrivals at a
+ * shelter to another one in the district. Resolves with the stored redirect
+ * `{ id, from, to, district, by, at }`. A target with no spare capacity
+ * (90% or more) rejects with 409 SHELTER_NO_SPACE, naming how full it is, and
+ * stores nothing.
+ */
+async function redirectArrivals(shelterId, toShelterId) {
+  const response = await client.post(`/shelters/${shelterId}/redirects`, { toShelterId });
+  return response.data.data.redirect;
+}
+
+/**
  * `PATCH /api/shelters/:id/occupancy` (§13.4.2, steps 3-5) - sets how many
  * people are in the shelter. Resolves with `{ shelter, rate, status, flagged,
  * alternateShelter, dmcAlerted }`. A value that isn't a whole number, 0 or more
@@ -133,6 +145,7 @@ export default {
   getOperationalPicture,
   listShelters,
   registerShelter,
+  redirectArrivals,
   updateOccupancy,
   listStock,
   logDistribution,

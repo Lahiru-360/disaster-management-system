@@ -158,12 +158,46 @@ function statusOf({ capacity, currentOccupancy }) {
   return 'FULL';
 }
 
-const presentShelter = (record) => ({
-  ...record,
-  location: { ...record.location },
-  rate: record.currentOccupancy / record.capacity,
-  status: statusOf(record),
-});
+const FLAGGED = ['NEAR_CAPACITY', 'FULL'];
+
+// What officers have redirected, oldest first: { id, from, to, at } by shelter id.
+const redirects = [];
+
+// `redirectingTo` is the target of the latest redirect from the shelter, shown
+// only while the shelter is NEAR_CAPACITY or FULL, as the server does.
+function redirectingTo(record, status) {
+  const latest = redirects.findLast((r) => r.from === record.id);
+  const target = latest && shelters.find((s) => s.id === latest.to);
+  return FLAGGED.includes(status) && target ? { id: target.id, name: target.name } : null;
+}
+
+const presentShelter = (record) => {
+  const status = statusOf(record);
+  return {
+    ...record,
+    location: { ...record.location },
+    rate: record.currentOccupancy / record.capacity,
+    status,
+    redirectingTo: redirectingTo(record, status),
+  };
+};
+
+// A2.2: the nearest other shelter below 90% (AVAILABLE or FILLING_UP), or null.
+function nearestWithSpace(record) {
+  const [nearest] = shelters
+    .filter((s) => s.id !== record.id && !FLAGGED.includes(statusOf(s)))
+    .map((s) => ({ shelter: s, km: haversineKm(record.location, s.location) }))
+    .sort((a, b) => a.km - b.km || a.shelter.name.localeCompare(b.shelter.name));
+  if (!nearest) return null;
+  const saved = presentShelter(nearest.shelter);
+  return {
+    id: saved.id,
+    name: saved.name,
+    rate: saved.rate,
+    status: saved.status,
+    distanceKm: Math.round(nearest.km * 10) / 10,
+  };
+}
 
 const presentTeam = (record) => ({
   ...record,
@@ -317,9 +351,9 @@ async function registerShelter({ name, location, capacity }) {
 
 // Steps 3-5. Mirrors the server: a whole number, 0 or more, is valid (0 is an
 // empty shelter, more than capacity shows as FULL); anything else is a 400 on
-// `occupants` and changes nothing (E1). A2's suggestion and E2's DMC alert
-// are not simulated here yet, so `alternateShelter` and `dmcAlerted` stay as
-// the contract's "not flagged" shape.
+// `occupants` and changes nothing (E1). A NEAR_CAPACITY or FULL result is
+// flagged with the nearest shelter that has space (A2); E2's DMC alert is not
+// simulated here yet, so `dmcAlerted` stays false.
 async function updateOccupancy(shelterId, occupants) {
   await delay();
   takeFailure();
@@ -340,9 +374,52 @@ async function updateOccupancy(shelterId, occupants) {
     shelter: saved,
     rate: saved.rate,
     status: saved.status,
-    flagged: ['NEAR_CAPACITY', 'FULL'].includes(saved.status),
-    alternateShelter: null,
+    flagged: FLAGGED.includes(saved.status),
+    alternateShelter: FLAGGED.includes(saved.status) ? nearestWithSpace(record) : null,
     dmcAlerted: false,
+  };
+}
+
+// A2.3. Mirrors the server: another shelter that still has space (below 90%
+// when it is asked) takes the new arrivals; a full one is 409 SHELTER_NO_SPACE
+// and nothing is stored. The latest redirect from a shelter is its current one.
+async function redirectArrivals(shelterId, toShelterId) {
+  await delay();
+  takeFailure();
+  const from = shelters.find((s) => s.id === shelterId);
+  const to = shelters.find((s) => s.id === toShelterId);
+  if (!from || !to) throw apiError(404, 'NOT_FOUND', 'Shelter not found.');
+  if (from.id === to.id) {
+    const error = apiError(400, 'VALIDATION_ERROR', 'Request validation failed.');
+    error.response.data.error.errors = [
+      { field: 'toShelterId', message: 'must be another shelter' },
+    ];
+    throw error;
+  }
+  const target = presentShelter(to);
+  if (FLAGGED.includes(target.status)) {
+    throw apiError(
+      409,
+      'SHELTER_NO_SPACE',
+      `${to.name} has no spare capacity (${Math.round(target.rate * 100)}%).`,
+    );
+  }
+
+  const at = new Date().toISOString();
+  const stored = {
+    id: `66fb0f1b2c3d4e5f6a7b91${String(redirects.length + 1).padStart(2, '0')}`,
+    from: from.id,
+    to: to.id,
+    at,
+  };
+  redirects.push(stored);
+  return {
+    id: stored.id,
+    from: { id: from.id, name: from.name },
+    to: { id: to.id, name: to.name },
+    district: GAMPAHA,
+    by: DEMO_OFFICER,
+    at,
   };
 }
 
@@ -539,6 +616,7 @@ export default {
   getOperationalPicture,
   listShelters,
   registerShelter,
+  redirectArrivals,
   updateOccupancy,
   listStock,
   logDistribution,
