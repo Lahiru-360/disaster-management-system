@@ -9,6 +9,7 @@ import { OccupancyRecord } from '../../src/models/OccupancyRecord.js';
 import { Organisation } from '../../src/models/Organisation.js';
 import { PostEventReport } from '../../src/models/PostEventReport.js';
 import { SupplyDistribution } from '../../src/models/SupplyDistribution.js';
+import { User } from '../../src/models/User.js';
 import { seedAreas } from '../helpers/areaFixtures.js';
 import { bearerFor } from '../helpers/authHelper.js';
 import { createUser } from '../helpers/userFactory.js';
@@ -175,6 +176,17 @@ describe('POST /api/post-event-reports — generate', () => {
     const stored = await PostEventReport.findById(report.id).lean();
     expect(stored.generatedBy.equals(officer._id)).toBe(true);
     expect(stored.summary.peakOccupancy).toBe(420);
+  });
+
+  it('DMS-153.6: a report whose officer has since been removed is still readable, with generatedBy null', async () => {
+    const generated = await generate(kelaniBody());
+    await User.deleteOne({ _id: officer._id });
+    const reader = await createUser({ role: Role.DMC_OFFICER });
+
+    const res = await get(`/api/post-event-reports/${generated.body.data.report.id}`, reader);
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.report.generatedBy).toBeNull();
   });
 
   it('DMS-153.6: lists the districts in the event’s order, whatever order they were sent in', async () => {

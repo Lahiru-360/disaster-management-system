@@ -272,6 +272,20 @@ describe('POST /api/post-event-reports/:id/refine — refused', () => {
     expect([unknownReport.status, unknownReport.body.error.code]).toEqual([404, 'NOT_FOUND']);
   });
 
+  it('DMS-156.2: a report whose hazard event has since been removed is 404 and nothing is stored', async () => {
+    await HazardEvent.deleteOne({ _id: report.event.id });
+    const before = await PostEventReport.countDocuments();
+
+    const res = await refine({ hazardType: 'FLOOD' });
+
+    expect([res.status, res.body.error.code, res.body.error.message]).toEqual([
+      404,
+      'NOT_FOUND',
+      'Hazard event not found.',
+    ]);
+    expect(await PostEventReport.countDocuments()).toBe(before);
+  });
+
   it('TC-01 A1: a district officer cannot filter a report (403)', async () => {
     const res = await refine(
       { hazardType: 'FLOOD' },
