@@ -113,6 +113,21 @@ describe('ResourceDistributionSection', () => {
     ]);
   });
 
+  it('DMS-153.3: a district that no longer exists keeps its id, with a null name, and sorts first', async () => {
+    const { section } = sectionWith([
+      distribution(D.colombo, 'FOOD', 'o-rc', 5),
+      distribution('d-gone', 'FOOD', 'o-rc', 7),
+    ]);
+
+    const { result } = await section.compile(kelaniContext({ districtIds: [D.colombo, 'd-gone'] }));
+
+    expect(result.rows.map((row) => row.district)).toEqual([
+      { id: 'd-gone', name: null },
+      { id: D.colombo, name: 'Colombo' },
+    ]);
+    expect(result.total).toBe(12);
+  });
+
   it('DMS-153.3: an organisation that no longer exists keeps its id, with a null name', async () => {
     const { section } = sectionWith([
       distribution(D.colombo, 'FOOD', 'o-gone', 5),
