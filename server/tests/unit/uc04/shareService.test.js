@@ -119,6 +119,36 @@ describe('ShareService.share', () => {
     });
   });
 
+  it('TC-47 E4: a transport error that is not an ApiError is answered as the standard 502 and recorded with its own reason', async () => {
+    const { service, emailService, shareModel } = setup();
+    emailService.send.mockRejectedValue(new Error('socket hang up'));
+
+    const err = await shareOf(service);
+
+    expect(err).toBeInstanceOf(ApiError);
+    expect([err.status, err.code, err.message]).toEqual([
+      502,
+      'EMAIL_UNAVAILABLE',
+      'Could not send the email. Please try again.',
+    ]);
+    expect(shareModel.create).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'FAILED', failureReason: 'socket hang up' }),
+    );
+  });
+
+  it('TC-47 E4: a failure with no message gets a default reason, and a long one is cut to 500 characters', async () => {
+    const { service, emailService, shareModel } = setup();
+    emailService.send.mockRejectedValueOnce(new Error(''));
+    emailService.send.mockRejectedValueOnce(new Error('x'.repeat(900)));
+
+    await shareOf(service);
+    await shareOf(service);
+
+    const reasons = shareModel.create.mock.calls.map(([fields]) => fields.failureReason);
+    expect(reasons[0]).toBe('The email could not be sent.');
+    expect(reasons[1]).toHaveLength(500);
+  });
+
   it('TC-27 Main 14: an unknown organisation is 404, with no export, email or share', async () => {
     const { service, exportService, emailService, shareModel } = setup({ organisation: null });
 
