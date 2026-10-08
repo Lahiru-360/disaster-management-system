@@ -1,5 +1,71 @@
 # Appendix A Traceability Matrices
 
-<!-- Owner: Sayuni (DMS-116). One matrix per UC, PMP Section 12 template. -->
+<!-- Owner: Sayuni (DMS-116). One matrix per UC, PMP Section 12 template. Each owner fills their own table; the flow rows and tickets are pre-filled so that every flow of every use case appears. -->
 
-_TODO_
+Each matrix maps a scenario step or flow of the improved use case to the sequence-diagram message, the endpoint, the service or domain method, the screen and the test cases that implement it. It is the evidence for "alignment with use cases, use case scenarios and sequence diagrams is clear". Names are those of the improved class diagram. Test case IDs are those of the catalogue in each UC's test story (DMS-129, DMS-139, DMS-152, DMS-163).
+
+## A.1 UC01 Issue Hazard Warning (Anupa)
+
+| Flow / step | Sequence message (improved diagram) | Endpoint | Service / domain method | Screen (wireframe ref) | Ticket | Test cases |
+|---|---|---|---|---|---|---|
+| UC01 Main 1–8 | | | | | DMS-120 | |
+| UC01 Main 9–15 | | | | | DMS-121 | |
+| UC01 A1 | | | | | DMS-122 | |
+| UC01 A2 | | | | | DMS-123 | |
+| UC01 A3 | | | | | DMS-124 | |
+| UC01 A4 | | | | | DMS-125 | |
+| UC01 E1 | | | | | DMS-126 | |
+| UC01 E2 | | | | | DMS-127 | |
+| UC01 E3 | | | | | DMS-128 | |
+
+## A.2 UC02 Submit and Verify Hazard Report (Bineth)
+
+| Flow / step | Sequence message (improved diagram) | Endpoint | Service / domain method | Screen (wireframe ref) | Ticket | Test cases |
+|---|---|---|---|---|---|---|
+| UC02 Main 1–9 | | | | | DMS-130 | |
+| UC02 Main 10–15 | | | | | DMS-131 | |
+| UC02 A1 | | | | | DMS-132 | |
+| UC02 A2 | | | | | DMS-133 | |
+| UC02 A3 | | | | | DMS-134 | |
+| UC02 A4 | | | | | DMS-135 | |
+| UC02 E1 | | | | | DMS-136 | |
+| UC02 E2 | | | | | DMS-137 | |
+| UC02 E3 | | | | | DMS-138 | |
+
+## A.3 UC03 Coordinate Shelter and Resource Allocation (Lahiru)
+
+| Flow / step | Sequence message (improved diagram) | Endpoint | Service / domain method | Screen (wireframe ref) | Ticket | Test cases |
+|---|---|---|---|---|---|---|
+| UC03 Main 1–2, 14 | | | | | DMS-140 | |
+| UC03 Main 3–5 | | | | | DMS-141 | |
+| UC03 Main 6–11 | | | | | DMS-142 | |
+| UC03 Main 12–13 | | | | | DMS-143 | |
+| UC03 A1 | | | | | DMS-144 | |
+| UC03 A2 | | | | | DMS-145 | |
+| UC03 A3 | | | | | DMS-146 | |
+| UC03 E1 | | | | | DMS-147 | |
+| UC03 E2 | | | | | DMS-148 | |
+| UC03 E3 | | | | | DMS-149 | |
+| UC03 E4 | | | | | DMS-150 | |
+| UC03 E5 | | | | | DMS-151 | |
+
+## A.4 UC04 Generate Post-Event Analysis Report (Sayuni)
+
+Messages are those of the improved sequence diagram (UC04 §4: ReportsScreen → ReportController → HazardEvent / ReportBuilder → ExportService → ShareService → Organisation), as quoted in the scenario traces of the stories. Screens are `web/src/screens/reports/ReportParametersScreen.jsx` and `ReportViewScreen.jsx` with the components under `web/src/components/reports/`. Tests are in `server/tests/unit/uc04/` and the `postEventReports.*`, `reportExports.*` and `reportShares.*` files in `server/tests/integration/`.
+
+| Flow / step | Sequence message (improved diagram) | Endpoint | Service / domain method | Screen (wireframe ref) | Ticket | Test cases |
+|---|---|---|---|---|---|---|
+| UC04 Main 1–3 | `getClosedEvents() → findClosed()` | `GET /api/hazard-events?status=CLOSED`; `POST /api/post-event-reports` (access, role check) | `HazardEventService.list`, `HazardEvent` (domain, `isClosed()`) | ReportParametersScreen, ReportParametersForm (§5.1) | DMS-153 | TC-01, TC-02 |
+| UC04 Main 4–5 | `generate(params) → validate(params)` | `POST /api/post-event-reports` | `PostEventReportService.generate`, `ReportParameters.problemsWith`, `PostEventReportValidator.generateSchema` | ReportParametersScreen (§5.1) | DMS-153 | TC-03 |
+| UC04 Main 6–9 | `build(params) → loop compile(context)` per section | `POST /api/post-event-reports` | `ReportBuilder.build`, `ReportContext`, `AlertTimelineSection`, `CitizensReachedSection`, `OccupancyOverTimeSection`, `ResourceDistributionSection` (`ReportSection` strategy) | ReportViewScreen: AlertTimelineChart, CitizensReachedChart, OccupancyChart, DistributionChart (§5.2) | DMS-153 | TC-04…TC-12 |
+| UC04 Main 10 | `markIncomplete(gaps)` | `POST /api/post-event-reports` | `GapDetector.findGaps`, `ReportSection.findGaps`, `DataGap`, `PostEventReport.hasGaps` | IncompleteDataBanner (§5.2) | DMS-153 | TC-13…TC-15 |
+| UC04 Main 11 | display the report with summary figures | `GET /api/post-event-reports/:id` | `PostEventReportService.findById`, `PostEventReportPresenter`, `ReportBuilder` summary | ReportViewScreen: SummaryFigures, ReportSectionCard (§5.2) | DMS-153 | TC-16…TC-18 |
+| UC04 Main 12–13 | `generateFile(report, format) → ReportExport` | `POST /api/post-event-reports/:id/exports` | `ExportService.generateFile`, `ReportExporter` (`PdfReportExporter`, `CsvReportExporter`), `StorageService.storeFile`, `ReportExport` | ExportActions: Export PDF / CSV, "Export ready – Download" (§5.2) | DMS-154 | TC-19…TC-23 |
+| UC04 Main 14–15 | `share(exportId, orgId, email) → send(file, email) → Organisation` | `POST /api/post-event-reports/:id/shares`; `GET /api/post-event-reports/:id/shares` | `ShareService.share`, `ExportService.findOrCreate`, `EmailService.send`, `ReportShareEmail`, `ReportShare` | ShareDialog, SharesList (§5.2) | DMS-155 | TC-24…TC-28 |
+| UC04 A1 | `applyFilter → refine(reportId, filters) → filtered report` | `POST /api/post-event-reports/:id/refine` | `PostEventReportService.refine`, `ReportContext` filters, the filters each `ReportSection` honours | ReportFilterBar (§5.2) | DMS-156 | TC-29…TC-32 |
+| UC04 A2 | export, then end (no share) | none (`ReportExport` stays; no `ReportShare` is made) | `ExportService.generateFile` (no `ShareService` call) | ExportActions: Done | DMS-157 | TC-33 |
+| UC04 A3 | close without exporting; reopen from Recent reports | `GET /api/post-event-reports?eventId=` | `PostEventReportService.listForEvent` | ReportViewScreen: Close; RecentReports | DMS-158 | TC-34 |
+| UC04 E1 | validation error, resume at step 4 | `POST /api/post-event-reports` → 400 `VALIDATION_ERROR` | `ReportParameters.problemsWith`, `PostEventReportValidator` | ReportParametersScreen: field errors | DMS-159 | TC-35…TC-40 |
+| UC04 E2 | no data, resume at step 3 | `POST /api/post-event-reports` → 404 `NO_DATA_FOR_SELECTION` | `ReportBuilder.build` (`isEmpty`), `PostEventReportService.generate` | ReportParametersScreen: "No data for this selection" | DMS-160 | TC-41…TC-43 |
+| UC04 E3 | export failure, report stays, retry | `POST /api/post-event-reports/:id/exports` → 500 `EXPORT_FAILED` / 502 `STORAGE_UNAVAILABLE` | `ExportService.generateFile` (write and upload failure paths) | ExportActions: "Export failed – try again", Retry | DMS-161 | TC-44…TC-46 |
+| UC04 E4 | sharing failure, record FAILED, keep the export, retry | `POST /api/post-event-reports/:id/shares` → 502 `EMAIL_UNAVAILABLE`; `POST /api/report-shares/:id/retry` | `ShareService.share` (failure path), `ShareService.retry`, `ReportShare` (`ShareStatus`, `attempts`) | SharesList: "Sharing failed – Retry" | DMS-162 | TC-47…TC-50 |
