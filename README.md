@@ -97,6 +97,7 @@ server/
 │   │       ├── EmailTransport.js           abstract transport
 │   │       ├── NoopEmailTransport.js       default — records messages, sends nothing
 │   │       ├── BrevoEmailTransport.js      Brevo API (EMAIL_TRANSPORT=brevo)
+│   │       ├── FailingEmailTransport.js    demo — every send fails 502 (EMAIL_TRANSPORT=failing)
 │   │       ├── EmailTemplate.js            abstract: render() → subject/html/text
 │   │       └── PasswordResetEmail.js
 │   │

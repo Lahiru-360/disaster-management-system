@@ -57,6 +57,30 @@ describe('email.service', () => {
     expect(mockSendTransacEmail).not.toHaveBeenCalled();
   });
 
+  it('EMAIL_TRANSPORT=failing fails every send with 502 EMAIL_UNAVAILABLE and sends nothing', async () => {
+    process.env.EMAIL_TRANSPORT = 'failing';
+
+    const { sendEmail } = await importEmailService();
+
+    await expect(sendEmail(message)).rejects.toMatchObject({
+      status: 502,
+      code: 'EMAIL_UNAVAILABLE',
+      message: 'Could not send the email. Please try again.',
+    });
+    expect(mockSendTransacEmail).not.toHaveBeenCalled();
+  });
+
+  it('an unknown EMAIL_TRANSPORT value falls back to the no-op transport', async () => {
+    process.env.EMAIL_TRANSPORT = 'smtp';
+
+    const { sendEmail, getSentEmails, clearSentEmails } = await importEmailService();
+    clearSentEmails();
+
+    await expect(sendEmail(message)).resolves.toBeUndefined();
+
+    expect(getSentEmails()).toEqual([message]);
+  });
+
   it('surfaces a stubbed provider failure as 502 EMAIL_UNAVAILABLE', async () => {
     process.env.EMAIL_TRANSPORT = 'brevo';
     process.env.EMAIL_FROM = 'no-reply@example.com';
