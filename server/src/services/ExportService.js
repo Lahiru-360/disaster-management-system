@@ -77,6 +77,31 @@ export class ExportService {
     };
   }
 
+  /**
+   * The newest export of the report in the format, or a new one when it has
+   * none: the include rule of sharing (§14.9), where Share report «include»s
+   * Export report. A new export fails like generateFile (E3).
+   * @param {{ id: string }} officer the signed-in DMC or duty officer
+   * @param {string} reportId a report that exists
+   * @param {string} format an ExportFormat
+   * @returns {Promise<{ exportId: string, format: string, fileUrl: string, createdAt: Date }>}
+   */
+  async findOrCreate(officer, reportId, format) {
+    const existing = await this.#exportModel
+      .findOne({ report: reportId, format })
+      .sort({ createdAt: -1, _id: -1 })
+      .lean();
+    if (existing) {
+      return {
+        exportId: String(existing._id),
+        format: existing.format,
+        fileUrl: existing.fileUrl,
+        createdAt: existing.createdAt,
+      };
+    }
+    return this.generateFile(officer, reportId, format);
+  }
+
   // E3.1: whatever stopped the exporter, the officer can only try again.
   static async #write(exporter, report) {
     try {

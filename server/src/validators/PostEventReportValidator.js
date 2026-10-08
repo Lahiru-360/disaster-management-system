@@ -46,6 +46,24 @@ export class PostEventReportValidator {
       .messages({ 'any.only': `must be one of [${Object.values(ExportFormat).join(', ')}]` }),
   });
 
+  // POST /api/post-event-reports/:id/shares (§14.9). The format defaults to
+  // PDF and the message to the dialog's own default; a blank message is refused
+  // rather than defaulted, since the officer cleared it.
+  static shareSchema = Joi.object({
+    format: Joi.string()
+      .valid(...Object.values(ExportFormat))
+      .default(ExportFormat.PDF)
+      .messages({ 'any.only': `must be one of [${Object.values(ExportFormat).join(', ')}]` }),
+    organisationId: PostEventReportValidator.#id.required(),
+    recipientEmail: Joi.string()
+      .trim()
+      .max(254)
+      .email({ tlds: { allow: false } })
+      .required()
+      .messages({ 'string.email': 'must be a valid email' }),
+    message: Joi.string().trim().min(1).max(500).default('Post-event summary'),
+  });
+
   // GET /api/post-event-reports?eventId= (§14.5). A well-formed id no report
   // belongs to is an empty list, not an error.
   static listQuery = Joi.object({
