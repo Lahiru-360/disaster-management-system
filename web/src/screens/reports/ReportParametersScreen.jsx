@@ -12,8 +12,11 @@ import ScreenHeader from '../../components/ui/ScreenHeader';
 import { SECTION_KEYS } from '../../constants/reports';
 import { ROLES } from '../../constants/roles';
 import useAuth from '../../hooks/useAuth';
-import { apiErrorMessage } from '../../utils/apiErrors';
+import { apiErrorMessage, mapFieldErrors } from '../../utils/apiErrors';
 import { eventDays } from '../../utils/reportFormat';
+
+// The fields the form can show an E1 error on (DMS-159).
+const FORM_FIELDS = ['eventId', 'from', 'to', 'districtIds', 'sections'];
 
 // What the form holds once an event is chosen (step 3): the whole event
 // period, every affected district and every section. Reset comes back here.
@@ -44,6 +47,7 @@ export default function ReportParametersScreen() {
   const [values, setValues] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
+  const [fieldErrors, setFieldErrors] = useState({});
   const [noData, setNoData] = useState(false);
 
   useEffect(() => {
@@ -59,6 +63,16 @@ export default function ReportParametersScreen() {
     const event = events.find((item) => item.id === eventId);
     setValues(event ? defaultsFor(event) : null);
     setError(null);
+    setFieldErrors({});
+  };
+
+  // An edited field loses its error; the others keep theirs until resent.
+  const change = (next) => {
+    const edited = FORM_FIELDS.filter((field) => next[field] !== values?.[field]);
+    setFieldErrors((current) =>
+      Object.fromEntries(Object.entries(current).filter(([field]) => !edited.includes(field))),
+    );
+    setValues(next);
   };
 
   const reset = () => selectEvent(values?.eventId);
@@ -66,6 +80,7 @@ export default function ReportParametersScreen() {
   const generate = () => {
     setSubmitting(true);
     setError(null);
+    setFieldErrors({});
     reportsApi.generate(values).then(
       (report) => navigate(`/reports/${report.id}`, { state: { report } }),
       (generateError) => {
@@ -74,9 +89,17 @@ export default function ReportParametersScreen() {
           setSubmitting(false);
           return;
         }
-        setError(
-          apiErrorMessage(generateError, 'The report could not be generated. Please try again.'),
-        );
+        // E1 (step 5): the refused fields are highlighted and every input is
+        // kept, so the officer corrects them and resumes at step 4.
+        const { byField, others } = mapFieldErrors(generateError, FORM_FIELDS);
+        if (Object.keys(byField).length > 0 || others.length > 0) {
+          setFieldErrors(byField);
+          setError(others.length > 0 ? others.join(' ') : null);
+        } else {
+          setError(
+            apiErrorMessage(generateError, 'The report could not be generated. Please try again.'),
+          );
+        }
         setSubmitting(false);
       },
     );
@@ -128,7 +151,8 @@ export default function ReportParametersScreen() {
             events={events}
             values={values}
             onSelectEvent={selectEvent}
-            onChange={setValues}
+            onChange={change}
+            errors={fieldErrors}
             onReset={reset}
             onSubmit={generate}
             submitting={submitting}

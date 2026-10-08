@@ -17,6 +17,7 @@ import { OccupancyRecord } from '../src/models/OccupancyRecord.js';
 import { Organisation } from '../src/models/Organisation.js';
 import { PostEventReport } from '../src/models/PostEventReport.js';
 import { ReliefStock } from '../src/models/ReliefStock.js';
+import { ReportExport } from '../src/models/ReportExport.js';
 import { RiverBasin } from '../src/models/RiverBasin.js';
 import { Shelter } from '../src/models/Shelter.js';
 import { SupplyDistribution } from '../src/models/SupplyDistribution.js';
@@ -32,8 +33,8 @@ import { Seeder } from './Seeder.js';
 // shelters peak (12 Jun) totals the wireframe's 4,120 people.
 //
 // Safe to re-run: every record is matched by its natural key and only
-// inserted when missing. Generated reports are the demo data `--reset-demo`
-// empties; the history is reference data, like the event itself. Expects an
+// inserted when missing. Generated reports and their exports are the demo data
+// `--reset-demo` empties; the history is reference data, like the event itself. Expects an
 // open connection and the districts, people, organisations, hazard events and
 // UC03 data already seeded - DatabaseSeeder owns both.
 export class Uc04Seeder extends Seeder {
@@ -155,7 +156,7 @@ export class Uc04Seeder extends Seeder {
   }
 
   get demoModels() {
-    return [PostEventReport];
+    return [PostEventReport, ReportExport];
   }
 
   async run() {

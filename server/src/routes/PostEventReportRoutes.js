@@ -28,6 +28,12 @@ export class PostEventReportRoutes extends BaseRoutes {
       postEventReportController.generate,
     );
     router.get('/:id', ...officer, postEventReportController.getById);
+    router.post(
+      '/:id/exports',
+      ...officer,
+      RequestValidator.body(PostEventReportValidator.exportSchema),
+      postEventReportController.createExport,
+    );
   }
 }
 

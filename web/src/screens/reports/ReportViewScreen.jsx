@@ -5,6 +5,7 @@ import { reportsApi } from '../../api';
 import AlertTimelineChart from '../../components/reports/AlertTimelineChart';
 import CitizensReachedChart from '../../components/reports/CitizensReachedChart';
 import DistributionChart from '../../components/reports/DistributionChart';
+import ExportActions from '../../components/reports/ExportActions';
 import IncompleteDataBanner from '../../components/reports/IncompleteDataBanner';
 import OccupancyChart from '../../components/reports/OccupancyChart';
 import ReportSectionCard from '../../components/reports/ReportSectionCard';
@@ -42,10 +43,27 @@ const SECTION_VIEWS = {
   },
 };
 
+// The name a downloaded export is saved under (where the browser honours it).
+const exportFileName = (report, format) =>
+  `post-event-report-${report.event.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${report.dateFrom}-to-${report.dateTo}.${format.toLowerCase()}`;
+
+// Opens the exported file as a download, as if its link had been clicked.
+function startDownload({ fileUrl, fileName }) {
+  const link = document.createElement('a');
+  link.href = fileUrl;
+  link.download = fileName;
+  link.target = '_blank';
+  link.rel = 'noopener noreferrer';
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+}
+
 // UC04 main flow step 11 (DMS-153.9): a generated report - summary figures,
 // the incomplete-data banner and the four sections with their charts. Opened
 // straight after generating (the report comes with the navigation) or later
-// by its URL, when it is read back from the server (§14.4).
+// by its URL, when it is read back from the server (§14.4). Steps 12-13
+// (DMS-154.5): Export PDF / Export CSV, then "Export ready – Download".
 export default function ReportViewScreen() {
   const { reportId } = useParams();
   const passed = useLocation().state?.report;
@@ -56,6 +74,11 @@ export default function ReportViewScreen() {
   const fromNavigation = passed?.id === reportId ? passed : null;
   const [loaded, setLoaded] = useState(null);
   const [error, setError] = useState(null);
+  // The format being exported, the last export and the last export error, each
+  // kept with the report it belongs to.
+  const [exporting, setExporting] = useState(null);
+  const [exported, setExported] = useState(null);
+  const [exportError, setExportError] = useState(null);
 
   useEffect(() => {
     if (!canReport || fromNavigation) return undefined;
@@ -79,6 +102,32 @@ export default function ReportViewScreen() {
   }, [canReport, fromNavigation, reportId]);
 
   const report = fromNavigation ?? (loaded?.id === reportId ? loaded : null);
+
+  const exportAs = (format) => {
+    const forReport = report.id;
+    setExporting(format);
+    setExportError(null);
+    reportsApi.exportReport(forReport, format).then(
+      (created) => {
+        const file = { ...created, reportId: forReport, fileName: exportFileName(report, format) };
+        setExported(file);
+        setExporting(null);
+        startDownload(file);
+      },
+      (exportFailure) => {
+        // E3: the file couldn't be written (500) or stored (502), or the call
+        // never got an answer; all are safe to retry. A missing report isn't.
+        const status = exportFailure?.response?.status;
+        setExportError({
+          reportId: forReport,
+          format,
+          message: apiErrorMessage(exportFailure, 'The connection was lost.'),
+          retryable: status !== 404 && status !== 400,
+        });
+        setExporting(null);
+      },
+    );
+  };
   const newReport = (
     <Button variant="outline" fullWidth={false} onClick={() => navigate('/reports')}>
       New report
@@ -146,6 +195,12 @@ export default function ReportViewScreen() {
             </ReportSectionCard>
           );
         })}
+        <ExportActions
+          onExport={exportAs}
+          exporting={exporting}
+          ready={exported?.reportId === report.id ? exported : null}
+          failure={exportError?.reportId === report.id ? exportError : null}
+        />
       </div>
     </Screen>
   );

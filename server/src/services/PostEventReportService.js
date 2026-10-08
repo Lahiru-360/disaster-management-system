@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import { ReportContext } from '../domain/analysis/ReportContext.js';
+import { ReportParameters } from '../domain/analysis/ReportParameters.js';
 import { HazardEvent } from '../domain/events/HazardEvent.js';
 import { HazardEvent as HazardEventModel } from '../models/HazardEvent.js';
 import { PostEventReport as PostEventReportModel } from '../models/PostEventReport.js';
@@ -34,7 +35,9 @@ export class PostEventReportService {
 
   /**
    * UC04 steps 4-11 (§14.3): compiles the requested sections for the event,
-   * range and districts, stores the report and returns it.
+   * range and districts, stores the report and returns it. The event must
+   * exist (404) and be CLOSED (409), and the range and districts must fit it
+   * (E1, 400); nothing is stored when a check fails.
    * @param {{ id: string }} officer the signed-in DMC or duty officer
    * @param {{ eventId: string, from: string, to: string, districtIds: string[], sections: string[] }} params
    * @returns {Promise<object>} the report object (§14.2)
@@ -45,6 +48,17 @@ export class PostEventReportService {
       throw new ApiError(404, 'NOT_FOUND', 'Hazard event not found.');
     }
     const event = HazardEvent.fromDocument(eventDoc);
+    if (!event.isClosed()) {
+      throw new ApiError(
+        409,
+        'EVENT_NOT_CLOSED',
+        `A report can only be generated for a CLOSED event – current status: ${event.status}`,
+      );
+    }
+    const problems = ReportParameters.problemsWith(event, { from, to, districtIds });
+    if (problems.length > 0) {
+      throw new ApiError(400, 'VALIDATION_ERROR', 'Request validation failed.', problems);
+    }
 
     const ctx = new ReportContext({
       event,
@@ -106,12 +120,11 @@ export class PostEventReportService {
     return docs.map((doc) => PostEventReportPresenter.listItem(doc));
   }
 
-  // The selected districts in the order the event lists them (§14.2).
+  // The selected districts in the order the event lists them (§14.2). Every
+  // one is the event's: ReportParameters has checked.
   static #inEventOrder(event, districtIds) {
     const selected = new Set(districtIds.map(String));
-    const eventOrder = event.districts.map(String).filter((id) => selected.has(id));
-    const others = [...selected].filter((id) => !eventOrder.includes(id));
-    return [...eventOrder, ...others];
+    return event.districts.map(String).filter((id) => selected.has(id));
   }
 }
 

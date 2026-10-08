@@ -1,4 +1,5 @@
 import Joi from 'joi';
+import { ExportFormat } from '../enums/ExportFormat.js';
 import { ReportSectionKey } from '../enums/ReportSectionKey.js';
 import { SriLankaCalendar } from '../utils/SriLankaCalendar.js';
 
@@ -35,6 +36,14 @@ export class PostEventReportValidator {
       .unique()
       .required()
       .messages({ 'array.min': 'must select at least one section' }),
+  });
+
+  // POST /api/post-event-reports/:id/exports (§14.8).
+  static exportSchema = Joi.object({
+    format: Joi.string()
+      .valid(...Object.values(ExportFormat))
+      .required()
+      .messages({ 'any.only': `must be one of [${Object.values(ExportFormat).join(', ')}]` }),
   });
 
   // GET /api/post-event-reports?eventId= (§14.5). A well-formed id no report
