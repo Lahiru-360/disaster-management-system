@@ -159,3 +159,65 @@ describe('ExportService — E3 export failure', () => {
     expect(exportModel.create).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('ExportService.findOrCreate — the include rule of sharing (DMS-155.4)', () => {
+  const stored = {
+    _id: 'x-9',
+    format: 'PDF',
+    fileUrl: 'https://files/reports/old.pdf',
+    createdAt: new Date('2026-10-06T10:00:00.000Z'),
+  };
+
+  // exportModel.findOne(...).sort(...).lean() resolves to `found`.
+  const withFound = (found) => {
+    const ctx = setup();
+    const query = { sort: jest.fn(() => query), lean: jest.fn(async () => found) };
+    ctx.exportModel.findOne = jest.fn(() => query);
+    return { ...ctx, query };
+  };
+
+  it('TC-25 Main 14: uses the newest export in the format, writing and uploading nothing', async () => {
+    const { service, exportModel, query, storage, pdf } = withFound(stored);
+
+    const found = await service.findOrCreate(officer, 'r-1', ExportFormat.PDF);
+
+    expect(exportModel.findOne).toHaveBeenCalledWith({ report: 'r-1', format: 'PDF' });
+    expect(query.sort).toHaveBeenCalledWith({ createdAt: -1, _id: -1 });
+    expect(found).toEqual({
+      exportId: 'x-9',
+      format: 'PDF',
+      fileUrl: 'https://files/reports/old.pdf',
+      createdAt: stored.createdAt,
+    });
+    expect(pdf.write).not.toHaveBeenCalled();
+    expect(storage.storeFile).not.toHaveBeenCalled();
+    expect(exportModel.create).not.toHaveBeenCalled();
+  });
+
+  it('TC-25 Main 14: with no export in the format, creates one like generateFile', async () => {
+    const { service, exportModel, csv, storage } = withFound(null);
+
+    const created = await service.findOrCreate(officer, 'r-1', ExportFormat.CSV);
+
+    expect(csv.write).toHaveBeenCalledWith(report);
+    expect(storage.storeFile).toHaveBeenCalledTimes(1);
+    expect(exportModel.create).toHaveBeenCalledTimes(1);
+    expect(created).toEqual({
+      exportId: 'x-1',
+      format: 'CSV',
+      fileUrl: 'https://files/reports/f',
+      createdAt: new Date(NOW),
+    });
+  });
+
+  it('DMS-155.4: a new export that fails to upload fails like an export (502), recording nothing', async () => {
+    const { service, storage, exportModel } = withFound(null);
+    storage.storeFile.mockRejectedValueOnce(new Error('socket hang up'));
+
+    await expect(service.findOrCreate(officer, 'r-1', ExportFormat.PDF)).rejects.toMatchObject({
+      status: 502,
+      code: 'STORAGE_UNAVAILABLE',
+    });
+    expect(exportModel.create).not.toHaveBeenCalled();
+  });
+});

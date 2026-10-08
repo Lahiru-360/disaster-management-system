@@ -3,7 +3,8 @@
 // propagate as axios rejections carrying `error.response.data.error` - e.g.
 // 400 VALIDATION_ERROR with `errors` per field (E1), 404 NO_DATA_FOR_SELECTION
 // (E2), 409 EVENT_NOT_CLOSED, or for an export 500 EXPORT_FAILED and 502
-// STORAGE_UNAVAILABLE (E3).
+// STORAGE_UNAVAILABLE (E3), or for a share 404 NOT_FOUND (no such organisation)
+// and 502 EMAIL_UNAVAILABLE (E4: the share is then recorded FAILED).
 
 import client from './client';
 
@@ -61,10 +62,58 @@ async function exportReport(reportId, format) {
   return response.data.data;
 }
 
+/**
+ * `GET /api/organisations` (§10.1) - every organisation, by name, each with
+ * its `contactEmail` (null when it has none): who a report can be shared with.
+ */
+async function listOrganisations() {
+  const response = await client.get('/organisations');
+  return response.data.data.organisations;
+}
+
+/**
+ * `POST /api/post-event-reports/:id/shares` (§14.9, steps 14-15) - emails the
+ * report's file in `format` (`PDF` or `CSV`; exported first if the report has
+ * none yet) to `recipientEmail` and resolves with the recorded share.
+ */
+async function shareReport(reportId, { format, organisationId, recipientEmail, message }) {
+  const response = await client.post(`/post-event-reports/${reportId}/shares`, {
+    format,
+    organisationId,
+    recipientEmail,
+    message,
+  });
+  return response.data.data;
+}
+
+/**
+ * `GET /api/post-event-reports/:id/shares` (§14.10) - the report's shares,
+ * newest first, each with its status.
+ */
+async function listShares(reportId) {
+  const response = await client.get(`/post-event-reports/${reportId}/shares`);
+  return response.data.data.shares;
+}
+
+/**
+ * `POST /api/report-shares/:id/retry` (§14.11, E4) - sends a FAILED share again
+ * and resolves with the same share, now SENT. Rejects with 502 EMAIL_UNAVAILABLE
+ * when it fails again (the share stays FAILED) or 409 INVALID_SHARE_TRANSITION
+ * when it isn't FAILED.
+ */
+async function retryShare(shareId) {
+  const response = await client.post(`/report-shares/${shareId}/retry`);
+  return response.data.data;
+}
+
 export default {
   listClosedEvents,
   generate,
   getReport,
   listRecent,
   exportReport,
+  listOrganisations,
+  shareReport,
+  listShares,
+  retryShare,
 };
