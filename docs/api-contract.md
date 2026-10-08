@@ -127,6 +127,7 @@ Every error response — regardless of cause — returns the same outer shape:
 | `INVALID_TEAM_TRANSITION` | Marking a rescue team available while it is `DISPATCHED` or `ON_SITE` (§13.10.1). Always `409`. |
 | `EVENT_NOT_CLOSED` | Generating a post-event report for a hazard event that isn't `CLOSED` (§14.3). Always `409`; the message names the current status. |
 | `NO_DATA_FOR_SELECTION` | Generating a post-event report whose every requested section has no records for the range and districts (UC04 E2, §14.3). Always `404`; nothing is stored. |
+| `INVALID_SHARE_TRANSITION` | Retrying a post-event report share that isn't `FAILED` (§14.11). Always `409`; the message names the current status. Nothing is sent. |
 | `EXPORT_FAILED` | Exporting a post-event report (§14.8) when the PDF or CSV file couldn't be written (UC04 E3). Always `500`; nothing is uploaded or recorded, and the request is safe to retry. |
 
 New codes may be added for new resources; existing codes are never repurposed for a different meaning.
@@ -3718,7 +3719,7 @@ A failed notification never fails the request that triggered it.
 
 ## 14. Post-event reports endpoints
 
-UC04 Generate Post-Event Analysis Report. After a hazard event is **closed**, a DMC officer generates a statistical report for it with four sections: the alert timeline, citizens reached, shelter occupancy over time and resource distribution. Days with no records are flagged as **incomplete data** instead of being left out. This section covers generating a report and reading it back (UC04 main flow steps 1–11, DMS-153, with E1 and E2), exporting it (steps 12–13, DMS-154, with E3, 14.8), and sharing it (steps 14–15, DMS-155, 14.9–14.10). Filtering (DMS-156) and the sharing failure (E4, DMS-162) add their own subsections.
+UC04 Generate Post-Event Analysis Report. After a hazard event is **closed**, a DMC officer generates a statistical report for it with four sections: the alert timeline, citizens reached, shelter occupancy over time and resource distribution. Days with no records are flagged as **incomplete data** instead of being left out. This section covers generating a report and reading it back (UC04 main flow steps 1–11, DMS-153, with E1 and E2), exporting it (steps 12–13, DMS-154, with E3, 14.8), sharing it (steps 14–15, DMS-155, 14.9–14.10), and retrying a share that failed (E4, DMS-162, 14.11). Filtering (DMS-156) adds its own subsection.
 
 **Status: draft (DMS-153.1).** The Analytics data subsection (14.7) needs sign-off from the owners of the data it reads: Anupa for hazard alerts and delivery records, Lahiru for occupancy and distribution records.
 
@@ -4324,7 +4325,7 @@ The server then:
    - **Body (HTML and text):** the officer's `message`; the event name, hazard type and date range; the name of the officer who shared it; and the link to the exported file (`fileUrl`).
 5. **Records the share** as a `ReportShare { export, organisation, recipientEmail, message, sharedBy, sharedAt, status: SENT }` and returns it.
 
-If the email can't be sent, the answer is `502 EMAIL_UNAVAILABLE`. Recording that failure as a `FAILED` share, and retrying it, belong to E4 (DMS-162) and are added to this section by that ticket. The export and its file are kept either way.
+**E4: if the email can't be sent**, the share is still recorded, with `status: FAILED`, `attempts: 1` and the `failureReason`, and the answer is `502 EMAIL_UNAVAILABLE`. The export and its file are kept, so the officer can retry that share (14.11) without exporting again. The web shows "Sharing failed – Retry" and marks the share FAILED in the shares list.
 
 Every successful request creates a **new** share, even to an organisation and email already shared with. The existing export is reused, not re-made.
 
@@ -4343,7 +4344,9 @@ Every successful request creates a **new** share, even to an organisation and em
     "message": "Post-event summary",
     "sharedBy": { "id": "64f1a2b3c4d5e6f7a8b9c0d5", "name": "Kasun Silva" },
     "sharedAt": "2026-10-07T09:45:00.000Z",
-    "status": "SENT"
+    "status": "SENT",
+    "attempts": 1,
+    "failureReason": null
   }
 }
 ```
@@ -4359,7 +4362,9 @@ Every successful request creates a **new** share, even to an organisation and em
 | `message` | string | As requested, or the default. |
 | `sharedBy` | `{ id, name }` | The officer who shared it. |
 | `sharedAt` | ISO 8601 string | When the share was recorded. |
-| `status` | `ShareStatus` | `SENT` here. `ShareStatus` also has `FAILED` (E4, DMS-162). |
+| `status` | `ShareStatus` | `SENT` or `FAILED`. A new share is `SENT`; a `FAILED` one exists only after an E4 failure (below). |
+| `attempts` | integer | How many times sending has been tried. `1` for a share's first try, then `+1` for each retry (14.11). |
+| `failureReason` | string or `null` | Why the latest try failed. `null` unless `status` is `FAILED`. |
 
 **Failure — `400 Bad Request`** (a field failed its rule)
 
@@ -4394,10 +4399,24 @@ Every successful request creates a **new** share, even to an organisation and em
 | `404` | `NOT_FOUND` | No report has this id, or the id isn't valid; or no organisation has `organisationId`. |
 | `500` | `EXPORT_FAILED` | The include rule had to make an export and the exporter couldn't write the file (14.8). Nothing is emailed or recorded. |
 | `502` | `STORAGE_UNAVAILABLE` | The include rule had to make an export and storage failed (14.8). Nothing is emailed or recorded. |
-| `502` | `EMAIL_UNAVAILABLE` | The email provider failed or was unreachable (E4, DMS-162). The export is kept. |
+| `502` | `EMAIL_UNAVAILABLE` | The email provider failed or was unreachable (E4). The share is recorded as `FAILED` and the export is kept. |
 | `500` | `INTERNAL_ERROR` | Any other unhandled server-side failure. |
 
-Checked by TC-24–TC-28 (DMS-155).
+**Failure — `502 Bad Gateway`** (E4: the email could not be sent; the share is recorded `FAILED`)
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "EMAIL_UNAVAILABLE",
+    "message": "Could not send the email. Please try again."
+  }
+}
+```
+
+The failed share appears in the shares list (14.10) with `status: "FAILED"`; its `shareId` is how the web retries it (14.11).
+
+Checked by TC-24–TC-28 (DMS-155) and TC-47 (E4, DMS-162).
 
 ### 14.10 A report's shares — `GET /api/post-event-reports/:id/shares`
 
@@ -4420,7 +4439,9 @@ UC04 step 15 (DMS-155). The report view lists who the report has been shared wit
         "message": "Post-event summary",
         "sharedBy": { "id": "64f1a2b3c4d5e6f7a8b9c0d5", "name": "Kasun Silva" },
         "sharedAt": "2026-10-07T09:45:00.000Z",
-        "status": "SENT"
+        "status": "SENT",
+        "attempts": 1,
+        "failureReason": null
       }
     ]
   }
@@ -4430,6 +4451,69 @@ UC04 step 15 (DMS-155). The report view lists who the report has been shared wit
 Each row is the share object from 14.9. A report nobody has shared returns `"shares": []`. No pagination.
 
 **Failure:** `401`, `403` and `404 NOT_FOUND` (no report has this id, or the id isn't valid), as in 14.6.
+
+### 14.11 Retry a failed share — `POST /api/report-shares/:id/retry`
+
+UC04 E4.2 (DMS-162). When a share is `FAILED` (14.9), the report view shows "Sharing failed – Retry". *Retry* sends the same email again, to the same recipient with the same message and the same exported file, without exporting again. Admits `dmc_officer` and `duty_officer`: any admitted officer can retry any share.
+
+**Request:** no body. The share is the `:id` in the path (the `shareId` of 14.9). An id that isn't valid, or that no share has, is `404 NOT_FOUND`.
+
+The server then:
+
+1. **Finds** the share (404 if it doesn't exist). Only a `FAILED` share can be retried; a `SENT` one is `409 INVALID_SHARE_TRANSITION` and nothing is sent.
+2. **Sends the email** again, as in 14.9 step 4.
+3. **Updates the same share.** It never creates a second record. `attempts` goes up by one either way.
+   - **Sent:** `status` becomes `SENT`, `sharedAt` is the time of this try and `failureReason` is `null`.
+   - **Failed again:** the share stays `FAILED`, `failureReason` is updated, `sharedAt` is unchanged, and the answer is `502 EMAIL_UNAVAILABLE`.
+
+`sharedBy`, the export, the organisation, the recipient and the message never change.
+
+**Success — `200 OK`** (the share object of 14.9; here the second try, which worked)
+
+```json
+{
+  "success": true,
+  "data": {
+    "shareId": "66fc5d3e4f5a6b7c8d9e0a01",
+    "exportId": "66fc5b2c3d4e5f6a7b8c9f01",
+    "format": "PDF",
+    "fileUrl": "https://<project>.supabase.co/storage/v1/object/public/<bucket>/reports/0b6f3c1e-1d7a-4f4e-9a52-6c2f1e8d4b10.pdf",
+    "organisation": { "id": "66f7c1a2b3c4d5e6f7a8b9d7", "name": "UNICEF Sri Lanka" },
+    "recipientEmail": "liaison@example.org",
+    "message": "Post-event summary",
+    "sharedBy": { "id": "64f1a2b3c4d5e6f7a8b9c0d5", "name": "Kasun Silva" },
+    "sharedAt": "2026-10-07T10:15:00.000Z",
+    "status": "SENT",
+    "attempts": 2,
+    "failureReason": null
+  }
+}
+```
+
+**Failure — `409 Conflict`** (the share is not `FAILED`)
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "INVALID_SHARE_TRANSITION",
+    "message": "Only a FAILED share can be retried – current status: SENT"
+  }
+}
+```
+
+**Failure — `502 Bad Gateway`** (the email could not be sent again): the `EMAIL_UNAVAILABLE` body of 14.9. The share stays `FAILED` with `attempts` raised by one.
+
+| Status | Code | When |
+|---|---|---|
+| `401` | `AUTH_HEADER_MISSING`, `AUTH_HEADER_MALFORMED`, `TOKEN_EXPIRED`, `TOKEN_INVALID` | As in 14.6. |
+| `403` | `FORBIDDEN` | The caller isn't a `dmc_officer` or `duty_officer`. |
+| `404` | `NOT_FOUND` | No share has this id, or the id isn't valid. |
+| `409` | `INVALID_SHARE_TRANSITION` | The share is `SENT`; the message names its status. Nothing is sent. |
+| `502` | `EMAIL_UNAVAILABLE` | The email provider failed again. The share stays `FAILED`. |
+| `500` | `INTERNAL_ERROR` | Any other unhandled server-side failure. |
+
+Checked by TC-48–TC-50 (E4, DMS-162).
 
 ---
 
