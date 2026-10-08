@@ -71,6 +71,9 @@ function startDownload({ fileUrl, fileName }) {
 // report's shares are listed under the actions. A3 (DMS-158.1): Close leaves
 // the report without exporting; nothing is stored except the report itself,
 // which can be reopened from Recent reports on the parameters screen.
+// report's shares are listed under the actions. A2 (DMS-157.1): after an
+// export, Done closes the report view and returns to the parameters screen;
+// the export stays stored and no share is made.
 // report's shares are listed under the actions. E4 (DMS-162.3): a share whose
 // email failed is listed FAILED with "Sharing failed – Retry", and Retry sends
 // that same share again.
@@ -286,6 +289,7 @@ export default function ReportViewScreen() {
         <ExportActions
           onExport={exportAs}
           onShare={() => setShareOpen(true)}
+          onDone={() => navigate('/reports')}
           shared={shareNotice?.reportId === report.id ? shareNotice.text : null}
           exporting={exporting}
           ready={exported?.reportId === report.id ? exported : null}
