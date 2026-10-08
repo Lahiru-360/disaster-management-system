@@ -1,0 +1,56 @@
+@startuml uc03_sequence_1
+' Figure 5.3 — UC03 sequence diagram (a): dashboard and shelter occupancy (UC03 improved PDF, Figure 3)
+skinparam shadowing false
+title UC-03 (a) Dashboard and shelter occupancy
+
+actor "District Officer" as DO
+boundary ":CoordinationDashboard" as UI
+control ":ShelterController" as SC
+entity ":Shelter" as SH
+entity ":OccupancyRecord" as OR
+
+DO -> UI : openDashboard(incidentId)
+UI -> SC : getOverview(districtId)
+SC -> SH : findByDistrict(districtId)
+SH --> SC : shelters
+SC --> UI : shelters, teams, supply logs
+UI --> DO : combined dashboard
+
+opt register new shelter [A1]
+  DO -> UI : registerShelter(name, location, capacity)
+  UI -> SC : registerShelter(details)
+  alt capacity <= 0 or duplicate name
+    SC --> UI : validationError
+  else valid
+    SC -> SH : create(details)
+    SH --> SC : shelterId
+    SC --> UI : shelter registered
+  end
+end
+
+DO -> UI : updateOccupancy(shelterId, count)
+UI -> SC : updateOccupancy(shelterId, count)
+alt invalid count [E1]
+  SC --> UI : validationError
+  UI --> DO : show error
+else valid
+  SC -> SH : updateOccupancy(count)
+  SC -> OR : create(shelterId, count, now)
+  SC -> SH : status()
+  SH --> SC : status
+  opt NEAR_CAPACITY or FULL [A2]
+    SC -> SH : findNearestWithSpace(location, district)
+    alt shelter with space found
+      SH --> SC : alternateShelter
+      SC --> UI : warning + alternate shelter
+      DO -> UI : redirectArrivals(alternateId)
+      UI -> SC : redirect(shelterId, alternateId)
+    else none [E2]
+      SH --> SC : none
+      SC --> UI : "No shelter with space - DMC alerted"
+    end
+  end
+  SC --> UI : updated shelter
+  UI --> DO : refreshed dashboard
+end
+@enduml
