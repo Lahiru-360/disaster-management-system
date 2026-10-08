@@ -19,7 +19,8 @@
 // long layout and a one-page PDF summary, each handed back as a blob: URL, so
 // Download works without a server. Sharing (§14.9) reuses the newest export in
 // the chosen format, or makes one first, and records the share in memory;
-// `failNext('email')` answers the next share with 502 EMAIL_UNAVAILABLE.
+// `failNext('email')` makes the next email fail: the share is recorded FAILED and
+// answered with 502 EMAIL_UNAVAILABLE (E4), and retryShare (§14.11) updates it.
 
 import { DEMO_USERS } from '../../constants/demoUsers';
 import { ROLES } from '../../constants/roles';
@@ -258,7 +259,8 @@ const FAILURE_CALLS = {
   notClosed: 'generate',
   exportFailed: 'export',
   storage: 'export',
-  email: 'share',
+  // Met by the email send itself (takeEmailFailure), not by a call.
+  email: 'email',
 };
 
 // Fakes the next call's failure, then goes back to normal. A failure only one
@@ -284,9 +286,13 @@ function takeFailure({ call = null } = {}) {
   if (failure === 'storage') {
     throw apiError(502, 'STORAGE_UNAVAILABLE', 'Could not upload the file. Please try again.');
   }
-  if (failure === 'email') {
-    throw apiError(502, 'EMAIL_UNAVAILABLE', 'Could not send the email. Please try again.');
-  }
+}
+
+// E4: the email provider failing the next send; null when it works.
+function takeEmailFailure() {
+  if (pendingFailure !== 'email') return null;
+  pendingFailure = null;
+  return apiError(502, 'EMAIL_UNAVAILABLE', 'Could not send the email. Please try again.');
 }
 
 // --- Days (§14.1) ---
@@ -1009,7 +1015,6 @@ async function shareReport(reportId, input) {
   if (errors.length > 0) throw validationError(errors);
   const organisation = ALL_ORGANISATIONS.find(({ id }) => id === input.organisationId);
   if (!organisation) throw apiError(404, 'NOT_FOUND', 'Organisation not found.');
-  takeFailure({ call: 'share' });
 
   // Include rule: the newest export in the format, or a new one first.
   const format = input.format ?? 'PDF';
@@ -1029,8 +1034,42 @@ async function shareReport(reportId, input) {
     sharedBy: OFFICER,
     sharedAt: new Date().toISOString(),
     status: 'SENT',
+    attempts: 1,
+    failureReason: null,
   };
+  // E4: the share is kept either way, FAILED when the email didn't go.
+  const emailFailure = takeEmailFailure();
+  if (emailFailure) {
+    share.status = 'FAILED';
+    share.failureReason = emailFailure.response.data.error.message;
+  }
   shares.set(share.shareId, { reportId: report.id, share });
+  if (emailFailure) throw emailFailure;
+  return copy(share);
+}
+
+async function retryShare(shareId) {
+  await delay();
+  takeFailure();
+  const record = shares.get(shareId);
+  if (!record) throw apiError(404, 'NOT_FOUND', 'Report share not found.');
+  const { share } = record;
+  if (share.status !== 'FAILED') {
+    throw apiError(
+      409,
+      'INVALID_SHARE_TRANSITION',
+      `Only a FAILED share can be retried – current status: ${share.status}`,
+    );
+  }
+  share.attempts += 1;
+  const emailFailure = takeEmailFailure();
+  if (emailFailure) {
+    share.failureReason = emailFailure.response.data.error.message;
+    throw emailFailure;
+  }
+  share.status = 'SENT';
+  share.sharedAt = new Date().toISOString();
+  share.failureReason = null;
   return copy(share);
 }
 
@@ -1067,4 +1106,5 @@ export default {
   listOrganisations,
   shareReport,
   listShares,
+  retryShare,
 };

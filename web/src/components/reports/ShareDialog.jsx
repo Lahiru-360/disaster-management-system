@@ -27,11 +27,13 @@ const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 // summary" by default), then Cancel / Share. Share sends the choice to the
 // server, which makes the export first if the report has none in that format,
 // emails the link and records the share; `onShared` receives the recorded
-// share (§14.9). A refusal is shown on its field, or as a notice when it isn't
+// share (§14.9). E4 (DMS-162.3): when the email can't be sent the server still
+// records the share, as FAILED, so the dialog closes through `onFailed` and the
+// screen shows it with Retry. Any other refusal is shown on its field, or as a notice when it isn't
 // about one (the email provider being down, offline ...) and the dialog stays
 // open with what was typed. Mounted only while open, so each opening starts
 // fresh.
-export default function ShareDialog({ reportId, onClose, onShared }) {
+export default function ShareDialog({ reportId, onClose, onShared, onFailed }) {
   const titleId = useId();
 
   // null while loading; the organisations once loaded.
@@ -103,6 +105,10 @@ export default function ShareDialog({ reportId, onClose, onShared }) {
       });
       onShared(share);
     } catch (failure) {
+      if (failure?.response?.data?.error?.code === 'EMAIL_UNAVAILABLE') {
+        onFailed();
+        return;
+      }
       const { byField, others } = mapFieldErrors(failure, FIELDS);
       setFieldErrors(byField);
       // Anything that isn't about a field (offline, 502, 404 ...) is a Notice.
