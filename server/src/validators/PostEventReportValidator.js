@@ -1,5 +1,6 @@
 import Joi from 'joi';
 import { AlertHazardType } from '../enums/AlertHazardType.js';
+import { ExportFormat } from '../enums/ExportFormat.js';
 import { ReportSectionKey } from '../enums/ReportSectionKey.js';
 import { SriLankaCalendar } from '../utils/SriLankaCalendar.js';
 
@@ -38,7 +39,7 @@ export class PostEventReportValidator {
       .messages({ 'array.min': 'must select at least one section' }),
   });
 
-  // POST /api/post-event-reports/:id/refine (§14.9). Each filter may be left
+  // POST /api/post-event-reports/:id/refine (§14.12). Each filter may be left
   // out or null; the service checks that one is set and that the district is
   // one of the report's.
   static refineSchema = Joi.object({
@@ -48,6 +49,32 @@ export class PostEventReportValidator {
       .messages({ 'any.only': `must be one of [${Object.values(AlertHazardType).join(', ')}]` }),
     districtId: PostEventReportValidator.#id.allow(null),
     organisationId: PostEventReportValidator.#id.allow(null),
+  });
+
+  // POST /api/post-event-reports/:id/exports (§14.8).
+  static exportSchema = Joi.object({
+    format: Joi.string()
+      .valid(...Object.values(ExportFormat))
+      .required()
+      .messages({ 'any.only': `must be one of [${Object.values(ExportFormat).join(', ')}]` }),
+  });
+
+  // POST /api/post-event-reports/:id/shares (§14.9). The format defaults to
+  // PDF and the message to the dialog's own default; a blank message is refused
+  // rather than defaulted, since the officer cleared it.
+  static shareSchema = Joi.object({
+    format: Joi.string()
+      .valid(...Object.values(ExportFormat))
+      .default(ExportFormat.PDF)
+      .messages({ 'any.only': `must be one of [${Object.values(ExportFormat).join(', ')}]` }),
+    organisationId: PostEventReportValidator.#id.required(),
+    recipientEmail: Joi.string()
+      .trim()
+      .max(254)
+      .email({ tlds: { allow: false } })
+      .required()
+      .messages({ 'string.email': 'must be a valid email' }),
+    message: Joi.string().trim().min(1).max(500).default('Post-event summary'),
   });
 
   // GET /api/post-event-reports?eventId= (§14.5). A well-formed id no report

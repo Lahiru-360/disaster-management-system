@@ -22,7 +22,7 @@ export const CHANNEL_LABELS = Object.freeze({ PUSH: 'Push', SMS: 'SMS', AUDIBLE:
 // UC01's SeverityLevel, lowest first.
 export const SEVERITIES = Object.freeze(['LOW', 'MEDIUM', 'HIGH', 'SEVERE']);
 
-// UC01's AlertHazardType, the values the A1 hazard filter takes (§14.9).
+// UC01's AlertHazardType, the values the A1 hazard filter takes (§14.12).
 export const ALERT_HAZARD_TYPES = Object.freeze([
   { value: 'FLOOD', label: 'Flood' },
   { value: 'LANDSLIDE', label: 'Landslide' },
@@ -30,7 +30,7 @@ export const ALERT_HAZARD_TYPES = Object.freeze([
   { value: 'DROUGHT', label: 'Drought' },
 ]);
 
-// The A1 filters each section is narrowed by (§14.9), as the server's
+// The A1 filters each section is narrowed by (§14.12), as the server's
 // sections declare them; a section ignores any other filter that is set.
 export const SECTION_FILTERS = Object.freeze({
   alertTimeline: ['districtId', 'hazardType'],

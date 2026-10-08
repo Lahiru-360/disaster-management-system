@@ -13,7 +13,7 @@ import { seedAreas } from '../helpers/areaFixtures.js';
 import { bearerFor } from '../helpers/authHelper.js';
 import { createUser } from '../helpers/userFactory.js';
 
-// UC04 A1 (DMS-156, contract §14.9): refining a stored Kelani report with the
+// UC04 A1 (DMS-156, contract §14.12): refining a stored Kelani report with the
 // hazard type, district and organisation filters. A FLOOD alert covers
 // Colombo and a LANDSLIDE alert Gampaha; both districts have occupancy, and
 // Red Cross and UNICEF distributed in Colombo, UNICEF also in Gampaha.

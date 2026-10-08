@@ -6,7 +6,7 @@ import { OccupancyOverTimeSection } from '../../../src/services/reports/sections
 import { ResourceDistributionSection } from '../../../src/services/reports/sections/ResourceDistributionSection.js';
 import { D, kelaniContext } from './reportFixtures.js';
 
-// The A1 filters (DMS-156.2, contract §14.9) in the ReportContext, in what
+// The A1 filters (DMS-156.2, contract §14.12) in the ReportContext, in what
 // each section honours, and in how the builder hands them out.
 const ALL_FILTERS = { hazardType: 'FLOOD', districtId: D.gampaha, organisationId: 'o-un' };
 

@@ -16,6 +16,13 @@
 // per section as on the server, and stores the result as a new report.
 // `mockControls.failNext` fakes what can't be clicked into. Generated reports
 // live in this module's memory, so reloading the page forgets them.
+//
+// Exporting (§14.8) writes the file in the browser: the CSV in the contract's
+// long layout and a one-page PDF summary, each handed back as a blob: URL, so
+// Download works without a server. Sharing (§14.9) reuses the newest export in
+// the chosen format, or makes one first, and records the share in memory;
+// `failNext('email')` makes the next email fail: the share is recorded FAILED and
+// answered with 502 EMAIL_UNAVAILABLE (E4), and retryShare (§14.11) updates it.
 
 import { DEMO_USERS } from '../../constants/demoUsers';
 import { ROLES } from '../../constants/roles';
@@ -78,8 +85,9 @@ const ORGANISATIONS = {
   unicef: { id: '66f7c1a2b3c4d5e6f7a8b9d7', name: 'UNICEF Sri Lanka', type: 'DONOR' },
 };
 
-// Every organisation OrganisationSeeder seeds (§10.1), by name: the
-// organisation filter's choices.
+// The seeded organisations (GET /api/organisations, §10.1), by name. The ones
+// with a contact email are who a report can be shared with, and all of them are
+// the organisation filter's choices.
 const ALL_ORGANISATIONS = [
   { ...ORGANISATIONS.adra, contactEmail: null },
   { id: '66f7c1a2b3c4d5e6f7a8b9d2', name: 'Fire Service', type: 'GOVERNMENT', contactEmail: null },
@@ -213,7 +221,13 @@ const DISTRIBUTIONS = Object.entries(DISTRICT_WEIGHTS).flatMap(([districtName, w
 );
 
 const reports = new Map();
+// Export id -> { exportId, report, format, fileUrl, createdAt } (§14.8).
+const exports = new Map();
+// Share id -> { reportId, share } (§14.9), in the order they were made.
+const shares = new Map();
 let nextReport = 1;
+let nextExport = 1;
+let nextShare = 1;
 let pendingFailure = null;
 
 function delay() {
@@ -243,11 +257,20 @@ function networkError() {
   return error;
 }
 
-// Fakes the next call's failure, then goes back to normal. A faked 409 is
-// kept for the next generate, the only call that can meet it.
-function takeFailure({ generating = false } = {}) {
+// Failures only one call can meet: they wait for that call.
+const FAILURE_CALLS = {
+  notClosed: 'generate',
+  exportFailed: 'export',
+  storage: 'export',
+  // Met by the email send itself (takeEmailFailure), not by a call.
+  email: 'email',
+};
+
+// Fakes the next call's failure, then goes back to normal. A failure only one
+// call can meet (FAILURE_CALLS) is kept until that call.
+function takeFailure({ call = null } = {}) {
   const failure = pendingFailure;
-  if (failure === 'notClosed' && !generating) return;
+  if (FAILURE_CALLS[failure] && FAILURE_CALLS[failure] !== call) return;
   pendingFailure = null;
   if (failure === 'network') throw networkError();
   if (failure === 'server') {
@@ -260,6 +283,19 @@ function takeFailure({ generating = false } = {}) {
       'A report can only be generated for a CLOSED event – current status: ACTIVE',
     );
   }
+  if (failure === 'exportFailed') {
+    throw apiError(500, 'EXPORT_FAILED', 'The export file could not be created. Please try again.');
+  }
+  if (failure === 'storage') {
+    throw apiError(502, 'STORAGE_UNAVAILABLE', 'Could not upload the file. Please try again.');
+  }
+}
+
+// E4: the email provider failing the next send; null when it works.
+function takeEmailFailure() {
+  if (pendingFailure !== 'email') return null;
+  pendingFailure = null;
+  return apiError(502, 'EMAIL_UNAVAILABLE', 'Could not send the email. Please try again.');
 }
 
 // --- Days (§14.1) ---
@@ -593,7 +629,7 @@ function compileDistribution(ctx) {
   };
 }
 
-// The A1 filters each section honours (§14.9), as on the server.
+// The A1 filters each section honours (§14.12), as on the server.
 const SECTION_FILTERS = {
   alertTimeline: ['districtId', 'hazardType'],
   citizensReached: ['districtId', 'hazardType'],
@@ -627,7 +663,7 @@ function gapsIn(section, days, recordDays) {
 
 // The report object as the server returns it (§14.2). A district filter
 // compiles every section for that one district; the hazard and organisation
-// filters reach only the sections that honour them (A1, §14.9).
+// filters reach only the sections that honour them (A1, §14.12).
 function buildReport(event, { from, to, districtIds, sections }, filters = NO_FILTERS) {
   const districts = event.districts.filter(({ id }) => districtIds.includes(id));
   const compiledFor = filters.districtId
@@ -716,7 +752,7 @@ async function generate(params = {}) {
 
   const event = EVENTS.find(({ id }) => id === params.eventId);
   if (!event) throw apiError(404, 'NOT_FOUND', 'Hazard event not found.');
-  takeFailure({ generating: true });
+  takeFailure({ call: 'generate' });
   if (event.status !== 'CLOSED') {
     throw apiError(
       409,
@@ -759,7 +795,7 @@ async function listRecent(eventId) {
 }
 
 // The refine body's shape and the report-specific rules, in the server's
-// order (§14.9): a bad shape first, then no filter set, then a district the
+// order (§14.12): a bad shape first, then no filter set, then a district the
 // report doesn't cover.
 function filterErrors(report, filters) {
   const errors = [];
@@ -813,12 +849,6 @@ async function refine(id, filters = {}) {
   return copy(report);
 }
 
-async function listOrganisations() {
-  await delay();
-  takeFailure();
-  return ALL_ORGANISATIONS.map(copy);
-}
-
 // A report without its summary, gaps and sections (§14.5).
 function listItem(report) {
   return {
@@ -834,10 +864,314 @@ function listItem(report) {
   };
 }
 
+// --- Export files (§14.8) ---
+
+const SUMMARY_FIGURES = [
+  ['alertsIssued', 'alertTimeline'],
+  ['citizensReached', 'citizensReached'],
+  ['citizensTargeted', 'citizensReached'],
+  ['reachedRate', 'citizensReached'],
+  ['peakOccupancy', 'occupancyOverTime'],
+  ['itemsDistributed', 'resourceDistribution'],
+];
+
+// Every day inside a gap, by section.
+function gapDaysOf(report) {
+  const days = new Map(report.sections.map(({ key }) => [key, new Set()]));
+  report.gaps.forEach((gap) =>
+    daysBetween(gap.from, gap.to).forEach((day) => days.get(gap.section)?.add(day)),
+  );
+  return days;
+}
+
+// One row per data point, as the server's CsvReportExporter writes them.
+const CSV_ROWS = {
+  alertTimeline: (result, add) => {
+    result.entries.forEach((entry) => {
+      const item = `${entry.alert.referenceNo} v${entry.version} ${entry.status}`;
+      add({ date: entry.date, item, measure: 'at', value: entry.at });
+      add({ date: entry.date, item, measure: 'hazardType', value: entry.hazardType });
+      add({ date: entry.date, item, measure: 'severity', value: entry.severity });
+      add({
+        date: entry.date,
+        item,
+        measure: 'areas',
+        value: entry.areas.map((area) => area.name).join('; '),
+      });
+    });
+    result.days.forEach((day) => add({ date: day.date, measure: 'entries', value: day.entries }));
+  },
+  citizensReached: (result, add) => {
+    result.perChannel.forEach((row) =>
+      ['attempted', 'delivered', 'failed', 'deliveryRate'].forEach((measure) =>
+        add({ item: row.channel, measure, value: row[measure] }),
+      ),
+    );
+    result.perAlert.forEach((row) => {
+      add({ item: row.alert.referenceNo, measure: 'citizensReached', value: row.citizensReached });
+      row.perChannel.forEach((channel) =>
+        ['attempted', 'delivered'].forEach((measure) =>
+          add({
+            item: `${row.alert.referenceNo} ${channel.channel}`,
+            measure,
+            value: channel[measure],
+          }),
+        ),
+      );
+    });
+    result.days.forEach((day) =>
+      ['attempted', 'delivered'].forEach((measure) =>
+        add({ date: day.date, measure, value: day[measure] }),
+      ),
+    );
+  },
+  occupancyOverTime: (result, add) => {
+    result.districts.forEach((row) =>
+      row.days.forEach((day) =>
+        add({ date: day.date, district: row.district.name, measure: 'peak', value: day.peak }),
+      ),
+    );
+    result.districts.forEach((row) =>
+      add({
+        date: row.peak?.date,
+        district: row.district.name,
+        measure: 'highestPeak',
+        value: row.peak?.value,
+      }),
+    );
+  },
+  resourceDistribution: (result, add) => {
+    result.rows.forEach((row) =>
+      add({
+        district: row.district.name,
+        item: `${row.supplyType} – ${row.organisation.name}`,
+        measure: 'quantity',
+        value: row.quantity,
+      }),
+    );
+    result.days.forEach((day) => add({ date: day.date, measure: 'quantity', value: day.quantity }));
+  },
+};
+
+const CSV_HEADER = ['section', 'date', 'district', 'item', 'measure', 'value', 'incomplete'];
+
+const csvCell = (value) => {
+  if (value === null || value === undefined) return '';
+  const text = String(value);
+  return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+};
+
+function reportCsv(report) {
+  const gapDays = gapDaysOf(report);
+  const requested = new Set(report.sections.map(({ key }) => key));
+  const rows = SUMMARY_FIGURES.filter(([, section]) => requested.has(section)).map(
+    ([figure, section]) => ({
+      section: 'summary',
+      date: figure === 'peakOccupancy' ? report.summary.peakOccupancyDate : null,
+      measure: figure,
+      value: report.summary[figure],
+      incomplete: gapDays.get(section).size > 0,
+    }),
+  );
+  report.sections.forEach(({ key, result }) =>
+    CSV_ROWS[key](result, (row) =>
+      rows.push({ ...row, section: key, incomplete: gapDays.get(key).has(row.date) }),
+    ),
+  );
+  const lines = [CSV_HEADER, ...rows.map((row) => CSV_HEADER.map((column) => row[column]))];
+  return `\uFEFF${lines.map((cells) => cells.map(csvCell).join(',')).join('\r\n')}\r\n`;
+}
+
+// A one-page PDF naming the report and its summary: enough to open and check.
+function reportPdf(report) {
+  const ascii = (text) => text.replace(/[^\x20-\x7e]/g, '-').replace(/[\\()]/g, '\\$&');
+  const lines = [
+    `Post-Event Report - ${report.event.name}`,
+    `${report.dateFrom} to ${report.dateTo} - ${report.districts.map((d) => d.name).join(', ')}`,
+    ...SUMMARY_FIGURES.filter(([figure]) => report.summary[figure] !== null).map(
+      ([figure]) => `${figure}: ${report.summary[figure]}`,
+    ),
+    report.hasGaps ? 'Incomplete data - figures partial, not omitted' : 'No data gaps',
+    '(Mock export: the server writes the full report.)',
+  ];
+  const text = lines
+    .map(
+      (line, index) =>
+        `BT /F1 ${index === 0 ? 16 : 11} Tf 50 ${780 - index * 22} Td (${ascii(line)}) Tj ET`,
+    )
+    .join('\n');
+  const objects = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>',
+    `<< /Length ${text.length} >>\nstream\n${text}\nendstream`,
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+  ];
+  let pdf = '%PDF-1.4\n';
+  const offsets = objects.map((object, index) => {
+    const offset = pdf.length;
+    pdf += `${index + 1} 0 obj\n${object}\nendobj\n`;
+    return offset;
+  });
+  const xref = pdf.length;
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  pdf += offsets.map((offset) => `${String(offset).padStart(10, '0')} 00000 n \n`).join('');
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return pdf;
+}
+
+const FILE_WRITERS = {
+  PDF: { type: 'application/pdf', write: reportPdf },
+  CSV: { type: 'text/csv;charset=utf-8', write: reportCsv },
+};
+
+async function exportReport(reportId, format) {
+  await delay();
+  takeFailure();
+  const report = reports.get(reportId);
+  if (!report) throw apiError(404, 'NOT_FOUND', 'Post-event report not found.');
+  if (!FILE_WRITERS[format]) {
+    throw validationError([
+      {
+        field: 'format',
+        message: format === undefined ? 'format is required' : 'must be one of [PDF, CSV]',
+      },
+    ]);
+  }
+  takeFailure({ call: 'export' });
+  return { ...makeExport(report, format) };
+}
+
+// Writes the report as a file and records the export (§14.8).
+function makeExport(report, format) {
+  const { type, write } = FILE_WRITERS[format];
+  const created = {
+    exportId: `66fc5b2c3d4e5f6a7b8c${(0x9f00 + nextExport++).toString(16)}`,
+    format,
+    fileUrl: URL.createObjectURL(new Blob([write(report)], { type })),
+    createdAt: new Date().toISOString(),
+  };
+  exports.set(created.exportId, { ...created, report: report.id });
+  return created;
+}
+
+async function listOrganisations() {
+  await delay();
+  takeFailure();
+  return copy(ALL_ORGANISATIONS);
+}
+
+// What the server's ShareValidator accepts as an email.
+const EMAIL_PATTERN = /^[^s@]+@[^s@]+.[^s@]+$/;
+
+function shareErrors({
+  format = 'PDF',
+  organisationId,
+  recipientEmail,
+  message = 'Post-event summary',
+}) {
+  const errors = [];
+  if (!FILE_WRITERS[format]) errors.push({ field: 'format', message: 'must be one of [PDF, CSV]' });
+  if (!organisationId) {
+    errors.push({ field: 'organisationId', message: 'organisationId is required' });
+  }
+  const email = typeof recipientEmail === 'string' ? recipientEmail.trim() : '';
+  if (!email) {
+    errors.push({ field: 'recipientEmail', message: 'recipientEmail is required' });
+  } else if (email.length > 254 || !EMAIL_PATTERN.test(email)) {
+    errors.push({ field: 'recipientEmail', message: 'must be a valid email' });
+  }
+  const text = typeof message === 'string' ? message.trim() : '';
+  if (text.length < 1 || text.length > 500) {
+    errors.push({ field: 'message', message: 'message must be 1 to 500 characters' });
+  }
+  return errors;
+}
+
+async function shareReport(reportId, input) {
+  await delay();
+  takeFailure();
+  const report = reports.get(reportId);
+  if (!report) throw apiError(404, 'NOT_FOUND', 'Post-event report not found.');
+  const errors = shareErrors(input);
+  if (errors.length > 0) throw validationError(errors);
+  const organisation = ALL_ORGANISATIONS.find(({ id }) => id === input.organisationId);
+  if (!organisation) throw apiError(404, 'NOT_FOUND', 'Organisation not found.');
+
+  // Include rule: the newest export in the format, or a new one first.
+  const format = input.format ?? 'PDF';
+  const existing = [...exports.values()]
+    .filter((record) => record.report === report.id && record.format === format)
+    .pop();
+  const exported = existing ?? makeExport(report, format);
+
+  const share = {
+    shareId: `66fc5d3e4f5a6b7c8d9e${(0x0a00 + nextShare++).toString(16)}`,
+    exportId: exported.exportId,
+    format: exported.format,
+    fileUrl: exported.fileUrl,
+    organisation: { id: organisation.id, name: organisation.name },
+    recipientEmail: input.recipientEmail.trim(),
+    message: (input.message ?? 'Post-event summary').trim(),
+    sharedBy: OFFICER,
+    sharedAt: new Date().toISOString(),
+    status: 'SENT',
+    attempts: 1,
+    failureReason: null,
+  };
+  // E4: the share is kept either way, FAILED when the email didn't go.
+  const emailFailure = takeEmailFailure();
+  if (emailFailure) {
+    share.status = 'FAILED';
+    share.failureReason = emailFailure.response.data.error.message;
+  }
+  shares.set(share.shareId, { reportId: report.id, share });
+  if (emailFailure) throw emailFailure;
+  return copy(share);
+}
+
+async function retryShare(shareId) {
+  await delay();
+  takeFailure();
+  const record = shares.get(shareId);
+  if (!record) throw apiError(404, 'NOT_FOUND', 'Report share not found.');
+  const { share } = record;
+  if (share.status !== 'FAILED') {
+    throw apiError(
+      409,
+      'INVALID_SHARE_TRANSITION',
+      `Only a FAILED share can be retried – current status: ${share.status}`,
+    );
+  }
+  share.attempts += 1;
+  const emailFailure = takeEmailFailure();
+  if (emailFailure) {
+    share.failureReason = emailFailure.response.data.error.message;
+    throw emailFailure;
+  }
+  share.status = 'SENT';
+  share.sharedAt = new Date().toISOString();
+  share.failureReason = null;
+  return copy(share);
+}
+
+async function listShares(reportId) {
+  await delay();
+  takeFailure();
+  if (!reports.has(reportId)) throw apiError(404, 'NOT_FOUND', 'Post-event report not found.');
+  return [...shares.values()]
+    .filter((record) => record.reportId === reportId)
+    .reverse()
+    .map((record) => copy(record.share));
+}
+
 /**
  * Demo hooks, not part of the API: `failNext('network')` makes the next call
- * fail as if offline, `failNext('server')` answers it with a 500, and
- * `failNext('notClosed')` answers the next generate with 409 EVENT_NOT_CLOSED.
+ * fail as if offline, `failNext('server')` answers it with a 500,
+ * `failNext('notClosed')` answers the next generate with 409 EVENT_NOT_CLOSED,
+ * and `failNext('exportFailed')` / `failNext('storage')` answer the next
+ * export with 500 EXPORT_FAILED / 502 STORAGE_UNAVAILABLE (E3). `failNext('email')`
+ * answers the next share with 502 EMAIL_UNAVAILABLE.
  */
 export const mockControls = {
   failNext(kind) {
@@ -851,5 +1185,9 @@ export default {
   getReport,
   listRecent,
   refine,
+  exportReport,
   listOrganisations,
+  shareReport,
+  listShares,
+  retryShare,
 };

@@ -34,6 +34,19 @@ export class PostEventReportRoutes extends BaseRoutes {
       RequestValidator.body(PostEventReportValidator.refineSchema),
       postEventReportController.refine,
     );
+    router.post(
+      '/:id/exports',
+      ...officer,
+      RequestValidator.body(PostEventReportValidator.exportSchema),
+      postEventReportController.createExport,
+    );
+    router.post(
+      '/:id/shares',
+      ...officer,
+      RequestValidator.body(PostEventReportValidator.shareSchema),
+      postEventReportController.createShare,
+    );
+    router.get('/:id/shares', ...officer, postEventReportController.listShares);
   }
 }
 
