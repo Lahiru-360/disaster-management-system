@@ -301,6 +301,17 @@ describe('CsvReportExporter', () => {
     ]);
   });
 
+  it('DMS-154.3: a distribution row whose organisation no longer exists keeps its row, with an empty name', async () => {
+    const report = withSections(['resourceDistribution']);
+    report.sections[0].result.rows[0].organisation = null;
+
+    const lines = await csvLines(report);
+
+    expect(lines.filter((line) => line.startsWith('resourceDistribution,'))[0]).toBe(
+      'resourceDistribution,,Colombo,WATER – ,quantity,40,false',
+    );
+  });
+
   it('DMS-154.3: writes only the requested sections and their figures', async () => {
     const lines = await csvLines(withSections(['resourceDistribution']));
 
@@ -360,6 +371,22 @@ describe('PdfReportExporter', () => {
 
     const pdf = await new PdfReportExporter().write(report);
 
+    expect(pages(pdf)).toBeGreaterThanOrEqual(2);
+  });
+
+  it.each([
+    ['one day', '2026-06-13', '2026-06-13'],
+    ['within one month', '2026-06-13', '2026-06-20'],
+    ['across two months of one year', '2026-06-28', '2026-07-03'],
+    ['across two years', '2026-12-30', '2027-01-02'],
+  ])('DMS-154.3: writes a PDF for a report over %s', async (_, from, to) => {
+    const report = sampleReport();
+    report.dateFrom = from;
+    report.dateTo = to;
+
+    const pdf = await new PdfReportExporter().write(report);
+
+    expect(pdf.subarray(0, 5).toString('latin1')).toBe('%PDF-');
     expect(pages(pdf)).toBeGreaterThanOrEqual(2);
   });
 
