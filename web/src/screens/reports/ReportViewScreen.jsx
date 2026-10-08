@@ -68,9 +68,13 @@ function startDownload({ fileUrl, fileName }) {
 // (DMS-154.5): Export PDF / Export CSV, then "Export ready – Download". Steps
 // 14-15 (DMS-155.5): Share… opens the Share report dialog, the confirmation
 // "Shared with UNICEF Sri Lanka (liaison@example.org)" follows, and the
+// report's shares are listed under the actions. A2 (DMS-157.1): after an
+// export, Done closes the report view and returns to the parameters screen;
+// the export stays stored and no share is made.
 // report's shares are listed under the actions. E4 (DMS-162.3): a share whose
 // email failed is listed FAILED with "Sharing failed – Retry", and Retry sends
 // that same share again.
+
 export default function ReportViewScreen() {
   const { reportId } = useParams();
   const passed = useLocation().state?.report;
@@ -282,6 +286,7 @@ export default function ReportViewScreen() {
         <ExportActions
           onExport={exportAs}
           onShare={() => setShareOpen(true)}
+          onDone={() => navigate('/reports')}
           shared={shareNotice?.reportId === report.id ? shareNotice.text : null}
           exporting={exporting}
           ready={exported?.reportId === report.id ? exported : null}
