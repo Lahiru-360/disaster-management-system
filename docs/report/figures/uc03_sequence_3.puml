@@ -1,0 +1,35 @@
+@startuml uc03_sequence_3
+' Figure 5.5 — UC03 sequence diagram (c): log relief supply and combined picture (UC03 improved PDF, Figure 5)
+skinparam shadowing false
+title UC-03 (c) Log relief supply and combined picture
+
+actor "District Officer" as DO
+boundary ":CoordinationDashboard" as UI
+control ":SupplyController" as SC
+entity ":ReliefStock" as RS
+entity ":SupplyDistribution" as SD
+control ":OperationalPictureService" as OPS
+actor "DMC Officer" as DMC
+
+DO -> UI : logSupply(shelterId, stockId, qty)
+UI -> SC : logDistribution(shelterId, stockId, qty)
+SC -> RS : findById(stockId)
+RS --> SC : stock (type, owner, available)
+
+alt qty <= 0 or qty > available [E5]
+  SC --> UI : error(availableQty)
+  UI --> DO : show error
+else valid
+  SC -> RS : withdraw(qty)
+  SC -> SD : create(shelterId, stockId, qty, officerId, now)
+  SD --> SC : distributionId
+  SC --> UI : logged
+  UI --> DO : supply log updated
+end
+
+DMC -> UI : viewCombinedPicture(districtId, orgFilter)
+UI -> OPS : getCombinedPicture(districtId, orgFilter)
+OPS -> OPS : aggregate shelters, teams, distributions
+OPS --> UI : combined picture
+UI --> DMC : map + totals by organisation
+@enduml

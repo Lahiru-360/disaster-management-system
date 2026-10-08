@@ -17,6 +17,10 @@ export class AlertTimelineSection extends ReportSection {
     return ReportSectionKey.ALERT_TIMELINE;
   }
 
+  get honouredFilters() {
+    return ['districtId', 'hazardType'];
+  }
+
   get gapReason() {
     return 'No alert records';
   }

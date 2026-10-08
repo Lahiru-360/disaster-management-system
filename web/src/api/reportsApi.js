@@ -2,9 +2,10 @@
 // signatures as ./mock/reportsApi.js so index.js can swap between them. Errors
 // propagate as axios rejections carrying `error.response.data.error` - e.g.
 // 400 VALIDATION_ERROR with `errors` per field (E1), 404 NO_DATA_FOR_SELECTION
-// (E2), 409 EVENT_NOT_CLOSED, or for an export 500 EXPORT_FAILED and 502
-// STORAGE_UNAVAILABLE (E3), or for a share 404 NOT_FOUND (no such organisation)
-// and 502 EMAIL_UNAVAILABLE (E4: the share is then recorded FAILED).
+// (E2, also answered by refine - A1), 409 EVENT_NOT_CLOSED, or for an export 500
+// EXPORT_FAILED and 502 STORAGE_UNAVAILABLE (E3), or for a share 404 NOT_FOUND (no
+// such organisation) and 502 EMAIL_UNAVAILABLE (E4: the share is then recorded
+// FAILED).
 
 import client from './client';
 
@@ -49,6 +50,21 @@ async function getReport(id) {
 async function listRecent(eventId) {
   const response = await client.get('/post-event-reports', { params: { eventId } });
   return response.data.data.reports;
+}
+
+/**
+ * `POST /api/post-event-reports/:id/refine` (§14.12, A1) - compiles the
+ * report's own selection again with the filters, which replace any it had,
+ * and resolves with the new stored report. Each filter is `null` for "all";
+ * at least one must be set.
+ */
+async function refine(id, { hazardType = null, districtId = null, organisationId = null }) {
+  const response = await client.post(`/post-event-reports/${id}/refine`, {
+    hazardType,
+    districtId,
+    organisationId,
+  });
+  return response.data.data.report;
 }
 
 /**
@@ -111,6 +127,7 @@ export default {
   generate,
   getReport,
   listRecent,
+  refine,
   exportReport,
   listOrganisations,
   shareReport,

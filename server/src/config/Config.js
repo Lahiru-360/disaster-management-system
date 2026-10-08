@@ -7,7 +7,7 @@ dotenv.config();
 // server fails loudly on startup rather than on the first request that needs it.
 export class Config {
   constructor() {
-    const emailTransport = process.env.EMAIL_TRANSPORT === 'brevo' ? 'brevo' : 'noop';
+    const emailTransport = Config.#emailTransport();
 
     this.nodeEnv = process.env.NODE_ENV || 'development';
     this.port = process.env.PORT || 3000;
@@ -31,6 +31,13 @@ export class Config {
     this.demoFailPushRate = Config.#rate('DEMO_FAIL_PUSH_RATE');
     this.demoFailSmsRate = Config.#rate('DEMO_FAIL_SMS_RATE');
     this.demoFailAudibleRate = Config.#rate('DEMO_FAIL_AUDIBLE_RATE');
+  }
+
+  // "brevo" or "failing" (the E4 demo transport); anything else, including
+  // unset, is the no-op transport.
+  static #emailTransport() {
+    const raw = process.env.EMAIL_TRANSPORT;
+    return raw === 'brevo' || raw === 'failing' ? raw : 'noop';
   }
 
   // A whole number of minutes, 1 or more; unset means the default. Anything

@@ -64,6 +64,35 @@ describe('AlertTimelineSection', () => {
     expect(result.alerts).toBe(2);
   });
 
+  it('TC-04 Main 6: changes at the same instant are ordered by alert reference, then by version', async () => {
+    const sameMinute = at(9, '10:00');
+    const ha1005 = {
+      ...ha1004,
+      id: 'a-1005',
+      referenceNo: 'HA-1005',
+      history: [
+        // Stored out of order: version 2 before version 1, both at the same instant.
+        { status: 'UPDATED', version: 2, at: sameMinute, severity: null, areas: null },
+        { status: 'BROADCAST', version: 1, at: sameMinute, severity: null, areas: null },
+      ],
+    };
+    const ha1002 = {
+      ...ha1004,
+      id: 'a-1002',
+      referenceNo: 'HA-1002',
+      history: [{ status: 'BROADCAST', version: 1, at: sameMinute, severity: null, areas: null }],
+    };
+    const { section } = sectionWith([ha1005, ha1002]);
+
+    const { result } = await section.compile(kelaniContext());
+
+    expect(result.entries.map((entry) => [entry.alert.referenceNo, entry.version])).toEqual([
+      ['HA-1002', 1],
+      ['HA-1005', 1],
+      ['HA-1005', 2],
+    ]);
+  });
+
   it('TC-04 Main 6: each entry carries its time, hazard type, severity and areas', async () => {
     const { section } = sectionWith([ha1003]);
 
