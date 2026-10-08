@@ -189,13 +189,18 @@ describe('ReportBuilder', () => {
     expect(summary).not.toHaveProperty('citizensReachedFigure');
   });
 
-  it('DMS-153.5: compiles every section against the same context', async () => {
+  it('DMS-153.5: compiles every section against the same selection', async () => {
     const sections = ALL.map((key) => new FakeSection(key));
     const ctx = kelaniContext();
 
     await new ReportBuilder({ sections }).build(ctx, { sectionKeys: ALL, generatedBy: 'u' });
 
-    expect(sections.every((section) => section.contexts[0] === ctx)).toBe(true);
+    sections.forEach((section) => {
+      const [seen] = section.contexts;
+      expect(seen.event).toBe(ctx.event);
+      expect([seen.dateFrom, seen.dateTo]).toEqual([ctx.dateFrom, ctx.dateTo]);
+      expect(seen.districtIds).toEqual(ctx.districtIds);
+    });
   });
 
   it('DMS-153.5: collects every section’s gaps on the report', async () => {

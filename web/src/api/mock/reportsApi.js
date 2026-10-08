@@ -11,7 +11,9 @@
 //
 // It rejects as the server does: shape errors, an unknown event (404), a range
 // or district outside the event (E1, 400), and every requested section empty
-// (E2, 404 NO_DATA_FOR_SELECTION - e.g. occupancy only, 14-15 Jun).
+// (E2, 404 NO_DATA_FOR_SELECTION - e.g. occupancy only, 14-15 Jun). Refine
+// (A1) compiles a stored report's selection again with the filters, honoured
+// per section as on the server, and stores the result as a new report.
 // `mockControls.failNext` fakes what can't be clicked into. Generated reports
 // live in this module's memory, so reloading the page forgets them.
 //
@@ -84,7 +86,8 @@ const ORGANISATIONS = {
 };
 
 // The seeded organisations (GET /api/organisations, §10.1), by name. The ones
-// with a contact email are who a report can be shared with.
+// with a contact email are who a report can be shared with, and all of them are
+// the organisation filter's choices.
 const ALL_ORGANISATIONS = [
   { ...ORGANISATIONS.adra, contactEmail: null },
   { id: '66f7c1a2b3c4d5e6f7a8b9d2', name: 'Fire Service', type: 'GOVERNMENT', contactEmail: null },
@@ -389,6 +392,7 @@ function alertsFor(ctx) {
     (alert) =>
       (alert.event === ctx.event.id || alert.event === null) &&
       alert.districtIds.some((id) => ctx.districtIds.includes(id)) &&
+      (ctx.hazardType === null || alert.hazardType === ctx.hazardType) &&
       alert.history.some((change) => ctx.inRange(change.at)),
   );
 }
@@ -586,7 +590,10 @@ function compileOccupancy(ctx) {
 // Quantities by district x supply type x organisation, summed across units.
 function compileDistribution(ctx) {
   const records = DISTRIBUTIONS.filter(
-    (record) => ctx.districtIds.includes(record.district) && ctx.inRange(record.distributedAt),
+    (record) =>
+      ctx.districtIds.includes(record.district) &&
+      (ctx.organisationId === null || record.organisation.id === ctx.organisationId) &&
+      ctx.inRange(record.distributedAt),
   );
   const rows = new Map();
   const perDay = new Map();
@@ -622,6 +629,16 @@ function compileDistribution(ctx) {
   };
 }
 
+// The A1 filters each section honours (§14.12), as on the server.
+const SECTION_FILTERS = {
+  alertTimeline: ['districtId', 'hazardType'],
+  citizensReached: ['districtId', 'hazardType'],
+  occupancyOverTime: ['districtId'],
+  resourceDistribution: ['districtId', 'organisationId'],
+};
+const NO_FILTERS = { hazardType: null, districtId: null, organisationId: null };
+const HAZARD_TYPES = ['FLOOD', 'LANDSLIDE', 'CYCLONE', 'DROUGHT'];
+
 const COMPILERS = {
   alertTimeline: compileAlertTimeline,
   citizensReached: compileCitizensReached,
@@ -644,21 +661,31 @@ function gapsIn(section, days, recordDays) {
   return gaps;
 }
 
-// The report object as the server returns it (§14.2).
-function buildReport(event, { from, to, districtIds, sections }) {
+// The report object as the server returns it (§14.2). A district filter
+// compiles every section for that one district; the hazard and organisation
+// filters reach only the sections that honour them (A1, §14.12).
+function buildReport(event, { from, to, districtIds, sections }, filters = NO_FILTERS) {
   const districts = event.districts.filter(({ id }) => districtIds.includes(id));
-  const ctx = {
+  const compiledFor = filters.districtId
+    ? districts.filter(({ id }) => id === filters.districtId)
+    : districts;
+  const base = {
     event,
     from,
     to,
-    districts,
-    districtIds: districts.map(({ id }) => id),
+    districts: compiledFor,
+    districtIds: compiledFor.map(({ id }) => id),
     days: daysBetween(from, to),
     inRange: (instant) => {
       const day = dayOf(instant);
       return day >= from && day <= to;
     },
   };
+  const contextFor = (key) => ({
+    ...base,
+    hazardType: SECTION_FILTERS[key].includes('hazardType') ? filters.hazardType : null,
+    organisationId: SECTION_FILTERS[key].includes('organisationId') ? filters.organisationId : null,
+  });
 
   const summary = {
     alertsIssued: null,
@@ -670,7 +697,7 @@ function buildReport(event, { from, to, districtIds, sections }) {
     itemsDistributed: null,
   };
   const compiled = SECTION_KEYS.filter((key) => sections.includes(key)).map((key) => {
-    const section = COMPILERS[key](ctx);
+    const section = COMPILERS[key](contextFor(key));
     Object.assign(summary, section.summary);
     return { key, ...section };
   });
@@ -680,7 +707,7 @@ function buildReport(event, { from, to, districtIds, sections }) {
     throw apiError(404, 'NO_DATA_FOR_SELECTION', 'No data is available for this selection.');
   }
 
-  const gaps = compiled.flatMap(({ key, recordDays }) => gapsIn(key, ctx.days, recordDays));
+  const gaps = compiled.flatMap(({ key, recordDays }) => gapsIn(key, base.days, recordDays));
   const generatedAt = new Date().toISOString();
   return {
     id: `66fc4a1b2c3d4e5f6a7b${(0x9e00 + nextReport++).toString(16)}`,
@@ -696,7 +723,7 @@ function buildReport(event, { from, to, districtIds, sections }) {
     dateFrom: from,
     dateTo: to,
     districts,
-    filters: { hazardType: null, districtId: null, organisationId: null },
+    filters: { ...filters },
     summary,
     hasGaps: gaps.length > 0,
     gaps,
@@ -765,6 +792,61 @@ async function listRecent(eventId) {
     .sort((a, b) => b.generatedAt.localeCompare(a.generatedAt) || b.id.localeCompare(a.id))
     .slice(0, RECENT_LIMIT)
     .map((report) => copy(listItem(report)));
+}
+
+// The refine body's shape and the report-specific rules, in the server's
+// order (§14.12): a bad shape first, then no filter set, then a district the
+// report doesn't cover.
+function filterErrors(report, filters) {
+  const errors = [];
+  const { hazardType = null, districtId = null, organisationId = null } = filters;
+  if (hazardType !== null && !HAZARD_TYPES.includes(hazardType)) {
+    errors.push({ field: 'hazardType', message: `must be one of [${HAZARD_TYPES.join(', ')}]` });
+  }
+  if (districtId !== null && !isId(districtId)) {
+    errors.push({ field: 'districtId', message: 'must be a valid id' });
+  }
+  if (organisationId !== null && !isId(organisationId)) {
+    errors.push({ field: 'organisationId', message: 'must be a valid id' });
+  }
+  if (errors.length > 0) return errors;
+  if (hazardType === null && districtId === null && organisationId === null) {
+    return [{ field: 'filters', message: 'must set at least one filter' }];
+  }
+  if (districtId !== null && !report.districts.some(({ id }) => id === districtId)) {
+    return [{ field: 'districtId', message: "must be one of the report's districts" }];
+  }
+  return [];
+}
+
+async function refine(id, filters = {}) {
+  await delay();
+  takeFailure();
+  const source = reports.get(id);
+  if (!source) throw apiError(404, 'NOT_FOUND', 'Post-event report not found.');
+  const errors = filterErrors(source, filters);
+  if (errors.length > 0) throw validationError(errors);
+  const wanted = { ...NO_FILTERS, ...filters };
+  if (
+    wanted.organisationId !== null &&
+    !ALL_ORGANISATIONS.some(({ id: orgId }) => orgId === wanted.organisationId)
+  ) {
+    throw apiError(404, 'NOT_FOUND', 'Organisation not found.');
+  }
+
+  const event = EVENTS.find(({ id: eventId }) => eventId === source.event.id);
+  const report = buildReport(
+    event,
+    {
+      from: source.dateFrom,
+      to: source.dateTo,
+      districtIds: source.districts.map(({ id: districtId }) => districtId),
+      sections: source.sections.map(({ key }) => key),
+    },
+    wanted,
+  );
+  reports.set(report.id, report);
+  return copy(report);
 }
 
 // A report without its summary, gaps and sections (§14.5).
@@ -1102,6 +1184,7 @@ export default {
   generate,
   getReport,
   listRecent,
+  refine,
   exportReport,
   listOrganisations,
   shareReport,

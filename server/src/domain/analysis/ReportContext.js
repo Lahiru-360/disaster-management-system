@@ -5,6 +5,10 @@ import { systemClock } from '../../utils/SystemClock.js';
 // range of Sri Lanka calendar days, the selected districts, the A1 filters and
 // the clock. Built once per report, so all four sections see the same
 // selection, and read-only, so no section can change it for the next.
+//
+// A1 (DMS-156): a district filter narrows districtIds to that one district for
+// every section; the other filters are read by the sections that honour them,
+// each given its own copy through withFilters().
 export class ReportContext {
   #event;
   #dateFrom;
@@ -18,7 +22,7 @@ export class ReportContext {
    * @param {import('../events/HazardEvent.js').HazardEvent} params.event
    * @param {string} params.dateFrom "YYYY-MM-DD", included
    * @param {string} params.dateTo "YYYY-MM-DD", included
-   * @param {string[]} params.districtIds at least one
+   * @param {string[]} params.districtIds the report's selection, at least one
    * @param {{ hazardType?: string|null, districtId?: string|null, organisationId?: string|null }} [params.filters]
    * @param {{ now: () => Date }} [params.clock]
    */
@@ -51,6 +55,12 @@ export class ReportContext {
       districtId: filters.districtId == null ? null : String(filters.districtId),
       organisationId: filters.organisationId == null ? null : String(filters.organisationId),
     });
+    if (
+      this.#filters.districtId !== null &&
+      !this.#districtIds.includes(this.#filters.districtId)
+    ) {
+      throw new Error('ReportContext districtId filter must be one of the selected districts');
+    }
     this.#clock = clock;
   }
 
@@ -67,8 +77,18 @@ export class ReportContext {
     return this.#dateTo;
   }
 
-  /** The selected district ids, as strings, in the order given. */
+  /**
+   * The district ids the sections cover, as strings: the selection in the
+   * order given, or only the filtered district when a district filter is set.
+   */
   get districtIds() {
+    return this.#filters.districtId === null
+      ? this.#districtIds
+      : Object.freeze([this.#filters.districtId]);
+  }
+
+  /** The report's own district selection, whatever the district filter. */
+  get selectedDistrictIds() {
     return this.#districtIds;
   }
 
@@ -79,6 +99,23 @@ export class ReportContext {
 
   get clock() {
     return this.#clock;
+  }
+
+  /**
+   * The same selection with only the named filters kept, the rest null: what
+   * a section that honours just those filters compiles against.
+   * @param {string[]} keys e.g. ['districtId', 'hazardType']
+   * @returns {ReportContext}
+   */
+  withFilters(keys) {
+    return new ReportContext({
+      event: this.#event,
+      dateFrom: this.#dateFrom,
+      dateTo: this.#dateTo,
+      districtIds: [...this.#districtIds],
+      filters: Object.fromEntries(keys.map((key) => [key, this.#filters[key] ?? null])),
+      clock: this.#clock,
+    });
   }
 
   /**
@@ -115,11 +152,11 @@ export class ReportContext {
   }
 
   /**
-   * True when the district is one of the selected districts.
+   * True when the district is one the sections cover (districtIds).
    * @param {string|object} districtId an id, or anything that prints as one
    * @returns {boolean}
    */
   includesDistrict(districtId) {
-    return districtId != null && this.#districtIds.includes(String(districtId));
+    return districtId != null && this.districtIds.includes(String(districtId));
   }
 }

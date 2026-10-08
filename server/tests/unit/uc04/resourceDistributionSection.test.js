@@ -45,6 +45,7 @@ describe('ResourceDistributionSection', () => {
     expect(repository.findInRange).toHaveBeenCalledWith({
       districtIds: [D.colombo],
       ...ctx.instants(),
+      organisationId: null,
     });
   });
 
