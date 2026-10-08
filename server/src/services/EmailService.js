@@ -1,5 +1,6 @@
 import { env } from '../config/Config.js';
 import { BrevoEmailTransport } from './email/BrevoEmailTransport.js';
+import { FailingEmailTransport } from './email/FailingEmailTransport.js';
 import { NoopEmailTransport } from './email/NoopEmailTransport.js';
 
 // The one way the rest of the server sends email. Which transport delivers it
@@ -16,6 +17,9 @@ export class EmailService {
       return new EmailService(
         new BrevoEmailTransport({ apiKey: config.brevoApiKey, senderEmail: config.emailFrom }),
       );
+    }
+    if (config.emailTransport === 'failing') {
+      return new EmailService(new FailingEmailTransport());
     }
     return new EmailService(new NoopEmailTransport());
   }
