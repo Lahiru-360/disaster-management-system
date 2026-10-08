@@ -1,0 +1,116 @@
+@startuml uc03_class_1
+' Figure 5.2 — UC03 improved class diagram (UC03 improved PDF, Figure 2)
+skinparam shadowing false
+skinparam classAttributeIconSize 0
+
+enum ShelterStatus {
+  AVAILABLE
+  FILLING_UP
+  NEAR_CAPACITY
+  FULL
+}
+enum TeamStatus {
+  AVAILABLE
+  DISPATCHED
+  ON_SITE
+  UNAVAILABLE
+}
+enum DispatchStatus {
+  ASSIGNED
+  ACKNOWLEDGED
+  ON_SITE
+  COMPLETED
+  DECLINED
+  UNRESPONSIVE
+}
+enum OrgType {
+  GOVERNMENT
+  ARMED_FORCES
+  POLICE
+  NGO
+  DONOR
+}
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+enum SupplyType {
+  FOOD
+  WATER
+  MEDICINE
+  BLANKETS
+  HYGIENE_KITS
+}
+
+class District {
+  - districtId : String
+  - name : String
+}
+class Organisation {
+  - orgId : String
+  - name : String
+  - type : OrgType
+}
+class Shelter {
+  - shelterId : String
+  - name : String
+  - location : Coordinates
+  - capacity : int
+  - currentOccupancy : int
+  + updateOccupancy(n : int) : void
+  + occupancyRate() : double
+  + status() : ShelterStatus
+}
+class OccupancyRecord {
+  - recordedAt : DateTime
+  - occupants : int
+}
+class ReliefStock {
+  - stockId : String
+  - supplyType : SupplyType
+  - unit : String
+  - quantityAvailable : int
+  + withdraw(qty : int) : void
+}
+class SupplyDistribution {
+  - distributionId : String
+  - quantity : int
+  - distributedAt : DateTime
+}
+class RescueTeam {
+  - teamId : String
+  - name : String
+  - memberCount : int
+  - currentLocation : Coordinates
+  - status : TeamStatus
+  + isAvailable() : boolean
+}
+class DistrictOfficer {
+  - district : District
+}
+class Dispatch {
+  - dispatchId : String
+  - incidentLocation : Coordinates
+  - priority : Priority
+  - status : DispatchStatus
+  - createdAt : DateTime
+  - ackDeadline : DateTime
+  + acknowledge() : void
+  + decline(reason : String) : void
+  + markOnSite() : void
+  + complete() : void
+  + isOverdue(now : DateTime) : boolean
+}
+
+District "1" *-- "0..*" Shelter : hosts
+Shelter "1" *-- "0..*" OccupancyRecord : history
+Organisation "1" -- "0..*" ReliefStock : owns
+Organisation "1" -- "0..*" RescueTeam : owns
+Shelter "1" -- "0..*" SupplyDistribution : receives
+ReliefStock "1" -- "0..*" SupplyDistribution : drawn from
+DistrictOfficer "1" -- "0..*" SupplyDistribution : logs
+DistrictOfficer "1" -- "0..*" Dispatch : creates
+RescueTeam "1" -- "0..*" Dispatch : assigned to
+@enduml
