@@ -3,7 +3,8 @@ import EmptyState from './EmptyState';
 const DEFAULT_ROW_KEY = (row, index) => row.id ?? index;
 
 // `columns`: [{ key, header, render?(row) }] - render defaults to row[key].
-// Selection is controlled: pass `selectedKeys` (a Set) and `onSelectionChange`
+// `dense` tightens the cells and keeps the header in view while the table
+// scrolls inside a fixed height (a dashboard panel). Selection is controlled: pass `selectedKeys` (a Set) and `onSelectionChange`
 // together, or omit both to render without checkboxes.
 export default function DataTable({
   columns = [],
@@ -14,6 +15,7 @@ export default function DataTable({
   onSelectionChange,
   onRowClick,
   emptyState,
+  dense = false,
   className,
   ...props
 }) {
@@ -21,6 +23,7 @@ export default function DataTable({
     return emptyState ?? <EmptyState title="Nothing to show yet" />;
   }
 
+  const cell = dense ? 'px-3 py-1.5 whitespace-nowrap' : 'px-4 py-3';
   const keys = rows.map((row, index) => rowKey(row, index));
   const selected = selectedKeys ?? new Set();
   const allSelected = keys.every((key) => selected.has(key));
@@ -43,11 +46,16 @@ export default function DataTable({
         .join(' ')}
       {...props}
     >
-      <table className="w-full text-left text-[14px]">
-        <thead className="bg-haze text-[12px] font-semibold text-muted uppercase">
+      <table className={['w-full text-left', dense ? 'text-[13px]' : 'text-[14px]'].join(' ')}>
+        <thead
+          className={[
+            'bg-haze font-semibold text-muted',
+            dense ? 'sticky top-0 z-10 text-[12px]' : 'text-[12px] uppercase',
+          ].join(' ')}
+        >
           <tr>
             {selectable ? (
-              <th scope="col" className="w-10 px-4 py-3">
+              <th scope="col" className={['w-10', cell].join(' ')}>
                 <input
                   type="checkbox"
                   aria-label="Select all rows"
@@ -58,7 +66,7 @@ export default function DataTable({
               </th>
             ) : null}
             {columns.map((column) => (
-              <th key={column.key} scope="col" className="px-4 py-3">
+              <th key={column.key} scope="col" className={cell}>
                 {column.header}
               </th>
             ))}
@@ -82,7 +90,10 @@ export default function DataTable({
                   .join(' ')}
               >
                 {selectable ? (
-                  <td className="w-10 px-4 py-3" onClick={(event) => event.stopPropagation()}>
+                  <td
+                    className={['w-10', cell].join(' ')}
+                    onClick={(event) => event.stopPropagation()}
+                  >
                     <input
                       type="checkbox"
                       aria-label="Select row"
@@ -93,7 +104,7 @@ export default function DataTable({
                   </td>
                 ) : null}
                 {columns.map((column) => (
-                  <td key={column.key} className="px-4 py-3">
+                  <td key={column.key} className={cell}>
                     {column.render ? column.render(row) : row[column.key]}
                   </td>
                 ))}

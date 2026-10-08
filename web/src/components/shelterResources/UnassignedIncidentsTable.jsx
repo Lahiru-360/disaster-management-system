@@ -59,10 +59,13 @@ export default function UnassignedIncidentsTable({ dispatches, onDispatch }) {
 
   return (
     <DataTable
+      dense
+      className="max-h-48 overflow-y-auto"
       columns={columns}
       rows={dispatches}
       emptyState={
         <EmptyState
+          className="py-4"
           icon="✓"
           title="No unassigned incidents"
           description="Incidents that no team could take will wait here until one is free."

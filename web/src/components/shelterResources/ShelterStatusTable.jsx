@@ -14,21 +14,22 @@ const OCCUPANCY_THRESHOLDS = [
 ];
 
 const COLUMNS = [
-  { key: 'name', header: 'Shelter' },
+  { key: 'name', header: 'Shelter Name' },
   { key: 'district', header: 'District', render: (row) => row.district.name },
   {
     key: 'occupancy',
     header: 'Occupancy',
     render: (row) => (
-      <div className="w-40">
+      <div className="flex items-center gap-3" title={`${row.currentOccupancy} / ${row.capacity}`}>
         <ProgressBar
           value={row.currentOccupancy}
           max={row.capacity}
           thresholds={OCCUPANCY_THRESHOLDS}
+          className="w-24"
         />
-        <p className="mt-1 text-[12px] text-muted">
-          {row.currentOccupancy} / {row.capacity} ({Math.round(row.rate * 100)}%)
-        </p>
+        <span className="w-10 text-[13px] font-semibold text-ink tabular-nums">
+          {Math.round(row.rate * 100)}%
+        </span>
       </div>
     ),
   },
@@ -53,11 +54,14 @@ const COLUMNS = [
 export default function ShelterStatusTable({ shelters, onSelect }) {
   return (
     <DataTable
+      dense
+      className="max-h-48 overflow-y-auto"
       columns={COLUMNS}
       rows={shelters}
       onRowClick={onSelect}
       emptyState={
         <EmptyState
+          className="py-4"
           icon="⌂"
           title="No shelters yet"
           description="Registered shelters for this district will appear here."

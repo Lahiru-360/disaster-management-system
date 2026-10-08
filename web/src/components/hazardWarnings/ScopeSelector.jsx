@@ -69,7 +69,12 @@ export default function ScopeSelector({ districts, riverBasins, value, onChange,
                   onChange={() => toggle(area.id)}
                   className="mt-0.5 h-4 w-4 accent-navy"
                 />
-                <span className="text-[14px] text-ink">
+                <span
+                  className={[
+                    'text-[14px]',
+                    value.includes(area.id) ? 'font-semibold text-ink' : 'text-muted',
+                  ].join(' ')}
+                >
                   {area.name}
                   {area.detail ? (
                     <span className="block text-[12px] text-muted">{area.detail}</span>

@@ -1,3 +1,4 @@
+import { Building2, Package, Send } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router';
 
@@ -15,17 +16,60 @@ import SummaryCards from '../../components/shelterResources/SummaryCards';
 import SupplyLogTable from '../../components/shelterResources/SupplyLogTable';
 import UnassignedIncidentsTable from '../../components/shelterResources/UnassignedIncidentsTable';
 import UpdateOccupancyDialog from '../../components/shelterResources/UpdateOccupancyDialog';
-import Button from '../../components/ui/Button';
 import EmptyState from '../../components/ui/EmptyState';
 import Loader from '../../components/ui/Loader';
 import Notice from '../../components/ui/Notice';
 import Screen from '../../components/ui/Screen';
-import ScreenHeader from '../../components/ui/ScreenHeader';
-import SectionLabel from '../../components/ui/SectionLabel';
 import Select from '../../components/ui/Select';
 import { ROLES } from '../../constants/roles';
 import useAuth from '../../hooks/useAuth';
 import useUnansweredDispatches from '../../hooks/useUnansweredDispatches';
+
+// A titled white panel holding one part of the dashboard (a table or the map).
+function Panel({ title, action, children, className }) {
+  return (
+    <section
+      className={['rounded-xl border border-line bg-paper p-4', className]
+        .filter(Boolean)
+        .join(' ')}
+    >
+      <div className="mb-2.5 flex min-h-9 items-center justify-between gap-3">
+        <h2 className="text-[16px] font-bold text-ink">{title}</h2>
+        {action ?? null}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+// The three big action buttons along the bottom of the dashboard.
+const ACTION_STYLES = {
+  navy: 'bg-navy text-paper hover:bg-navy-hi',
+  success: 'bg-success-ink text-paper hover:opacity-90',
+  outline: 'border border-line bg-navy-soft text-navy hover:bg-haze',
+};
+
+function ActionButton({ Icon, title, detail, tone, disabled, onClick }) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      className={[
+        'flex cursor-pointer items-center gap-3 rounded-xl px-5 py-2.5 text-left transition',
+        'focus-visible:ring-2 focus-visible:ring-navy-soft focus-visible:outline-none',
+        'disabled:cursor-not-allowed disabled:opacity-40',
+        ACTION_STYLES[tone],
+      ].join(' ')}
+    >
+      <Icon size={24} strokeWidth={1.75} aria-hidden="true" />
+      <span>
+        <span className="block text-[15px] font-bold">{title}</span>
+        <span className="block text-[12px] opacity-80">{detail}</span>
+      </span>
+    </button>
+  );
+}
 
 const errorMessage = (error, fallback) => error?.response?.data?.error?.message ?? fallback;
 
@@ -234,15 +278,27 @@ export default function ShelterResourcesScreen() {
     : picture?.district?.name;
 
   return (
-    <Screen>
-      <ScreenHeader title="Shelter & Resources" />
+    <Screen className="py-5!">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="text-[22px] font-bold tracking-[-0.03em] text-ink">
+            Shelter and Resource Coordination
+          </h1>
+          <p className="text-[14px] text-muted">
+            Manage shelters, rescue teams and relief supplies for effective disaster response.
+          </p>
+        </div>
+        {picture && ready && !pictureError ? (
+          <IncidentHeader incident={picture.incident} districtName={districtName} />
+        ) : null}
+      </div>
 
       {!canCoordinate ? (
         <Notice variant="error" className="mt-4">
           Coordinating shelters and resources needs the district or DMC officer role.
         </Notice>
       ) : (
-        <div className="mt-5 flex flex-col gap-6">
+        <div className="mt-4 flex flex-col gap-4">
           {isDmc ? (
             <div className="max-w-xs">
               {districtsError ? (
@@ -275,33 +331,6 @@ export default function ShelterResourcesScreen() {
             <Loader className="mt-6" />
           ) : (
             <>
-              <IncidentHeader incident={picture.incident} districtName={districtName}>
-                <Button
-                  variant="outline"
-                  fullWidth={false}
-                  disabled={!canWrite}
-                  onClick={() => setDispatchOpen(true)}
-                >
-                  Dispatch Rescue Team
-                </Button>
-                <Button
-                  variant="outline"
-                  fullWidth={false}
-                  disabled={!canWrite}
-                  onClick={() => setLogSupplyOpen(true)}
-                >
-                  Log Relief Supply
-                </Button>
-                <Button
-                  variant="outline"
-                  fullWidth={false}
-                  disabled={!canWrite}
-                  onClick={() => setRegisterOpen(true)}
-                >
-                  Manage Shelters
-                </Button>
-              </IncidentHeader>
-
               {canWrite ? (
                 <ReassignPrompt
                   dispatches={unanswered}
@@ -312,56 +341,86 @@ export default function ShelterResourcesScreen() {
 
               <SummaryCards summary={picture.summary} />
 
-              <div className="flex items-center justify-between">
-                <SectionLabel>Live Operations Map</SectionLabel>
-                <OrganisationFilter
-                  organisations={organisations}
-                  value={organisationId}
-                  onChange={setOrganisationId}
+              <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                <Panel title="Shelter Status">
+                  <ShelterStatusTable
+                    shelters={picture.shelters}
+                    onSelect={canWrite ? (row) => setOccupancyShelterId(row.id) : undefined}
+                  />
+                </Panel>
+
+                <Panel
+                  title="Live Operations Map"
+                  action={
+                    <OrganisationFilter
+                      organisations={organisations}
+                      value={organisationId}
+                      onChange={setOrganisationId}
+                    />
+                  }
+                >
+                  <LiveOpsMap shelters={picture.shelters} teams={picture.teams} />
+                </Panel>
+
+                <Panel title="Rescue Teams">
+                  {markError ? (
+                    <Notice variant="error" className="mb-2">
+                      {markError}
+                    </Notice>
+                  ) : null}
+                  <RescueTeamsTable
+                    teams={picture.teams}
+                    onMarkAvailable={canWrite ? handleMarkAvailable : undefined}
+                    busyId={markingTeamId}
+                  />
+                </Panel>
+
+                <Panel title="Recent Relief Supply Logs">
+                  <SupplyLogTable distributions={picture.recentDistributions} />
+                </Panel>
+              </div>
+
+              {/* E3: shown only while an incident waits for a team, so the
+                  dashboard fits on one screen the rest of the time. */}
+              {unassignedError || unassigned?.length > 0 ? (
+                <Panel title="Unassigned Incidents">
+                  {unassignedError ? (
+                    <Notice variant="error">{unassignedError}</Notice>
+                  ) : (
+                    <UnassignedIncidentsTable
+                      dispatches={unassigned}
+                      onDispatch={canWrite ? openAssign : undefined}
+                    />
+                  )}
+                </Panel>
+              ) : null}
+
+              <div className="grid grid-cols-1 gap-3 rounded-xl border border-line bg-paper p-3 md:grid-cols-3">
+                <ActionButton
+                  Icon={Send}
+                  title="Dispatch Rescue Team"
+                  detail="Assign a team to an incident"
+                  tone="navy"
+                  disabled={!canWrite}
+                  onClick={() => setDispatchOpen(true)}
+                />
+                <ActionButton
+                  Icon={Package}
+                  title="Log Relief Supply"
+                  detail="Record distributed supplies"
+                  tone="success"
+                  disabled={!canWrite}
+                  onClick={() => setLogSupplyOpen(true)}
+                />
+                <ActionButton
+                  Icon={Building2}
+                  title="Manage Shelters"
+                  detail="Register a new shelter"
+                  tone="outline"
+                  disabled={!canWrite}
+                  onClick={() => setRegisterOpen(true)}
                 />
               </div>
-              <LiveOpsMap shelters={picture.shelters} teams={picture.teams} />
-
-              <section>
-                <SectionLabel className="mb-2">Shelter Status</SectionLabel>
-                <ShelterStatusTable
-                  shelters={picture.shelters}
-                  onSelect={canWrite ? (row) => setOccupancyShelterId(row.id) : undefined}
-                />
-              </section>
-
-              <section>
-                <SectionLabel className="mb-2">Rescue Teams</SectionLabel>
-                {markError ? (
-                  <Notice variant="error" className="mb-2">
-                    {markError}
-                  </Notice>
-                ) : null}
-                <RescueTeamsTable
-                  teams={picture.teams}
-                  onMarkAvailable={canWrite ? handleMarkAvailable : undefined}
-                  busyId={markingTeamId}
-                />
-              </section>
-
-              <section>
-                <SectionLabel className="mb-2">Unassigned Incidents</SectionLabel>
-                {unassignedError ? (
-                  <Notice variant="error">{unassignedError}</Notice>
-                ) : !unassigned ? (
-                  <Loader />
-                ) : (
-                  <UnassignedIncidentsTable
-                    dispatches={unassigned}
-                    onDispatch={canWrite ? openAssign : undefined}
-                  />
-                )}
-              </section>
-
-              <section>
-                <SectionLabel className="mb-2">Recent Relief Supply Logs</SectionLabel>
-                <SupplyLogTable distributions={picture.recentDistributions} />
-              </section>
             </>
           )}
         </div>

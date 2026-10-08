@@ -1,16 +1,19 @@
 export const SEVERITIES = ['LOW', 'MEDIUM', 'HIGH', 'SEVERE'];
 
-// The selected chip's colours: SEVERE in the danger tone, as in the hi-fi.
+// The selected button's colours, one tone per level as in the hi-fi: SEVERE
+// in the danger tone.
 const SELECTED_STYLES = {
+  LOW: 'border-navy bg-navy text-paper',
+  MEDIUM: 'border-warning bg-warning text-paper',
+  HIGH: 'border-caution bg-caution text-paper',
   SEVERE: 'border-danger bg-danger text-paper',
 };
-const DEFAULT_SELECTED = 'border-navy bg-navy text-paper';
 
-// UC01 step 4: exactly one severity level (the SeverityLevel values). Chips
-// like ui/ChipGroup's, but with a tone per level, which ChipGroup lacks.
+// UC01 step 4: exactly one severity level (the SeverityLevel values), as four
+// equal buttons.
 export default function SeverityPicker({ value, onChange }) {
   return (
-    <div role="group" aria-label="Severity" className="flex flex-wrap gap-2">
+    <div role="group" aria-label="Severity" className="grid grid-cols-2 gap-3 sm:grid-cols-4">
       {SEVERITIES.map((severity) => {
         const active = value === severity;
 
@@ -21,11 +24,11 @@ export default function SeverityPicker({ value, onChange }) {
             aria-pressed={active}
             onClick={() => onChange(severity)}
             className={[
-              'h-8 rounded-full border px-3.5 text-[13px] font-bold tracking-wide transition-colors',
+              'h-12 cursor-pointer rounded-xl border text-[14px] font-bold tracking-wide transition-colors',
               'focus-visible:ring-2 focus-visible:ring-navy-soft focus-visible:outline-none',
               active
-                ? (SELECTED_STYLES[severity] ?? DEFAULT_SELECTED)
-                : 'border-line bg-paper text-ink hover:bg-haze',
+                ? SELECTED_STYLES[severity]
+                : 'border-line bg-haze/60 text-muted hover:bg-haze',
             ].join(' ')}
           >
             {severity}
