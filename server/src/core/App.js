@@ -16,6 +16,7 @@ import { organisationRoutes } from '../routes/OrganisationRoutes.js';
 import { placeRoutes } from '../routes/PlaceRoutes.js';
 import { postEventReportRoutes } from '../routes/PostEventReportRoutes.js';
 import { reliefStockRoutes } from '../routes/ReliefStockRoutes.js';
+import { reportShareRoutes } from '../routes/ReportShareRoutes.js';
 import { rescueTeamRoutes } from '../routes/RescueTeamRoutes.js';
 import { shelterRoutes } from '../routes/ShelterRoutes.js';
 import { supplyDistributionRoutes } from '../routes/SupplyDistributionRoutes.js';
@@ -43,6 +44,7 @@ export class App {
       shelterRoutes,
       rescueTeamRoutes,
       postEventReportRoutes,
+      reportShareRoutes,
       dispatchRoutes,
       reliefStockRoutes,
       supplyDistributionRoutes,
