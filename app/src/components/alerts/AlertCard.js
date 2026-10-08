@@ -6,7 +6,7 @@ import Badge from '../ui/Badge';
 // Each SeverityLevel's tone: the card's tint and edge, and its Badge variant.
 const SEVERITY_TONES = {
   SEVERE: { card: 'border-danger bg-danger-soft', badge: 'danger' },
-  HIGH: { card: 'border-signal bg-signal-soft', badge: 'strong' },
+  HIGH: { card: 'border-caution bg-caution-soft', badge: 'caution' },
   MEDIUM: { card: 'border-warning-ink bg-warning-soft', badge: 'warning' },
   LOW: { card: 'border-line bg-haze', badge: 'neutral' },
 };

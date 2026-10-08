@@ -6,9 +6,9 @@ module.exports = {
     extend: {
       colors: {
         // Brand
-        primary: '#5b4bff',
-        'primary-hover': '#4938e6',
-        secondary: '#eef1ff',
+        primary: '#0b1f3a',
+        'primary-hover': '#16325a',
+        secondary: '#e7ecf4',
 
         // Accent (Amber CTA)
         cta: '#ffc107',
@@ -16,13 +16,13 @@ module.exports = {
         'cta-text': '#4a3500',
 
         // Status
-        success: '#22c55e',
-        warning: '#f59e0b',
+        success: '#12b76a',
+        warning: '#f79009',
 
         // Neutrals — backgrounds
         'bg-main': '#f8f9fc',
         'bg-card': '#ffffff',
-        'bg-soft': '#eef1ff',
+        'bg-soft': '#e7ecf4',
         'bg-nav': '#ffffff',
 
         // Neutrals — text
@@ -46,16 +46,26 @@ module.exports = {
         line: '#E7E7EC',
         muted: '#71727C',
         'muted-dark': '#9A9BA6',
-        signal: '#FF4A1C',
-        'signal-soft': '#FFF1EC',
-        'signal-ink': '#8A3517',
-        danger: '#E5484D',
-        'danger-soft': '#FDECEC',
-        'danger-ink': '#C22F35',
-        'success-soft': '#E8F6EE',
-        'success-ink': '#16794C',
-        'warning-soft': '#FFF3DF',
-        'warning-ink': '#96570A',
+        // Brand: the web portal's navy (web/global.css). `signal` is the
+        // app's name for the accent, so it carries the same navy values.
+        navy: '#0B1F3A',
+        'navy-hi': '#16325A',
+        'navy-soft': '#E7ECF4',
+        signal: '#0B1F3A',
+        'signal-soft': '#E7ECF4',
+        'signal-ink': '#0B1F3A',
+        // Status: the same values as the web portal.
+        danger: '#D92D20',
+        'danger-soft': '#FEE4E2',
+        'danger-ink': '#B42318',
+        'success-soft': '#DCFAE6',
+        'success-ink': '#067647',
+        'warning-soft': '#FEF0C7',
+        'warning-ink': '#B54708',
+        // Orange, between warning and danger: a HIGH severity.
+        caution: '#EF6820',
+        'caution-soft': '#FDEAD7',
+        'caution-ink': '#B93815',
 
         // TextInput's placeholder text, named so it can be styled by class
         // name instead of a raw hex.
