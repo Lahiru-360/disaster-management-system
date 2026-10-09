@@ -1,0 +1,57 @@
+@startuml uc03_sequence_2
+' Figure 5.4 — UC03 sequence diagram (b): dispatch rescue team (UC03 improved PDF, Figure 4)
+skinparam shadowing false
+title UC-03 (b) Dispatch rescue team
+
+actor "District Officer" as DO
+boundary ":CoordinationDashboard" as UI
+control ":DispatchController" as DC
+entity ":RescueTeam" as RT
+entity ":Dispatch" as D
+participant ":NotificationService" as NS
+boundary ":FieldApp" as FA
+actor "Rescue Team Lead" as TL
+
+DO -> UI : selectIncident(location, priority)
+UI -> DC : findAvailableTeams(location)
+DC -> RT : findAvailable(district)
+RT --> DC : teams
+
+alt no team available [E3]
+  DC --> UI : noTeams
+  UI --> DO : "No team available - request DMC support"
+else teams found
+  DC --> UI : teams sorted by distance
+  DO -> UI : dispatch(teamId)
+  UI -> DC : dispatch(teamId, location, priority)
+  DC -> D : create(ASSIGNED, ackDeadline)
+  DC -> RT : setStatus(DISPATCHED)
+  DC -> NS : sendAssignment(teamLeadId, dispatchId)
+  NS -> FA : newAssignment(dispatchId)
+  FA -> TL : show assignment
+
+  alt acknowledged
+    TL -> FA : acknowledge()
+    FA -> DC : acknowledge(dispatchId)
+    DC -> D : acknowledge()
+    ... team travels to incident ...
+    TL -> FA : markOnSite()
+    FA -> DC : updateStatus(dispatchId, ON_SITE)
+    DC -> D : markOnSite()
+    DC -> RT : setStatus(ON_SITE)
+  else declined [A3]
+    TL -> FA : decline(reason)
+    FA -> DC : decline(dispatchId, reason)
+    DC -> D : decline(reason)
+    DC -> RT : setStatus(AVAILABLE)
+    DC --> UI : prompt reassignment
+  else no response before deadline [E4]
+    DC -> D : markUnresponsive()
+    DC -> RT : setStatus(UNAVAILABLE)
+    DC --> UI : prompt reassignment
+  end
+
+  DC --> UI : dispatch status
+  UI --> DO : updated team status
+end
+@enduml

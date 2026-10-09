@@ -4,6 +4,7 @@ const VARIANT_STYLES = {
     'h-11 rounded-lg border border-line bg-paper px-5 text-[15px] font-semibold text-ink hover:bg-haze',
   small:
     'h-9 rounded-md border border-line bg-paper px-3 text-sm font-semibold text-ink hover:bg-haze',
+  danger: 'h-11 rounded-lg bg-danger px-5 text-[15px] font-semibold text-paper hover:bg-danger-ink',
   // For a dark background, such as the console's top bar.
   'small-inverse':
     'h-9 rounded-md border border-navy-hi bg-navy px-3 text-sm font-semibold text-paper hover:bg-navy-hi',

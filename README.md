@@ -53,7 +53,11 @@ server/
 │   │   └── Database.js                     Mongoose connect + graceful shutdown
 │   │
 │   ├── enums/                              frozen string enums shared across layers
-│   │   └── Role.js                         the six role values
+│   │   ├── Role.js                         the six role values
+│   │   ├── ReportHazardType.js             UC02 hazard types a citizen can report
+│   │   ├── ReportStatus.js                 PENDING / CONFIRMED / DISMISSED
+│   │   ├── LocationSource.js               GPS / MANUAL
+│   │   └── DismissalReason.js              why an officer dismissed a report
 │   │
 │   ├── domain/                             plain classes from the design — no Mongoose, no req/res
 │   │   └── people/                         one class per role; `extends` is the role hierarchy
@@ -93,6 +97,7 @@ server/
 │   │       ├── EmailTransport.js           abstract transport
 │   │       ├── NoopEmailTransport.js       default — records messages, sends nothing
 │   │       ├── BrevoEmailTransport.js      Brevo API (EMAIL_TRANSPORT=brevo)
+│   │       ├── FailingEmailTransport.js    demo — every send fails 502 (EMAIL_TRANSPORT=failing)
 │   │       ├── EmailTemplate.js            abstract: render() → subject/html/text
 │   │       └── PasswordResetEmail.js
 │   │
@@ -184,8 +189,14 @@ app/
 │   │   ├── index.js                        resolves mock vs real from USE_MOCK flag
 │   │   ├── authApi.js                      real implementation
 │   │   ├── uploadApi.js                    real implementation (no mock)
+│   │   ├── hazardReportsApi.js             stub until DMS-130.8
+│   │   ├── dispatchesApi.js                stub until DMS-142.7
+│   │   ├── notificationsApi.js             stub until DMS-106
 │   │   └── mock/
-│   │       └── authApi.js                  same signatures, fake data, FAKES FAILURES TOO
+│   │       ├── authApi.js                  same signatures, fake data, FAKES FAILURES TOO
+│   │       ├── hazardReportsApi.js         stub until DMS-130.8
+│   │       ├── dispatchesApi.js            stub until DMS-142.7
+│   │       └── notificationsApi.js         stub until DMS-106
 │   │
 │   ├── components/
 │   │   └── ui/                             shared kit, used by every screen
@@ -221,9 +232,15 @@ app/
 │   │   │   └── ResetPasswordScreen.js
 │   │   ├── shared/                         every signed-in field role
 │   │   │   ├── HomeScreen.js               placeholder landing screen
-│   │   │   ├── AccountSettingsScreen.js
+│   │   │   ├── InboxScreen.js              Inbox tab placeholder (DMS-106.6)
+│   │   │   ├── AccountSettingsScreen.js    Account tab, and the page pushed from Home
 │   │   │   ├── ChangePasswordScreen.js
 │   │   │   └── WrongPlatformScreen.js      officer / unknown roles stop here, with Log out
+│   │   ├── hazardReports/                  citizen and volunteer
+│   │   │   ├── ReportHazardScreen.js       Report tab placeholder (DMS-130.9)
+│   │   │   └── MyReportsScreen.js          My reports tab placeholder (DMS-131.6)
+│   │   ├── dispatch/                       rescue team lead
+│   │   │   └── AssignmentsScreen.js        Assignments tab placeholder (DMS-142.7)
 │   │   └── dev/
 │   │       └── ComponentDemoScreen.js      dev only, excluded from prod nav
 │   │

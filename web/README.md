@@ -66,26 +66,41 @@ web/
 │   │   ├── client.js               Axios + interceptors + refresh queue (same as the app's)
 │   │   ├── index.js                resolves mock vs real from USE_MOCK
 │   │   ├── authApi.js              real implementation: login, refresh, logout, getCurrentUser
+│   │   ├── notificationsApi.js     in-app inbox: listMine, markRead (contract §11)
 │   │   └── mock/
-│   │       └── authApi.js          same signatures, fake data, FAKES FAILURES TOO
+│   │       ├── authApi.js          same signatures, fake data, FAKES FAILURES TOO
+│   │       └── notificationsApi.js same signatures; mockControls.failNext / receive
 │   ├── components/
-│   │   └── ui/                     shared kit: presentational only, props in, JSX out
+│   │   ├── notifications/          top-bar bell + dropdown list (presentational)
+│   │   └── ui/                     shared kit: presentational only, props in, JSX out (see "UI kit")
 │   │       ├── AuthShell.jsx       navy panel + form layout for the login page
 │   │       ├── Brand.jsx           brand mark + APP_NAME wordmark
 │   │       ├── Button.jsx
 │   │       ├── Card.jsx
+│   │       ├── ChipGroup.jsx       single- or multi-select chips
+│   │       ├── ConfirmDialog.jsx   Modal shaped as title + body + Back/confirm
+│   │       ├── DataTable.jsx       columns config, empty state, optional row selection
+│   │       ├── EmptyState.jsx
 │   │       ├── Loader.jsx
+│   │       ├── MapView.jsx         OpenStreetMap + typed markers + optional click-to-pin
+│   │       ├── Modal.jsx           focus trap, Esc / backdrop close
 │   │       ├── Notice.jsx
+│   │       ├── ProgressBar.jsx     tone by value (occupancy bars)
 │   │       ├── Screen.jsx          padding wrapper for a console page
 │   │       ├── ScreenHeader.jsx    page title
 │   │       ├── SectionLabel.jsx
+│   │       ├── Select.jsx
+│   │       ├── StatusBadge.jsx     tone pill: success, warning, danger, info, neutral
+│   │       ├── Tabs.jsx            ARIA tabs, arrow-key navigation
+│   │       ├── TextArea.jsx        n/max counter, blocks input past max
 │   │       └── TextInput.jsx
 │   ├── constants/
-│   │   ├── config.js               APP_NAME; ONLY file reading import.meta.env
+│   │   ├── config.js               APP_NAME, IS_DEV; ONLY file reading import.meta.env
 │   │   ├── roles.js                role values, labels, mobile/web platform per role
 │   │   └── demoUsers.js            demo accounts: login picker + mock API users
 │   ├── hooks/
-│   │   └── useAuth.js              consumes AuthContext
+│   │   ├── useAuth.js              consumes AuthContext
+│   │   └── useNotifications.js     inbox for the bell, polled every 30 s
 │   ├── navigation/
 │   │   ├── RootNavigator.jsx       conditional render, NOT navigation; gates non-officer roles
 │   │   ├── AuthRoutes.jsx          signed-out routes: /login
@@ -95,6 +110,8 @@ web/
 │   ├── screens/
 │   │   ├── auth/
 │   │   │   └── LoginScreen.jsx
+│   │   ├── dev/
+│   │   │   └── ComponentCatalogueScreen.jsx   /dev/components: the UI kit catalogue (dev builds only)
 │   │   └── shared/
 │   │       ├── PlaceholderScreen.jsx     stands in for every console page until it's built
 │   │       └── WrongPlatformScreen.jsx   field / unknown roles stop here, with Log out
@@ -103,7 +120,7 @@ web/
 │   │   └── tokenStorage.js         localStorage wrapper (see "Token storage" below)
 │   └── utils/                      empty for now
 ├── App.jsx                         providers + router + RootNavigator, nothing else
-├── index.jsx                       entry point: mounts App, imports global.css
+├── index.jsx                       entry point: mounts App, imports leaflet.css + global.css
 ├── index.html                      the page Vite serves; loads index.jsx
 ├── global.css                      Tailwind import + design tokens (@theme)
 ├── vite.config.js
@@ -162,6 +179,30 @@ To build a console page, create its screen (e.g. `screens/hazardWarnings/HazardW
 
 Tailwind classes only. All colours are defined in one place: the `@theme` block in `global.css`. Tailwind's built-in palette is switched off, so only these names exist (`bg-navy`, `text-danger-ink`, `border-line`, ...). Never use raw hex in a component. The token names match `app/tailwind.config.js`, with `navy` in place of the app's orange `signal`. The navy, red and green values are provisional until they're matched to the wireframes.
 
+`caution` (orange) sits between `warning` and `danger`. A second block, `@theme inline`, names the domain colours after what they mean, each pointing at one of the colours above, with a fill, a `-soft` background and an `-ink` text shade:
+
+| Tokens                                                                          | Values                                                                    |
+| ------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| `shelter-available`, `shelter-filling`, `shelter-near-capacity`, `shelter-full` | green, amber, orange, red: below 75%, 75–89%, 90–99%, 100% or more (UC03) |
+| `severity-low`, `severity-medium`, `severity-high`, `severity-severe`           | navy, amber, orange, red: UC01's `SeverityLevel`                          |
+
+So a Full shelter's pill is `bg-shelter-full-soft text-shelter-full-ink`, and changing a colour is one edit in `global.css`.
+
+## UI kit
+
+`components/ui/` is the only shared code. Every component there is presentational: props in, JSX out, no API calls, token colours only, keyboard accessible. Ask before adding one rather than keeping a private copy in your feature folder.
+
+| Component                                                                                                         | What it's for                                                                                                                                                                                                                                                                                                                                                                                 |
+| ----------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Modal`, `ConfirmDialog`                                                                                          | Dialogs. Modal traps focus, closes on Esc or the backdrop unless `dismissable={false}`, and returns focus to the trigger. ConfirmDialog adds a title, body and Back / confirm, with a `destructive` variant.                                                                                                                                                                                  |
+| `DataTable`                                                                                                       | `columns` ([{ key, header, render? }]), an empty state, optional row selection (`selectedKeys` + `onSelectionChange`).                                                                                                                                                                                                                                                                        |
+| `StatusBadge`, `ProgressBar`, `EmptyState`                                                                        | Status pills by `tone`; occupancy-style bars coloured by value; a placeholder for an empty list.                                                                                                                                                                                                                                                                                              |
+| `Tabs`, `ChipGroup`, `Select`, `TextArea`                                                                         | Tabs with arrow-key navigation; single- or multi-select chips; a labelled select; a textarea with an `n/max` counter that blocks input past `max`.                                                                                                                                                                                                                                            |
+| `MapView`                                                                                                         | Leaflet + OpenStreetMap tiles with attribution. `markers` ([{ id, lat, lng, type, label, tone? }], type `report`, `shelter`, `team`, `incident` or `pin`), `onMarkerClick`, and click-to-pin through `onPick(lat, lng)` + `picked`. With `onPick`, keyboard users pan with the arrow keys and press Enter to pick the point under the crosshair. `center` and `zoom` set the first view only. |
+| `Button`, `Card`, `Notice`, `TextInput`, `Loader`, `Screen`, `ScreenHeader`, `SectionLabel`, `AuthShell`, `Brand` | The original kit.                                                                                                                                                                                                                                                                                                                                                                             |
+
+**The catalogue:** with `npm run dev`, open `/dev/components` (signed in or not) to see every component in each state and the token swatches. It's a dev build page only: `IS_DEV` is false in a production build, so the route doesn't exist there (the page's chunk is still emitted, but nothing ever loads it). Add a section to `screens/dev/ComponentCatalogueScreen.jsx` when you add a component.
+
 ## Token storage
 
 Tokens live in `localStorage` (`store/tokenStorage.js`). Any script running on the page can read `localStorage`, so an XSS bug would let an attacker steal the refresh token. That's accepted for now. The fix is for the server to set the refresh token as an httpOnly cookie, which needs server changes.
@@ -170,7 +211,9 @@ All tabs share the same tokens, so logging out in one tab logs out the others.
 
 ## Deploying
 
-The production build (`dist/`) is static files. Because the app routes in the browser, the host must serve `index.html` for every path (a "rewrite all routes to /index.html" rule, e.g. a Render static site rewrite of `/*` to `/index.html`). Otherwise reloading `/hazard-warnings` returns a 404. Set `VITE_API_BASE_URL` and `VITE_USE_MOCK=false` in the host's build environment: Vite writes them into the build, so they can't be changed after it.
+The production build (`dist/`) is static files. Because the app routes in the browser, the host must serve `index.html` for every path (a "rewrite all routes to /index.html" rule). Otherwise reloading `/hazard-warnings` returns a 404. Set `VITE_API_BASE_URL` and `VITE_USE_MOCK=false` in the host's build environment: Vite writes them into the build, so they can't be changed after it.
+
+The demo portal is hosted on **Vercel**, imported from the `develop` branch with the root directory set to `web` and the Vite preset (build `vite build`, output `dist`). `vercel.json` in this folder holds the rewrite, so deep links reload correctly. Other hosts need the same rule in their own format (a Render static site: rewrite `/*` to `/index.html`). A change to `VITE_API_BASE_URL` needs a redeploy.
 
 ## Troubleshooting
 

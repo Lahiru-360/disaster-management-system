@@ -1,11 +1,13 @@
 import { useState } from 'react';
-import { NavLink, Outlet } from 'react-router';
+import { NavLink, Outlet, useNavigate } from 'react-router';
 
 import { SIDEBAR_ITEMS } from './sidebarItems';
 import Brand from '../components/ui/Brand';
 import Button from '../components/ui/Button';
+import NotificationBell from '../components/notifications/NotificationBell';
 import { roleLabel } from '../constants/roles';
 import useAuth from '../hooks/useAuth';
+import useNotifications from '../hooks/useNotifications';
 
 // The signed-in console's frame: a top bar (portal name, who's signed in, Log
 // out), the sidebar of pages, and the current page (<Outlet />) beside it.
@@ -14,6 +16,14 @@ import useAuth from '../hooks/useAuth';
 export default function ConsoleLayout() {
   const { user, logout } = useAuth();
   const [loggingOut, setLoggingOut] = useState(false);
+  const inbox = useNotifications();
+  const navigate = useNavigate();
+
+  // Opening an item marks it read and follows its link, when it has one.
+  const handleOpenNotification = (item) => {
+    inbox.markRead(item.id);
+    if (item.link) navigate(item.link);
+  };
 
   const handleLogout = async () => {
     setLoggingOut(true);
@@ -31,6 +41,14 @@ export default function ConsoleLayout() {
         <Brand />
 
         <div className="flex items-center gap-4">
+          <NotificationBell
+            notifications={inbox.notifications}
+            unreadCount={inbox.unreadCount}
+            loading={inbox.loading}
+            error={inbox.error}
+            onOpenItem={handleOpenNotification}
+            onRetry={inbox.refresh}
+          />
           <div className="text-right leading-tight">
             <p className="text-sm font-semibold text-paper">{user?.name}</p>
             <p className="mt-0.5 text-xs text-muted-dark">{roleLabel(user?.role)}</p>

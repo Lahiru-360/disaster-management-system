@@ -5,6 +5,7 @@ const VARIANT_STYLES = {
   positive: 'bg-success-soft text-success-ink',
   strong: 'bg-signal-soft text-signal-ink',
   muted: 'bg-haze text-muted-dark',
+  caution: 'bg-caution-soft text-caution-ink',
   warning: 'bg-warning-soft text-warning-ink',
   danger: 'bg-danger-soft text-danger-ink',
 };

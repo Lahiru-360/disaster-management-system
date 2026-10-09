@@ -6,8 +6,8 @@ import { DMCOfficer } from './DMCOfficer.js';
 export class DutyOfficer extends DMCOfficer {
   static role = Role.DUTY_OFFICER;
 
-  // A district name for now; becomes a District once that class exists.
-  // Not persisted yet.
+  // The district they cover on shift, so the reports they review. Stored on
+  // the User as a District ref (User.shiftDistrict).
   #shiftDistrict;
 
   constructor({ shiftDistrict, ...details } = {}) {

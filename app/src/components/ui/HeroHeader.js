@@ -11,9 +11,9 @@ function EmberGlow() {
       <Svg width={340} height={340} viewBox="0 0 340 340">
         <Defs>
           <RadialGradient id="heroEmberGlow" cx="50%" cy="50%" r="50%">
-            <Stop offset="0%" stopColor="rgb(255, 74, 28)" stopOpacity={0.34} />
-            <Stop offset="46%" stopColor="rgb(255, 74, 28)" stopOpacity={0.08} />
-            <Stop offset="72%" stopColor="rgb(255, 74, 28)" stopOpacity={0} />
+            <Stop offset="0%" stopColor="rgb(91, 140, 214)" stopOpacity={0.34} />
+            <Stop offset="46%" stopColor="rgb(91, 140, 214)" stopOpacity={0.08} />
+            <Stop offset="72%" stopColor="rgb(91, 140, 214)" stopOpacity={0} />
           </RadialGradient>
         </Defs>
         <Rect width="340" height="340" fill="url(#heroEmberGlow)" />
@@ -26,10 +26,12 @@ function EmberGlow() {
  * The dark ink block, meant to sit as the first child inside a screen's own
  * ScrollView. It scrolls away with the rest of the content - this component
  * has no opinion on scroll position. Pair it with `HeroStickyBar` and
- * `HeroSheet`, which the screen renders and controls itself.
+ * `HeroSheet`, which the screen renders and controls itself. `leftSlot`
+ * takes the back button's place on a screen with nowhere to go back to.
  */
 export default function HeroHeader({
   onBack,
+  leftSlot,
   rightSlot,
   children,
   className,
@@ -37,7 +39,7 @@ export default function HeroHeader({
   contentClassName,
 }) {
   return (
-    <View className={['relative overflow-hidden bg-ink', className].filter(Boolean).join(' ')}>
+    <View className={['relative overflow-hidden bg-navy', className].filter(Boolean).join(' ')}>
       <StatusBar style="light" translucent backgroundColor="transparent" />
       <EmberGlow />
 
@@ -55,7 +57,7 @@ export default function HeroHeader({
               <Text className="text-[15px] font-semibold text-paper">‹</Text>
             </Pressable>
           ) : (
-            <View className="h-[34px] w-[34px]" />
+            (leftSlot ?? <View className="h-[34px] w-[34px]" />)
           )}
 
           {rightSlot ?? <View className="h-[34px] w-[34px]" />}

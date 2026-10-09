@@ -8,6 +8,12 @@
     "dev": "nodemon src/server.js",
     "seed": "node scripts/seed.js",
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
+    "test:coverage": "node --experimental-vm-modules node_modules/jest/bin/jest.js --coverage",
+    "coverage:gate": "node scripts/checkCoverage.js",
+    "coverage:uc01": "node scripts/coverageScope.js uc01",
+    "coverage:uc02": "node scripts/coverageScope.js uc02",
+    "coverage:uc03": "node scripts/coverageScope.js uc03",
+    "coverage:uc04": "node scripts/coverageScope.js uc04",
     "lint": "eslint .",
     "format": "prettier --write ."
   },
@@ -27,7 +33,8 @@
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^9.9.1",
     "morgan": "^1.11.0",
-    "multer": "^2.2.0"
+    "multer": "^2.2.0",
+    "pdfkit": "^0.20.2"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",
@@ -35,6 +42,7 @@
     "eslint-config-prettier": "^10.1.8",
     "globals": "^17.9.0",
     "jest": "^30.4.2",
+    "jest-util": "^30.4.1",
     "mongodb-memory-server": "^11.2.0",
     "nodemon": "^3.1.14",
     "prettier": "^3.9.6",

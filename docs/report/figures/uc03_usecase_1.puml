@@ -1,0 +1,34 @@
+@startuml uc03_usecase_1
+' Figure 5.1 — UC03 improved use case diagram (UC03 improved PDF, Figure 1)
+left to right direction
+skinparam shadowing false
+
+actor "District Officer" as DO
+actor "DMC Officer" as DMC
+actor "Rescue Team Lead" as RTL
+
+rectangle "Smart Disaster Early-Warning System (UC-03 scope)" {
+  usecase "Coordinate Shelter\nand Resource Allocation" as UC
+  usecase "Update shelter\noccupancy" as UOcc
+  usecase "Dispatch rescue\nteam" as UDis
+  usecase "Log relief supply\ndistribution" as USup
+  usecase "View combined\noperational picture" as UPic
+  usecase "Register shelter" as UReg
+  usecase "Suggest alternate\nshelter" as UAlt
+  usecase "Reassign\nteam" as UReassign
+  usecase "Acknowledge / update\ndispatch status" as UAck
+}
+
+DO --> UC
+DMC --> UPic
+RTL --> UAck
+
+UC ..> UOcc : <<include>>
+UC ..> UDis : <<include>>
+UC ..> USup : <<include>>
+UC ..> UPic : <<include>>
+
+UReg ..> UC : <<extend>>\n[new shelter needed]
+UAlt ..> UOcc : <<extend>>\n[occupancy >= 90%]
+UReassign ..> UDis : <<extend>>\n[declined / no response]
+@enduml

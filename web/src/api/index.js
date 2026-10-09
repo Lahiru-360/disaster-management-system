@@ -3,7 +3,25 @@
 // VITE_USE_MOCK env var - no code here needs to change.
 
 import { USE_MOCK } from '../constants/config';
+import areasApiMock from './mock/areasApi';
+import areasApiReal from './areasApi';
 import authApiMock from './mock/authApi';
 import authApiReal from './authApi';
+import coordinationApiMock from './mock/coordinationApi';
+import coordinationApiReal from './coordinationApi';
+import groundReportsApiMock from './mock/groundReportsApi';
+import groundReportsApiReal from './groundReportsApi';
+import hazardAlertsApiMock from './mock/hazardAlertsApi';
+import hazardAlertsApiReal from './hazardAlertsApi';
+import notificationsApiMock from './mock/notificationsApi';
+import notificationsApiReal from './notificationsApi';
+import reportsApiMock from './mock/reportsApi';
+import reportsApiReal from './reportsApi';
 
+export const areasApi = USE_MOCK ? areasApiMock : areasApiReal;
 export const authApi = USE_MOCK ? authApiMock : authApiReal;
+export const coordinationApi = USE_MOCK ? coordinationApiMock : coordinationApiReal;
+export const groundReportsApi = USE_MOCK ? groundReportsApiMock : groundReportsApiReal;
+export const hazardAlertsApi = USE_MOCK ? hazardAlertsApiMock : hazardAlertsApiReal;
+export const notificationsApi = USE_MOCK ? notificationsApiMock : notificationsApiReal;
+export const reportsApi = USE_MOCK ? reportsApiMock : reportsApiReal;

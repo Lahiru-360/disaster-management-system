@@ -1,53 +1,128 @@
 import mongoose from 'mongoose';
-import bcrypt from 'bcryptjs';
 import { env } from '../src/config/Config.js';
-import { Role } from '../src/enums/Role.js';
+import { District } from '../src/models/District.js';
+import { RiverBasin } from '../src/models/RiverBasin.js';
 import { User } from '../src/models/User.js';
+import { DistrictSeeder } from './DistrictSeeder.js';
+import { HazardEventSeeder } from './HazardEventSeeder.js';
+import { OrganisationSeeder } from './OrganisationSeeder.js';
+import { PeopleSeeder } from './PeopleSeeder.js';
+import { Uc01Seeder } from './Uc01Seeder.js';
+import { Uc02Seeder } from './Uc02Seeder.js';
+import { Uc03Seeder } from './Uc03Seeder.js';
+import { Uc04Seeder } from './Uc04Seeder.js';
 
-// Seeds one demo account per role. Safe to re-run: accounts are matched by
-// email and only created when missing ($setOnInsert), so an existing one is
-// never duplicated or overwritten.
+// Owns the connection and runs each domain seeder in order. Each seeder relies
+// on the ones before it (people live in districts, the UC data points at
+// people and districts), so `--only` runs a seeder on top of a database that
+// was fully seeded before.
 export class DatabaseSeeder {
-  static #PASSWORD = 'Password123!';
+  // Never emptied by --reset-demo: accounts are not demo data, and users and
+  // basins point at districts by id, so reseeding the geography would orphan them.
+  static #PROTECTED_MODELS = [User, District, RiverBasin];
 
-  static #SALT_ROUNDS = 10;
+  #seeders;
 
-  // One account per role. The mobile app's demo picker (app/src/constants/
-  // demoUsers.js) signs in as the field-role accounts; the officer accounts
-  // are for the web portal. Officer and rescue team accounts can only be
-  // created here or by direct database access - public registration only
-  // accepts self-registrable roles.
-  static #USERS = [
-    { name: 'Nimal Perera', email: 'citizen@example.test', role: Role.CITIZEN },
-    {
-      name: 'Kamala Fernando',
-      email: 'volunteer@example.test',
-      role: Role.COMMUNITY_VOLUNTEER,
-    },
-    { name: 'Suresh Bandara', email: 'rescue.lead@example.test', role: Role.RESCUE_TEAM_LEAD },
-    { name: 'Ruwan Jayasinghe', email: 'dmc.officer@example.test', role: Role.DMC_OFFICER },
-    { name: 'Kasun Silva', email: 'duty.officer@example.test', role: Role.DUTY_OFFICER },
-    {
-      name: 'Dilani Wickramasinghe',
-      email: 'district.officer@example.test',
-      role: Role.DISTRICT_OFFICER,
-    },
-  ];
+  /** @param {import('./Seeder.js').Seeder[]} [seeders] in the order they run */
+  constructor(seeders = DatabaseSeeder.#defaultSeeders()) {
+    this.#seeders = seeders;
+  }
 
-  async run() {
+  /**
+   * Reads the command-line flags: `--only=uc03` (or a comma-separated list)
+   * and `--reset-demo`. An unknown flag stops the seed.
+   * @param {string[]} args the arguments after the script name
+   * @returns {{ only: string[] | null, resetDemo: boolean }}
+   */
+  static parseArgs(args) {
+    const options = { only: null, resetDemo: false };
+    for (const arg of args) {
+      if (arg === '--reset-demo') {
+        options.resetDemo = true;
+      } else if (arg.startsWith('--only=')) {
+        options.only = arg
+          .slice('--only='.length)
+          .split(',')
+          .map((name) => name.trim())
+          .filter(Boolean);
+        if (options.only.length === 0) {
+          throw new Error('--only needs at least one seeder name');
+        }
+      } else {
+        throw new Error(`Unknown option "${arg}" - use --only=<names> or --reset-demo`);
+      }
+    }
+    return options;
+  }
+
+  /**
+   * Connects, seeds, and closes the connection even when a seeder fails.
+   * @param {{ only?: string[] | null, resetDemo?: boolean }} [options]
+   */
+  async run(options = {}) {
     await mongoose.connect(env.mongoUri);
+    try {
+      await this.seed(options);
+    } finally {
+      await mongoose.connection.close();
+    }
+  }
 
-    const passwordHash = await bcrypt.hash(DatabaseSeeder.#PASSWORD, DatabaseSeeder.#SALT_ROUNDS);
+  /**
+   * Runs the selected seeders in order on the open connection. With
+   * `resetDemo`, first empties the demo collections of those same seeders.
+   * @param {{ only?: string[] | null, resetDemo?: boolean }} [options]
+   */
+  async seed({ only = null, resetDemo = false } = {}) {
+    const seeders = this.#select(only);
 
-    for (const { name, email, role } of DatabaseSeeder.#USERS) {
-      await User.findOneAndUpdate(
-        { email },
-        { $setOnInsert: { name, email, role, passwordHash } },
-        { upsert: true, returnDocument: 'after' },
-      );
-      console.log(`Seeded ${role}: ${email}`);
+    if (resetDemo) {
+      await DatabaseSeeder.#wipeDemoData(seeders);
+    }
+    for (const seeder of seeders) {
+      await seeder.run();
+    }
+  }
+
+  // An unknown name is a typo, so nothing runs rather than a partial seed.
+  #select(only) {
+    if (!only) return this.#seeders;
+
+    const names = this.#seeders.map((seeder) => seeder.name);
+    const unknown = only.filter((name) => !names.includes(name));
+    if (unknown.length > 0) {
+      throw new Error(`Unknown seeder "${unknown.join(', ')}" - choose from ${names.join(', ')}`);
+    }
+    return this.#seeders.filter((seeder) => only.includes(seeder.name));
+  }
+
+  static async #wipeDemoData(seeders) {
+    for (const seeder of seeders) {
+      for (const Model of seeder.demoModels) {
+        if (DatabaseSeeder.#PROTECTED_MODELS.includes(Model)) {
+          throw new Error(`${seeder.constructor.name} may not reset ${Model.modelName}`);
+        }
+      }
     }
 
-    await mongoose.connection.close();
+    for (const seeder of seeders) {
+      for (const Model of seeder.demoModels) {
+        const { deletedCount } = await Model.deleteMany({});
+        console.log(`Reset ${Model.modelName}: removed ${deletedCount}`);
+      }
+    }
+  }
+
+  static #defaultSeeders() {
+    return [
+      new DistrictSeeder(),
+      new PeopleSeeder(),
+      new OrganisationSeeder(),
+      new HazardEventSeeder(),
+      new Uc01Seeder(),
+      new Uc02Seeder(),
+      new Uc03Seeder(),
+      new Uc04Seeder(),
+    ];
   }
 }

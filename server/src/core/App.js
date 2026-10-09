@@ -3,8 +3,23 @@ import helmet from 'helmet';
 import cors from 'cors';
 import morgan from 'morgan';
 import { ErrorHandler } from '../middleware/ErrorHandler.js';
+import { areaRoutes } from '../routes/AreaRoutes.js';
 import { authRoutes } from '../routes/AuthRoutes.js';
+import { dispatchRoutes } from '../routes/DispatchRoutes.js';
+import { hazardAlertRoutes } from '../routes/HazardAlertRoutes.js';
+import { hazardEventRoutes } from '../routes/HazardEventRoutes.js';
+import { hazardReportRoutes } from '../routes/HazardReportRoutes.js';
 import { healthRoutes } from '../routes/HealthRoutes.js';
+import { notificationRoutes } from '../routes/NotificationRoutes.js';
+import { operationalPictureRoutes } from '../routes/OperationalPictureRoutes.js';
+import { organisationRoutes } from '../routes/OrganisationRoutes.js';
+import { placeRoutes } from '../routes/PlaceRoutes.js';
+import { postEventReportRoutes } from '../routes/PostEventReportRoutes.js';
+import { reliefStockRoutes } from '../routes/ReliefStockRoutes.js';
+import { reportShareRoutes } from '../routes/ReportShareRoutes.js';
+import { rescueTeamRoutes } from '../routes/RescueTeamRoutes.js';
+import { shelterRoutes } from '../routes/ShelterRoutes.js';
+import { supplyDistributionRoutes } from '../routes/SupplyDistributionRoutes.js';
 import { uploadRoutes } from '../routes/UploadRoutes.js';
 
 // Builds the Express application: global middleware first, then every route
@@ -13,7 +28,28 @@ import { uploadRoutes } from '../routes/UploadRoutes.js';
 export class App {
   #express = express();
 
-  constructor(routeGroups = [healthRoutes, authRoutes, uploadRoutes]) {
+  constructor(
+    routeGroups = [
+      healthRoutes,
+      authRoutes,
+      uploadRoutes,
+      areaRoutes,
+      hazardEventRoutes,
+      organisationRoutes,
+      notificationRoutes,
+      hazardReportRoutes,
+      placeRoutes,
+      hazardAlertRoutes,
+      operationalPictureRoutes,
+      shelterRoutes,
+      rescueTeamRoutes,
+      postEventReportRoutes,
+      reportShareRoutes,
+      dispatchRoutes,
+      reliefStockRoutes,
+      supplyDistributionRoutes,
+    ],
+  ) {
     this.#registerMiddleware();
     this.#registerRoutes(routeGroups);
     this.#registerErrorHandlers();
