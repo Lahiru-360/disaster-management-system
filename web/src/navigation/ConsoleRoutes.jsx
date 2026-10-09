@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes, useLocation } from 'react-router';
 
 import ConsoleLayout from './ConsoleLayout';
+import DashboardScreen from '../screens/dashboard/DashboardScreen';
 import GroundReportsScreen from '../screens/groundReports/GroundReportsScreen';
 import HazardWarningsScreen from '../screens/hazardWarnings/HazardWarningsScreen';
 import DeliverySummaryScreen from '../screens/hazardWarnings/DeliverySummaryScreen';
@@ -28,7 +29,7 @@ export default function ConsoleRoutes() {
   return (
     <Routes>
       <Route element={<ConsoleLayout />}>
-        <Route index element={<PlaceholderScreen title="Dashboard" />} />
+        <Route index element={<DashboardScreen />} />
         <Route path="hazard-warnings" element={<HazardWarningsScreen />} />
         <Route path="hazard-warnings/new" element={<IssueWarningScreen key="new" />} />
         <Route path="hazard-warnings/:id" element={<DeliverySummaryScreen />} />
