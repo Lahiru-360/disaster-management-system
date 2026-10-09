@@ -22,9 +22,9 @@ const STATUS_LABELS = {
 // UNAVAILABLE team (E4: it never answered) has a Mark available button when
 // `onMarkAvailable` is given; `busyId` is the team being marked.
 const COLUMNS = [
-  { key: 'name', header: 'Team' },
+  { key: 'name', header: 'Team Name' },
   { key: 'organisation', header: 'Organisation', render: (row) => row.organisation.name },
-  { key: 'baseLocation', header: 'Base location', render: (row) => row.baseLocation.label },
+  { key: 'baseLocation', header: 'Base Location', render: (row) => row.baseLocation.label },
   {
     key: 'status',
     header: 'Status',
@@ -34,7 +34,7 @@ const COLUMNS = [
   },
   {
     key: 'currentTask',
-    header: 'Current task',
+    header: 'Current Task',
     render: (row) =>
       row.currentTask ? (
         <span>
@@ -71,10 +71,13 @@ export default function RescueTeamsTable({ teams, onMarkAvailable, busyId = null
 
   return (
     <DataTable
+      dense
+      className="max-h-48 overflow-y-auto"
       columns={columns}
       rows={teams}
       emptyState={
         <EmptyState
+          className="py-4"
           icon="☰"
           title="No rescue teams yet"
           description="Teams registered in this district will appear here."

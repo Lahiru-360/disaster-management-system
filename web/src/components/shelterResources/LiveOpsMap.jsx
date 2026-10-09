@@ -52,14 +52,14 @@ export default function LiveOpsMap({ shelters, teams }) {
   ];
 
   return (
-    <div>
-      <MapView markers={markers} label="Live operations map" />
-      <ul className="mt-2.5 flex gap-4 text-[12px] text-muted">
+    <div className="flex flex-col gap-4 md:flex-row">
+      <MapView markers={markers} label="Live operations map" className="h-48 flex-1" />
+      <ul className="flex gap-4 text-[13px] text-ink md:flex-col md:gap-3">
         {LEGEND.map((entry) => (
-          <li key={entry.type} className="flex items-center gap-1.5">
+          <li key={entry.type} className="flex items-center gap-2">
             <span
               aria-hidden="true"
-              className={['h-2.5 w-2.5 rounded-full', LEGEND_DOT_FILL[entry.tone]].join(' ')}
+              className={['h-3 w-3 rounded-full', LEGEND_DOT_FILL[entry.tone]].join(' ')}
             />
             {entry.label}
           </li>

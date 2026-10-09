@@ -1,3 +1,4 @@
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Text, View } from 'react-native';
 
 import Button from '../ui/Button';
@@ -9,6 +10,9 @@ export function formatCoordinates({ latitude, longitude }) {
   const lng = `${Math.abs(longitude).toFixed(4)} ${longitude >= 0 ? 'E' : 'W'}`;
   return `${lat}, ${lng}`;
 }
+
+// The pin's colour: `danger` (icon fonts take a colour value, not a class).
+const PIN_COLOR = '#D92D20';
 
 // UC02 step 3 / A2 (§5.1 wireframe): "GPS: 6.9382 N, 79.9012 E" with a Set
 // manually button always beside it, and "Manually entered" once the reporter
@@ -41,7 +45,14 @@ export default function LocationRow({
           error ? 'border-danger bg-paper' : 'border-transparent bg-haze',
         ].join(' ')}
       >
-        <Text className="flex-1 text-body font-medium text-ink">{text}</Text>
+        <View className="h-10 w-10 items-center justify-center rounded-full bg-danger-soft">
+          <MaterialCommunityIcons
+            name={status === 'unavailable' && !manual ? 'map-marker-off' : 'map-marker'}
+            size={22}
+            color={PIN_COLOR}
+          />
+        </View>
+        <Text className="flex-1 text-[14px] font-medium text-ink">{text}</Text>
         <Button variant="small" fullWidth={false} onPress={onSetManually}>
           Set manually
         </Button>

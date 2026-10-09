@@ -1,3 +1,4 @@
+import { Send, TriangleAlert } from 'lucide-react';
 import { useEffect, useId, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 
@@ -14,11 +15,10 @@ import Button from '../../components/ui/Button';
 import Card from '../../components/ui/Card';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import Loader from '../../components/ui/Loader';
+import MapView from '../../components/ui/MapView';
 import Notice from '../../components/ui/Notice';
 import Screen from '../../components/ui/Screen';
 import ScreenHeader from '../../components/ui/ScreenHeader';
-import SectionLabel from '../../components/ui/SectionLabel';
-import StatusBadge from '../../components/ui/StatusBadge';
 import { ROLES } from '../../constants/roles';
 import useAuth from '../../hooks/useAuth';
 import { apiErrorMessage, mapFieldErrors } from '../../utils/apiErrors';
@@ -36,6 +36,52 @@ const ACTIVE_STATUSES = ['BROADCAST', 'UPDATED'];
 
 // A scope as a key that ignores the order the areas were chosen in.
 const scopeKey = (ids) => [...new Set(ids)].sort().join(',');
+
+const SUBTITLE =
+  'Broadcast a location-specific hazard warning to citizens in the affected districts. Alerts are delivered by push notification, SMS and audible alert simultaneously.';
+
+// A form card's heading: "1 Hazard Type", with the number in a navy square.
+function StepHeading({ step, children }) {
+  return (
+    <h2 className="flex items-center gap-2.5 text-[17px] font-bold text-ink">
+      {step ? (
+        <span className="flex h-6 w-6 items-center justify-center rounded-md bg-navy text-[12px] text-paper">
+          {step}
+        </span>
+      ) : null}
+      {children}
+    </h2>
+  );
+}
+
+// The chosen areas as pins on the map beside the scope list: a district at
+// its centroid, a river basin at each of its districts'. Areas without a
+// centroid (the mock geography) are simply not pinned.
+function scopeMarkers(areaIds, areas) {
+  const districtById = new Map(areas.districts.map((district) => [district.id, district]));
+  const basinById = new Map(areas.riverBasins.map((basin) => [basin.id, basin]));
+  const pinned = new Map();
+  for (const id of areaIds) {
+    const districts = districtById.has(id)
+      ? [districtById.get(id)]
+      : (basinById.get(id)?.districts ?? []).map(
+          (district) => districtById.get(district.id) ?? district,
+        );
+    for (const district of districts) {
+      if (district.centroid && !pinned.has(district.id)) {
+        pinned.set(district.id, {
+          id: district.id,
+          lat: district.centroid.lat,
+          lng: district.centroid.lng,
+          type: 'incident',
+          tone: 'danger',
+          label: district.name,
+        });
+      }
+    }
+  }
+  return [...pinned.values()];
+}
 
 // UC01 main flow steps 1-8 (§5.1), the IssueWarningScreen of the sequence
 // diagram. Opening it starts a DRAFT (step 2). Once a hazard type, a severity
@@ -371,6 +417,7 @@ export default function IssueWarningScreen() {
   return (
     <Screen>
       <ScreenHeader title={title ?? 'Issue Hazard Warning'} />
+      <p className="mt-1 max-w-3xl text-[15px] leading-relaxed text-muted">{SUBTITLE}</p>
 
       {prefill ? (
         <Notice icon="i" className="mt-4">
@@ -407,65 +454,78 @@ export default function IssueWarningScreen() {
         </Notice>
       ) : null}
 
-      <div className="mt-5 grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <Card>
-          <SectionLabel>1. Hazard type</SectionLabel>
-          <div className="mt-2.5">
-            {editing ? (
-              // A different hazard is a new warning, so an update keeps the type.
-              <p className="text-[14px] text-ink">
-                <strong>
-                  {HAZARD_TYPES.find(({ value }) => value === hazardType)?.label ?? hazardType}
-                </strong>
-                <span className="text-muted"> – an update keeps the hazard type</span>
+      <div className="mt-6 grid grid-cols-1 items-start gap-6 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+        <div className="space-y-6">
+          <Card className="p-6">
+            <StepHeading step={1}>Hazard Type</StepHeading>
+            <div className="mt-4">
+              {editing ? (
+                // A different hazard is a new warning, so an update keeps the type.
+                <p className="text-[14px] text-ink">
+                  <strong>
+                    {HAZARD_TYPES.find(({ value }) => value === hazardType)?.label ?? hazardType}
+                  </strong>
+                  <span className="text-muted"> – an update keeps the hazard type</span>
+                </p>
+              ) : (
+                <HazardTypePicker value={hazardType} onChange={setHazardType} />
+              )}
+            </div>
+            {prefill && !prefill.hazardType && !hazardType ? (
+              <p className="mt-2 text-[13px] text-muted">
+                Ground-impact report – choose the hazard type
               </p>
-            ) : (
-              <HazardTypePicker value={hazardType} onChange={setHazardType} />
-            )}
-          </div>
-          {prefill && !prefill.hazardType && !hazardType ? (
-            <p className="mt-2 text-[13px] text-muted">
-              Ground-impact report – choose the hazard type
-            </p>
-          ) : null}
-          <SectionLabel className="mt-5">Severity</SectionLabel>
-          <div className="mt-2.5">
-            <SeverityPicker value={severity} onChange={setSeverity} />
-          </div>
+            ) : null}
+            <h3 className="mt-6 text-[14px] font-bold text-ink">Severity Level</h3>
+            <div className="mt-3">
+              <SeverityPicker value={severity} onChange={setSeverity} />
+            </div>
+          </Card>
 
-          <SectionLabel className="mt-7">2. Target scope</SectionLabel>
-          <div className="mt-2.5">
-            <ScopeSelector
-              districts={areas.districts}
-              riverBasins={areas.riverBasins}
-              value={areaIds}
-              onChange={changeScope}
-              error={scopeError}
-            />
-          </div>
-        </Card>
+          <Card className="p-6">
+            <StepHeading step={2}>Target Scope</StepHeading>
+            <div className="mt-4 grid grid-cols-1 gap-5 md:grid-cols-2">
+              <ScopeSelector
+                districts={areas.districts}
+                riverBasins={areas.riverBasins}
+                value={areaIds}
+                onChange={changeScope}
+                error={scopeError}
+              />
+              <MapView
+                label="Target scope map"
+                markers={scopeMarkers(areaIds, areas)}
+                className="h-72 md:h-auto md:min-h-72"
+              />
+            </div>
+          </Card>
+        </div>
 
-        <Card aria-busy={previewing || undefined}>
+        <section
+          aria-busy={previewing || undefined}
+          aria-label="Broadcast preview"
+          className="rounded-2xl bg-navy p-6 text-paper xl:sticky xl:top-6"
+        >
           <div className="flex items-center justify-between gap-3">
-            <SectionLabel>3. Broadcast preview (editable)</SectionLabel>
+            <h2 className="text-[17px] font-bold">Broadcast Preview</h2>
             {previewing ? (
               <span
                 role="status"
                 aria-label="Updating the preview"
-                className="h-4 w-4 animate-spin rounded-full border-2 border-navy border-t-transparent"
+                className="h-4 w-4 animate-spin rounded-full border-2 border-paper border-t-transparent"
               />
             ) : null}
           </div>
 
           {!complete ? (
-            <p className="mt-3 text-[14px] text-muted">
+            <p className="mt-4 text-[14px] text-muted-dark">
               Choose a hazard type, a severity and at least one area to preview the warning.
             </p>
           ) : !preview ? (
             previewing ? (
               <Loader className="mt-6" />
             ) : (
-              <p className="mt-3 text-[14px] text-muted">
+              <p className="mt-4 text-[14px] text-muted-dark">
                 {scopeError
                   ? 'Correct the target scope to preview the warning.'
                   : 'The preview will appear here once it can be made.'}
@@ -473,28 +533,41 @@ export default function IssueWarningScreen() {
             )
           ) : (
             <>
-              <div className="mt-3">
-                <BroadcastPreview
-                  value={message}
-                  onChange={setMessage}
-                  onBlur={saveMessage}
-                  error={messageError}
-                />
+              <div className="mt-5 rounded-2xl bg-ink/40 p-3">
+                <div className="flex gap-3 rounded-xl bg-paper p-4 text-ink">
+                  <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-danger text-paper">
+                    <TriangleAlert size={22} aria-hidden="true" />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="px-2 text-[15px] font-bold">
+                      {HAZARD_TYPES.find(({ value }) => value === hazardType)?.label ?? hazardType}{' '}
+                      Warning : {severity}
+                    </p>
+                    <BroadcastPreview
+                      value={message}
+                      onChange={setMessage}
+                      onBlur={saveMessage}
+                      error={messageError}
+                    />
+                    <p className="px-2 text-[12px] text-muted">DMC Alert – now</p>
+                  </div>
+                </div>
               </div>
-              <div className="mt-4 border-t border-line pt-2">
+              <div className="mt-5">
                 <ChannelReadiness channels={preview.channels} />
               </div>
-              <div className="mt-2 border-t border-line pt-4">
+              <div className="mt-6 border-t border-navy-hi pt-5">
                 <RecipientCount id={recipientCountId} count={preview.recipientCount} />
               </div>
             </>
           )}
-        </Card>
+        </section>
       </div>
 
-      <Card className="mt-6 flex flex-wrap items-center gap-3">
-        <span className="text-[14px] text-muted">Status:</span>
-        <StatusBadge tone="neutral">{alert.status}</StatusBadge>
+      <div className="mt-8 -mx-8 -mb-7 flex flex-wrap items-center gap-3 border-t border-line bg-paper px-8 py-4">
+        <span className="text-[14px] text-muted">
+          Status: <strong className="text-ink">{alert.status}</strong>
+        </span>
         {changed ? null : (
           <span className="text-[13px] text-muted">
             Change the severity or the scope to send an update.
@@ -506,6 +579,7 @@ export default function IssueWarningScreen() {
           </Button>
           {/* With no recipients (E2) the disabled button points at the reason. */}
           <Button
+            variant="danger"
             fullWidth={false}
             disabled={!canBroadcast}
             aria-describedby={noRecipients ? recipientCountId : undefined}
@@ -514,10 +588,11 @@ export default function IssueWarningScreen() {
               setConfirming(true);
             }}
           >
+            <Send size={17} aria-hidden="true" />
             {editing ? 'Confirm & Update' : 'Confirm & Broadcast'}
           </Button>
         </div>
-      </Card>
+      </div>
 
       {preview ? (
         <ConfirmBroadcastDialog

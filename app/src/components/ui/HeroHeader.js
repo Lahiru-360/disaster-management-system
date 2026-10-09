@@ -11,9 +11,9 @@ function EmberGlow() {
       <Svg width={340} height={340} viewBox="0 0 340 340">
         <Defs>
           <RadialGradient id="heroEmberGlow" cx="50%" cy="50%" r="50%">
-            <Stop offset="0%" stopColor="rgb(255, 74, 28)" stopOpacity={0.34} />
-            <Stop offset="46%" stopColor="rgb(255, 74, 28)" stopOpacity={0.08} />
-            <Stop offset="72%" stopColor="rgb(255, 74, 28)" stopOpacity={0} />
+            <Stop offset="0%" stopColor="rgb(91, 140, 214)" stopOpacity={0.34} />
+            <Stop offset="46%" stopColor="rgb(91, 140, 214)" stopOpacity={0.08} />
+            <Stop offset="72%" stopColor="rgb(91, 140, 214)" stopOpacity={0} />
           </RadialGradient>
         </Defs>
         <Rect width="340" height="340" fill="url(#heroEmberGlow)" />
@@ -37,7 +37,7 @@ export default function HeroHeader({
   contentClassName,
 }) {
   return (
-    <View className={['relative overflow-hidden bg-ink', className].filter(Boolean).join(' ')}>
+    <View className={['relative overflow-hidden bg-navy', className].filter(Boolean).join(' ')}>
       <StatusBar style="light" translucent backgroundColor="transparent" />
       <EmberGlow />
 

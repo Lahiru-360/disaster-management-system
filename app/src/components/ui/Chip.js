@@ -22,7 +22,7 @@ export default function Chip({
       className={[
         'self-start rounded-full border-[1.5px]',
         sizeStyles.container,
-        selected ? 'border-ink bg-ink' : 'border-line bg-haze',
+        selected ? 'border-navy bg-navy' : 'border-line bg-haze',
         className,
       ]
         .filter(Boolean)

@@ -26,7 +26,7 @@ export default function ConfirmDialog({
           <View className="mt-6 gap-3">
             <Pressable
               onPress={onCancel}
-              className="h-[54px] items-center justify-center rounded-ds-lg bg-ink"
+              className="h-[54px] items-center justify-center rounded-ds-lg bg-navy"
             >
               <Text className="text-body font-semibold tracking-[-0.01em] text-paper">
                 {cancelLabel}
