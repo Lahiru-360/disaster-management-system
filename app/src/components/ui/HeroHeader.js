@@ -26,10 +26,12 @@ function EmberGlow() {
  * The dark ink block, meant to sit as the first child inside a screen's own
  * ScrollView. It scrolls away with the rest of the content - this component
  * has no opinion on scroll position. Pair it with `HeroStickyBar` and
- * `HeroSheet`, which the screen renders and controls itself.
+ * `HeroSheet`, which the screen renders and controls itself. `leftSlot`
+ * takes the back button's place on a screen with nowhere to go back to.
  */
 export default function HeroHeader({
   onBack,
+  leftSlot,
   rightSlot,
   children,
   className,
@@ -55,7 +57,7 @@ export default function HeroHeader({
               <Text className="text-[15px] font-semibold text-paper">‹</Text>
             </Pressable>
           ) : (
-            <View className="h-[34px] w-[34px]" />
+            (leftSlot ?? <View className="h-[34px] w-[34px]" />)
           )}
 
           {rightSlot ?? <View className="h-[34px] w-[34px]" />}
